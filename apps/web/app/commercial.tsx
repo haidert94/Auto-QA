@@ -1,149 +1,185 @@
 import Link from 'next/link';
-import { ArrowRight, BarChart3, BookOpen, CalendarDays, ChevronDown, CircleCheck, Code2, FileText,
-  GitCompareArrows, Layers, LockKeyhole, Menu, Play, Repeat2, ScanLine, ShieldCheck, Sparkles, Target, Users } from 'lucide-react';
+import { ArrowDown, ArrowRight, ChevronDown, FileText, Link2, ScanLine } from 'lucide-react';
 import { listPlans, setting } from './autoqa-server';
 import { PlanCards, PlanComparison } from './plan-comparison';
+import MobileNavigation from './mobile-navigation';
 
 const navigation = [
-  ['Producto', '#producto'], ['Cómo funciona', '#como-funciona'], ['Funcionalidades', '#funcionalidades'],
-  ['Precios', '#precios'], ['Preguntas frecuentes', '#faq'],
-];
+  ['Producto', '#producto'],
+  ['Cómo funciona', '#como-funciona'],
+  ['Precios', '#precios'],
+] as const;
 
 const steps = [
-  ['Registra tu aplicación', 'Indica la URL y declara el alcance autorizado.', Target],
-  ['Adjunta documentación', 'Sube requisitos, historias, criterios y reglas de negocio.', FileText],
-  ['Configura roles y entornos', 'Declara permisos, datos de prueba y restricciones.', Users],
-  ['Explora la aplicación', 'El explorador recorrerá flujos dentro del alcance permitido.', ScanLine],
-  ['Genera y ejecuta pruebas', 'A partir de escenarios, AutoQA preparará pruebas Playwright con TypeScript.', Code2],
-  ['Consulta resultados', 'Revisa la preparación con el IPA. Los resultados de ejecución y las evidencias llegarán después.', BarChart3],
-] as const;
-
-const features = [
-  ['Exploración con Playwright', 'Descubre flujos de la aplicación dentro de un alcance autorizado.', ScanLine, false],
-  ['Generación de escenarios', 'Convierte requisitos y criterios verificables en escenarios de prueba.', Sparkles, false],
-  ['Análisis de historias y requisitos', 'Extrae hallazgos, localiza su fuente y detecta ambigüedades.', FileText, true],
-  ['Preparación documental · IPA', 'Identifica qué información está disponible y qué falta para automatizar.', Target, true],
-  ['Calidad de pruebas · ICSP', 'Evalúa la suite con evidencias, trazabilidad y ejecuciones.', BarChart3, false],
-  ['Pruebas por rol', 'Configura la matriz de permisos hoy. La ejecución por rol está prevista.', Users, false],
-  ['Ejecución programada', 'Programa verificaciones según la capacidad de tu plan.', CalendarDays, false],
-  ['Evidencias y reportes', 'Consulta evidencias de ejecución y resultados relacionados con sus requisitos.', BookOpen, false],
-  ['Detección de cambios', 'Identifica cambios de flujos para actualizar las pruebas afectadas.', GitCompareArrows, false],
-  ['Reutilización de pruebas', 'Ejecuta de nuevo las pruebas guardadas en tu suite.', Repeat2, false],
-  ['Exportación Playwright', 'Lleva pruebas escritas en TypeScript a tu repositorio.', Code2, false],
-  ['IA híbrida optimizada', 'Combina reglas y modelos para análisis y generación según el caso.', Layers, false],
-] as const;
+  {
+    label: 'Alcance',
+    title: 'Registra tu aplicación',
+    description: 'Declara qué entornos, dominios y rutas se pueden probar, y cuáles quedan fuera del alcance.',
+  },
+  {
+    label: 'Documentación',
+    title: 'Adjunta requisitos y configura roles',
+    description: 'Sube historias de usuario, criterios o especificaciones y define los permisos de cada rol.',
+  },
+  {
+    label: 'Preparación',
+    title: 'Revisa los hallazgos y el IPA',
+    description: 'Consulta la fuente de cada hallazgo y prioriza lo que falta para que tus requisitos se puedan verificar.',
+  },
+];
 
 const faqs = [
-  ['¿Necesito saber programar?', 'Puedes registrar una aplicación, cargar documentos y revisar el IPA desde el navegador. Para integrar pruebas Playwright en un repositorio será útil contar con experiencia en TypeScript.'],
-  ['¿AutoQA funciona con aplicaciones privadas?', 'Ya puedes declarar acceso privado o SSO, roles y permisos. La exploración autenticada depende de los controles y accesos de prueba, y está en desarrollo.'],
-  ['¿Qué documentación debo proporcionar?', 'Los requisitos, historias de usuario, criterios de aceptación y reglas de negocio ayudan a identificar qué se puede verificar. Puedes adjuntar PDF, Word, Excel o archivos de texto y datos admitidos.'],
-  ['¿Puedo utilizar AutoQA sin historias de usuario?', 'Sí. Registra la aplicación como borrador y carga lo que tengas. El IPA te mostrará los puntos que falta aclarar.'],
-  ['¿Qué significa no tener créditos de IA?', 'Cada plan combina tipos de prueba, minutos de navegador, monitores y ejecuciones simultáneas. La capacidad y las reglas de uso se detallarán antes de la contratación real.'],
-  ['¿Puedo cancelar mi suscripción?', 'Puedes cancelar la suscripción de prueba desde Facturación. Las condiciones de cancelación de suscripciones pagadas se definirán antes del lanzamiento.'],
-  ['¿Qué sucede si una prueba falla?', 'La ejecución y los reportes están en desarrollo. El flujo previsto conservará la evidencia y distinguirá fallos de la prueba, del entorno y posibles defectos.'],
-  ['¿AutoQA garantiza encontrar todos los errores?', 'La automatización comprueba comportamientos específicos. Los resultados dependen del alcance, la documentación y los escenarios cubiertos.'],
-  ['¿Cómo se protegen mis credenciales y documentos?', 'El acceso se limita a la organización y los documentos se guardan fuera de las rutas públicas. Configura referencias a cuentas de prueba y evita adjuntar credenciales.'],
+  ['¿Qué documentos puedo analizar?', 'Puedes adjuntar PDF con texto, Word, Excel, CSV, TXT, Markdown, JSON y YAML. AutoQA también reconoce operaciones de OpenAPI como candidatas pendientes de revisión.'],
+  ['¿Cómo se calcula el IPA?', 'El Índice de Preparación para Automatización evalúa la autorización, la documentación, los accesos, los datos de prueba y el alcance registrados. El informe indica qué evidencia está disponible y qué información falta.'],
+  ['¿Qué puedo usar hoy y qué viene después?', 'Ya puedes registrar aplicaciones, analizar documentación mediante reglas y revisar el IPA. La comparativa identifica las funciones previstas, como los monitores de disponibilidad y las pruebas de performance.'],
+  ['¿Cómo funciona la contratación de prueba?', 'Puedes elegir un plan al crear tu cuenta. En el entorno de evaluación, la activación y la cancelación se gestionan en Facturación mediante un pago simulado.'],
 ];
 
 export function Brand() {
   return <Link className="brand" href="/" aria-label="AutoQA, inicio"><span><ScanLine size={19}/></span>Auto<span className="brand-qa">QA</span></Link>;
 }
 
-function DashboardDemo() {
+function InspectorDemo() {
   return (
-    <figure className="demo" aria-label="Dashboard ilustrativo de AutoQA">
-      <div className="demo-top"><span className="demo-dots"><i/><i/><i/></span><span>AutoQA / Resumen del proyecto</span></div>
-      <div className="demo-body">
-        <div className="demo-header"><div><small>Proyecto de ejemplo</small><h2>Portal de clientes</h2></div><span className="demo-label">Datos de ejemplo</span></div>
-        <div className="demo-metrics">
-          <div><span>Preparación documental</span><strong>78<small>/100</small></strong><i aria-hidden="true"/></div>
-          <div><span>Pruebas aprobadas</span><strong>24<small>/28</small></strong><small>Vista ilustrativa</small></div>
-          <div><span>Cobertura de requisitos</span><strong>64<small>%</small></strong><small>Vista ilustrativa</small></div>
-        </div>
-        <div className="demo-bottom">
-          <div className="demo-activity"><b>Ejecuciones de ejemplo</b><div className="demo-chart" aria-hidden="true">
-            {[36, 52, 43, 61, 52, 73, 88, 71, 94, 82, 100, 92].map((height, index) => <i key={index} style={{ height: height + '%' }}/>)}
-          </div></div>
-          <div className="demo-advice"><Sparkles size={17}/><b>Recomendación</b><p>Define el resultado esperado para los flujos de recuperación de acceso.</p></div>
-        </div>
+    <figure className="inspector" aria-labelledby="inspector-caption">
+      <figcaption id="inspector-caption" className="inspector-bar">
+        <span className="inspector-dots" aria-hidden="true"><i/><i/><i/></span>
+        <span>AutoQA Inspector</span>
+        <span>Ejemplo de análisis</span>
+      </figcaption>
+      <div className="inspector-body">
+        <section className="inspector-source" aria-labelledby="inspector-source">
+          <p className="inspector-meta"><FileText size={14} aria-hidden="true"/> Documento de origen</p>
+          <h2 id="inspector-source">Requisitos de acceso.pdf</h2>
+          <p className="inspector-subhead">Página 4 · Acceso a la aplicación</p>
+          <div className="inspector-excerpt">
+            <blockquote><mark>El acceso debe ser rápido.</mark></blockquote>
+            <p><Link2 size={13} aria-hidden="true"/> Fuente de RF-014</p>
+          </div>
+        </section>
+        <section className="inspector-finding" aria-labelledby="inspector-finding">
+          <div className="finding-title">
+            <p className="inspector-meta">RF-014</p>
+            <span className="finding-status">Ambiguo</span>
+          </div>
+          <h2 id="inspector-finding">Tiempo de acceso</h2>
+          <div className="finding-note">
+            <p className="inspector-meta">Hallazgo</p>
+            <p>Falta definir un tiempo máximo de acceso.</p>
+          </div>
+          <p className="finding-source"><Link2 size={14} aria-hidden="true"/> Fuente vinculada · Página 4</p>
+        </section>
       </div>
     </figure>
   );
 }
 
-export default async function Commercial() {
+export default async function Commercial({ fontClasses }: { fontClasses: string }) {
   const plans = await listPlans();
   const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
+
   return (
-    <div className="commercial">
+    <div className={'commercial ' + fontClasses}>
       <header className="commercial-header">
         <div className="wrap nav-wrap">
-          <Brand/>
-          <nav className="desktop-nav" aria-label="Navegación principal">{navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}</nav>
-          <div className="desktop-actions"><Link href={accountOrigin + '/login'}>Iniciar sesión</Link><a className="button accent" href="#precios">Comenzar ahora<ArrowRight size={16}/></a></div>
-          <details className="mobile-nav"><summary aria-label="Abrir menú"><Menu size={22}/></summary><nav aria-label="Navegación móvil">
-            {navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}<Link href={accountOrigin + '/login'}>Iniciar sesión</Link>
-            <a className="button primary" href="#precios">Comenzar ahora</a>
-          </nav></details>
+          <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
+          <nav className="desktop-nav" aria-label="Navegación principal">
+            {navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}
+          </nav>
+          <div className="desktop-actions">
+            <Link href={accountOrigin + '/login'}>Iniciar sesión</Link>
+            <a className="button primary" href="#precios">Ver planes</a>
+          </div>
+          <MobileNavigation links={navigation} loginHref={accountOrigin + '/login'}/>
         </div>
       </header>
-      <section className="hero" id="producto">
+
+      <section id="producto" className="hero" aria-labelledby="hero-title">
         <div className="wrap hero-grid">
           <div className="hero-copy">
-            <h1>Automatiza tus pruebas de software con <em>inteligencia artificial.</em></h1>
-            <p>Registra tu aplicación, proporciona tus requisitos y deja que AutoQA descubra funcionalidades, genere pruebas y te ayude a mejorar la calidad de tu software.</p>
-            <div className="hero-actions"><a href="#precios" className="button accent">Comenzar ahora <ArrowRight size={18}/></a>
-              <a href="#como-funciona" className="button dark-outline"><Play size={17}/>Ver cómo funciona</a></div>
+            <p className="section-label">Análisis documental de requisitos</p>
+            <h1 id="hero-title">Detecta qué le falta a un requisito para poder probarlo</h1>
+            <p className="hero-lead">Registra tu aplicación, define el alcance autorizado y revisa qué requisitos son verificables antes de automatizar.</p>
+            <div className="hero-actions">
+              <a href="#precios" className="button primary">Ver planes <ArrowRight size={16} aria-hidden="true"/></a>
+              <a href="#como-funciona" className="button outline">Cómo funciona <ArrowDown size={15} aria-hidden="true"/></a>
+            </div>
+            <a className="hero-ipa" href="#como-funciona">
+              <span><span className="section-label">Evaluación del proyecto</span>Índice de Preparación para Automatización</span>
+              <span className="hero-ipa-code">IPA <ArrowRight size={14} aria-hidden="true"/></span>
+            </a>
           </div>
-          <DashboardDemo/>
+          <InspectorDemo/>
         </div>
-        <div className="wrap hero-current"><CircleCheck size={17}/><span><strong>Disponible hoy</strong> · Registro de aplicaciones, análisis documental e IPA</span></div>
       </section>
-      <section className="wrap section" id="como-funciona">
-        <div className="section-intro"><h2>Cómo funciona AutoQA</h2><p>De la documentación a los resultados de prueba, con el alcance y las fuentes a la vista.</p></div>
-        <div className="steps">{steps.map(([title, description, Icon], index) => <article className="step" key={title}>
-          <span className="step-icon"><Icon size={23}/></span><span className="step-num">0{index + 1}</span>
-          <h3>{title}</h3><p>{description}</p>
-        </article>)}</div>
+
+      <section className="workflow" id="como-funciona" aria-label="Cómo funciona AutoQA">
+        <ol className="wrap steps">
+          {steps.map(({ label, title, description }) => (
+            <li key={label}>
+              <p className="section-label">{label}</p>
+              <h2>{title}</h2>
+              <p>{description}</p>
+            </li>
+          ))}
+        </ol>
       </section>
-      <section className="quiet section" id="funcionalidades"><div className="wrap">
-        <div className="section-intro"><h2>Funcionalidades</h2><p>Consulta qué puedes usar hoy y qué sigue en el roadmap.</p></div>
-        <div className="feature-grid">{features.map(([title, description, Icon, available]) => <article className="feature" key={title}>
-          <div><Icon size={23}/><span className={available ? 'available' : 'roadmap'}>{available ? 'Disponible' : 'En desarrollo'}</span></div>
-          <h3>{title}</h3><p>{description}</p>
-        </article>)}</div>
-      </div></section>
-      <section className="benefits section"><div className="wrap">
-        <div className="section-intro"><h2>Qué aporta AutoQA a tu equipo</h2></div>
-        <div className="benefit-grid">
-          {[
-            ['Sin créditos ni tokens visibles', 'Elige un plan con capacidad y límites definidos.', ShieldCheck],
-            ['Pruebas reutilizables', 'La suite prevista conservará los escenarios para volver a ejecutarlos.', Repeat2],
-            ['Calidad basada en requisitos', 'Identifica los criterios verificables y las preguntas pendientes.', Target],
-            ['Automatización con trazabilidad', 'Los escenarios y resultados podrán vincularse a sus requisitos y evidencias.', GitCompareArrows],
-          ].map(([title, description, Icon]) => {
-            const BenefitIcon = Icon as typeof Target;
-            return <article key={String(title)}><BenefitIcon size={23}/><h3>{String(title)}</h3><p>{String(description)}</p></article>;
-          })}
+
+      <section className="wrap landing-pricing" id="precios" aria-labelledby="pricing-title">
+        <div className="section-intro pricing-intro">
+          <h2 id="pricing-title">Planes según las pruebas que necesitas</h2>
+          <p>Precios en pesos colombianos. Tarifas y límites preliminares sujetos a validación.</p>
         </div>
-      </div></section>
-      <section className="wrap section" id="precios">
-        <div className="section-intro"><h2>Planes según las pruebas que necesitas</h2><p>Precios y capacidades preliminares sujetos a validación. «Más popular» señala nuestra recomendación comercial.</p></div>
-        {plans.length ? <PlanCards plans={plans} accountOrigin={accountOrigin}/> : <p role="status">El catálogo de planes no está disponible en este momento.</p>}
-        <p className="plan-note"><LockKeyhole size={16}/>Contratación de prueba. La comparación distingue capacidades operativas, beta y próximas.</p>
-        {plans.length > 0 && <PlanComparison plans={plans}/>}
+        {plans.length > 0
+          ? <PlanCards plans={plans} accountOrigin={accountOrigin}/>
+          : <p role="status">El catálogo de planes no está disponible en este momento.</p>}
+        {plans.length > 0 && (
+          <section className="landing-comparison" id="funcionalidades" aria-labelledby="comparison-title">
+            <div className="section-intro">
+              <h2 id="comparison-title">Comparativa técnica</h2>
+              <p>Consulta las capacidades operativas, las previstas y los límites de cada plan.</p>
+            </div>
+            <PlanComparison plans={plans}/>
+          </section>
+        )}
       </section>
-      <section className="quiet section" id="faq"><div className="wrap faq-grid">
-        <div className="section-intro"><h2>Preguntas frecuentes</h2><p>Conoce el alcance del producto y la contratación de prueba.</p></div>
-        <div className="questions">{faqs.map(([question, answer]) => <details key={question}><summary>{question}<ChevronDown size={18}/></summary><p>{answer}</p></details>)}</div>
-      </div></section>
-      <section className="final-cta"><div className="wrap"><h2>Mejora la calidad de tu software con automatización inteligente.</h2>
-        <Link href={accountOrigin + '/registro'} className="button accent">Crear mi cuenta<ArrowRight size={18}/></Link>
-      </div></section>
-      <footer className="commerce-footer" id="contacto"><div className="wrap footer-grid"><div><Brand/><p>Automatización de pruebas web para equipos de software.</p></div>
-        <nav aria-label="Pie de página"><a href="#producto">Producto</a><a href="#precios">Precios</a><Link href="/contacto">Contacto</Link>
-          <Link href="/terminos">Términos y condiciones</Link><Link href="/privacidad">Política de privacidad</Link><Link href="/privacidad#datos">Tratamiento de datos personales</Link><Link href="/estado">Estado del servicio</Link></nav>
-      </div></footer>
+
+      <section className="landing-faq" id="faq" aria-labelledby="faq-title">
+        <div className="wrap faq-grid">
+          <div>
+            <div className="section-intro"><h2 id="faq-title">Preguntas sobre análisis y ejecución</h2></div>
+            <div className="questions">
+              {faqs.map(([question, answer]) => (
+                <details key={question}>
+                  <summary>{question}<ChevronDown size={17} aria-hidden="true"/></summary>
+                  <p>{answer}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+          <section className="landing-cta" aria-labelledby="cta-title">
+            <h2 id="cta-title">Revisa tus requisitos con AutoQA</h2>
+            <p>Crea una cuenta para registrar tu primera aplicación y consultar qué falta para automatizar sus pruebas.</p>
+            <div>
+              <Link href={accountOrigin + '/registro'} className="button primary">Crear mi cuenta <ArrowRight size={16} aria-hidden="true"/></Link>
+              <Link href={accountOrigin + '/login'} className="button outline">Iniciar sesión</Link>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <footer className="commerce-footer" id="contacto">
+        <div className="wrap footer-grid">
+          <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
+          <nav aria-label="Pie de página">
+            {navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}
+            <Link href="/contacto">Contacto</Link>
+            <Link href="/terminos">Términos</Link>
+            <Link href="/privacidad">Privacidad</Link>
+            <Link href="/estado">Estado del servicio</Link>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }

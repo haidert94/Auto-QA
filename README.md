@@ -33,7 +33,7 @@ Abre [AutoQA](http://localhost:3000). La API escucha en `127.0.0.1:3001` y la in
 
 ## Página comercial, cuentas y suscripciones
 
-La portada reúne producto, funcionalidades y planes. La evaluación local permite verificar correo mediante Mailpit o un proveedor SMTP, activar una suscripción simulada y abrir proyectos de una organización. Para activar el flujo, repetir sus pruebas o consultar los requisitos de producción, usa [la guía comercial](docs/COMMERCIAL.md).
+La portada presenta un ejemplo de análisis documental con su fuente, los pasos de preparación y una comparativa de planes. La evaluación local permite verificar correo mediante Mailpit o un proveedor SMTP, activar una suscripción simulada y abrir proyectos de una organización. Para activar el flujo, repetir sus pruebas o consultar los requisitos de producción, usa [la guía comercial](docs/COMMERCIAL.md).
 
 Los tres planes propuestos son Starter ($99.000 COP/mes), Pro ($299.000 COP/mes) y Business ($899.000 COP/mes). Aplica las migraciones para actualizar el catálogo de PostgreSQL y abre [la comparativa](http://localhost:3000/#precios). En **Facturación**, consulta el consumo de tu organización. La portada indica qué capacidades están operativas y cuáles estarán disponibles próximamente. La cuota mensual de performance queda en cero hasta validar el valor y los controles de ejecución.
 

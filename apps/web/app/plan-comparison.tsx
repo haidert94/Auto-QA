@@ -32,28 +32,42 @@ function detail(capability: PlanCapability) {
   return capability.detail ?? '';
 }
 
-const cardRows = new Set(['FUNCTIONAL_TESTS', 'API_TESTS', 'BROWSER_TESTS', 'HTTP_MONITORS', 'FLOW_MONITORS', 'PERFORMANCE_TESTS', 'IPA']);
+const cardRows = new Set([
+  'FUNCTIONAL_TESTS', 'API_TESTS', 'BROWSER_TESTS', 'RESPONSIVE_TESTS',
+  'HTTP_MONITORS', 'FLOW_MONITORS', 'PERFORMANCE_TESTS',
+]);
 
 export function PlanCards({ plans, accountOrigin }: { plans: Plan[]; accountOrigin: string }) {
   return (
     <div className="plan-grid">
-      {plans.map(plan => (
-        <article className={'plan-card' + (plan.code === 'pro' ? ' plan-emphasis' : '')} key={plan.code}>
-          <div className="plan-name"><h3>{plan.name}</h3>{plan.code === 'pro' && <span>Más popular</span>}</div>
-          <p className="plan-price"><strong>{'$' + numeric.format(plan.priceCop)}</strong> <span>COP/mes</span></p>
-          <ul className="plan-capabilities">
-            {plan.capabilities.filter(capability => cardRows.has(capability.code) && capability.availability !== 'NOT_INCLUDED').map(capability => (
-              <li key={capability.code} className="plan-capability">
-                <div><strong>{capability.label}</strong><CapabilityStatus value={capability.availability}/></div>
-                {detail(capability) && <small>{detail(capability)}</small>}
-              </li>
-            ))}
-          </ul>
-          <p className="plan-capacity">{plan.maxProjects} {plan.maxProjects === 1 ? 'aplicación' : 'aplicaciones'} · {plan.maxRoles} roles por aplicación</p>
-          <Link className={'button ' + (plan.code === 'pro' ? 'primary' : 'outline')}
-            href={accountOrigin + '/registro?plan=' + plan.code}>Elegir plan<ArrowRight size={16}/></Link>
-        </article>
-      ))}
+      {plans.map(plan => {
+        const browser = plan.capabilities.find(item => item.code === 'BROWSER_TESTS');
+        return (
+          <article className={'plan-card' + (plan.code === 'pro' ? ' plan-emphasis' : '')} key={plan.code}>
+            <div className="plan-name"><h3>{plan.name}</h3></div>
+            <p className="plan-price"><strong>{'$' + numeric.format(plan.priceCop)}</strong><span>COP/mes</span></p>
+            <ul className="plan-capabilities">
+              {plan.capabilities.filter(capability => cardRows.has(capability.code) && capability.availability !== 'NOT_INCLUDED').map(capability => {
+                const summary = detail(capability);
+                return (
+                  <li key={capability.code}>
+                    <div><strong>{capability.label}</strong>{summary && <small>{summary}</small>}</div>
+                    <CapabilityStatus value={capability.availability}/>
+                  </li>
+                );
+              })}
+            </ul>
+            <dl className="plan-capacity">
+              <div><dt>Aplicaciones</dt><dd>{plan.maxProjects}</dd></div>
+              <div><dt>Roles por aplicación</dt><dd>{plan.maxRoles}</dd></div>
+              <div><dt>Minutos de navegador/mes</dt><dd>{numeric.format(browser?.monthlyLimit ?? 0)}</dd></div>
+              <div><dt>Ejecuciones simultáneas</dt><dd>{plan.parallelRuns}</dd></div>
+            </dl>
+            <Link className={'button ' + (plan.code === 'pro' ? 'primary' : 'outline')}
+              href={accountOrigin + '/registro?plan=' + plan.code}>Elegir {plan.name}<ArrowRight size={16} aria-hidden="true"/></Link>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -63,10 +77,10 @@ export function PlanComparison({ plans }: { plans: Plan[] }) {
     .sort((a, b) => a.position - b.position);
   return (
     <details className="compare" open>
-      <summary><span>Comparar planes</span><ChevronDown size={18}/></summary>
+      <summary><span>Comparar planes</span><ChevronDown size={18} aria-hidden="true"/></summary>
       <div className="table-scroll" tabIndex={0} role="region" aria-label="Comparación de planes">
         <table>
-          <thead><tr><th scope="col">Capacidad</th>{plans.map(plan => <th scope="col" key={plan.code}>{plan.name}</th>)}</tr></thead>
+          <thead><tr><th scope="col">Capacidad</th>{plans.map(plan => <th scope="col" key={plan.code} data-plan={plan.code}>{plan.name}</th>)}</tr></thead>
           <tbody>
             {capabilities.map(row => (
               <tr key={row.code}>

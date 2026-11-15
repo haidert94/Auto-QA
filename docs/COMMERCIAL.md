@@ -11,6 +11,8 @@ La página pública y el espacio privado comparten Next.js. Los formularios usan
 | Integración de pagos | `PaymentProvider`, referencia de contratación y bitácora `BillingEvent`. | Firma, vigencia del evento, importe persistido y repetición idempotente. |
 | Pruebas | `apps/api/test/commerce.test.cjs` y `apps/web/test/commercial.e2e.cjs`. | Casos unitarios y de PostgreSQL, más un recorrido en Chrome. |
 
+La portada usa la exportación de Stitch como referencia de diseño. El inspector muestra un requisito ficticio y la página carga el catálogo de NestJS en cada solicitud. Las fuentes Geist y JetBrains Mono se sirven desde la propia web junto con sus licencias en `apps/web/app/fonts`.
+
 ## Puesta en marcha en Windows
 
 Con PostgreSQL iniciado y una base creada, ejecuta estos comandos desde la raíz del proyecto en PowerShell.

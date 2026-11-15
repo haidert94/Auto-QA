@@ -37,20 +37,36 @@ async function run() {
     browser = await chromium.launch({ channel: 'chrome', headless: true });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await page.goto(website);
-    await page.getByRole('heading', { name: /Automatiza tus pruebas/ }).waitFor();
+    await page.getByRole('heading', { name: /Detecta qué le falta a un requisito/ }).waitFor();
+    const inspector = page.getByRole('figure', { name: /Ejemplo de análisis/ });
+    await inspector.getByText('Ambiguo', { exact: true }).waitFor();
+    await inspector.getByText(/Falta definir un tiempo máximo de acceso/).waitFor();
+    const source = inspector.getByRole('region', { name: 'Requisitos de acceso.pdf' });
+    const finding = inspector.getByRole('region', { name: 'Tiempo de acceso' });
+    assert.ok((await source.boundingBox()).y < (await finding.boundingBox()).y);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
     await page.getByLabel('Abrir menú').click();
-    await page.getByRole('navigation', { name: 'Navegación móvil' }).getByText('Precios', { exact: true }).waitFor();
-    await page.setViewportSize({ width: 1440, height: 900 });
-    assert.equal(await page.getByRole('link', { name: 'Elegir plan' }).count(), 3);
+    const mobileNav = page.getByRole('navigation', { name: 'Navegación móvil' });
+    await mobileNav.getByRole('link', { name: 'Precios', exact: true }).click();
+    await page.waitForURL('**/#precios');
+    await mobileNav.waitFor({ state: 'hidden' });
     const comparison = page.getByRole('region', { name: 'Comparación de planes' });
+    assert.ok(await comparison.evaluate(element => element.scrollWidth > element.clientWidth));
+    assert.equal(await comparison.getByRole('rowheader').first().evaluate(element => getComputedStyle(element).position), 'sticky');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    assert.ok((await source.boundingBox()).x < (await finding.boundingBox()).x);
+    for (const [name, code] of [['Starter', 'starter'], ['Pro', 'pro'], ['Business', 'business']]) {
+      assert.equal(await page.getByRole('link', { name: 'Elegir ' + name, exact: true }).getAttribute('href'), '/registro?plan=' + code);
+    }
+    const faq = page.getByText('¿Cómo se calcula el IPA?', { exact: true });
+    await faq.click();
+    await page.getByText(/evalúa la autorización/).waitFor();
     await comparison.getByRole('row', { name: /Monitores HTTP/ }).getByText('10 cada minuto').waitFor();
     await comparison.getByRole('row', { name: /Pruebas de performance/ }).getByText(/100 usuarios virtuales/).waitFor();
     assert.equal(await comparison.getByRole('row', { name: /Pruebas de performance/ }).getByText('Próximamente', { exact: true }).count(), 2);
     assert.equal(await comparison.getByRole('row', { name: /Preparación documental/ }).getByText('Operativa', { exact: true }).count(), 3);
     await page.getByText('$299.000', { exact: true }).waitFor();
-    await page.locator('.plan-card').filter({ has: page.getByRole('heading', { name: 'Pro', exact: true }) })
-      .getByRole('link', { name: 'Elegir plan' }).click();
+    await page.getByRole('link', { name: 'Elegir Pro', exact: true }).click();
     await page.waitForURL('**/registro?plan=pro');
     assert.equal(await page.getByRole('combobox').inputValue(), 'pro');
     await page.getByLabel('Nombre completo').fill('Equipo sintético');
@@ -82,7 +98,7 @@ async function run() {
     await page.getByRole('button', { name: 'Guardar borrador' }).click();
     await page.waitForURL(/\/projects\/[0-9a-f-]{36}$/);
     await page.getByRole('heading', { name: 'Aplicación E2E' }).waitFor();
-    console.log('E2E correcto: móvil, plan, registro, verificación, pago simulado, dashboard y primer proyecto.');
+    console.log('E2E correcto: portada móvil y escritorio, plan, registro, verificación, pago simulado y primer proyecto.');
   } finally {
     await browser?.close();
     backendProcess.kill(); frontendProcess.kill();
