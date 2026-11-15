@@ -1,0 +1,174 @@
+# AutoQA
+
+AutoQA registra aplicaciones web autorizadas y su configuración de QA. Esta entrega permite crear, consultar y editar el registro desde una interfaz en español o desde la API. Lee [la visión del producto](docs/PRODUCT_VISION.md), [los requisitos](docs/REQUIREMENTS.md), [la arquitectura](docs/ARCHITECTURE.md), [el modelo de calidad](docs/QUALITY_MODEL.md) y [el roadmap](docs/ROADMAP.md) para conocer el proyecto completo.
+
+## Arranque en Windows
+
+Usa PowerShell, Node.js 22.13 o posterior y Docker Desktop. Desde la raíz del proyecto, con Docker Desktop iniciado:
+
+```powershell
+if (-not (Test-Path -LiteralPath .env)) { Copy-Item .env.example .env }
+docker compose up -d
+docker compose ps
+npm.cmd ci
+npm.cmd run db:generate
+npm.cmd run db:deploy
+```
+
+Espera a que PostgreSQL figure como `healthy` antes de aplicar las migraciones. Si ya tienes una instancia local de PostgreSQL, configura `DATABASE_URL` en `.env` y comienza desde `npm.cmd ci`. La aplicación requiere una base existente. Para verificar el esquema y compilar ambos espacios de trabajo:
+
+```powershell
+npx.cmd prisma validate
+npm.cmd run build
+```
+
+Abre dos terminales PowerShell en la raíz:
+
+| Terminal | Comando |
+| --- | --- |
+| API | `npm.cmd run dev:api` |
+| Web | `npm.cmd run dev:web` |
+
+Abre [AutoQA](http://localhost:3000). La API escucha en `127.0.0.1:3001` y la interfaz en `127.0.0.1:3000`. Si cambias el puerto de la API, ajusta `PORT` en el `.env` de la raíz y ajusta `AUTOQA_INTERNAL_API_URL=http://127.0.0.1:<puerto>/api` en ese mismo archivo. Si cambias el origen de la web, ajusta `WEB_ORIGIN` en el `.env` de la raíz. Reinicia ambos servicios después de cambiar sus variables.
+
+## Página comercial, cuentas y suscripciones
+
+La portada reúne producto, funcionalidades y planes. La evaluación local permite verificar correo mediante Mailpit o un proveedor SMTP, activar una suscripción simulada y abrir proyectos de una organización. Para activar el flujo, repetir sus pruebas o consultar los requisitos de producción, usa [la guía comercial](docs/COMMERCIAL.md).
+
+Los tres planes propuestos son Starter ($99.000 COP/mes), Pro ($299.000 COP/mes) y Business ($899.000 COP/mes). Aplica las migraciones para actualizar el catálogo de PostgreSQL y abre [la comparativa](http://localhost:3000/#precios). En **Facturación**, consulta el consumo de tu organización. La portada indica qué capacidades están operativas y cuáles estarán disponibles próximamente. La cuota mensual de performance queda en cero hasta validar el valor y los controles de ejecución.
+
+## Verificación de correo en Windows
+
+Inicia Mailpit con Docker Desktop desde la raíz del proyecto.
+
+```powershell
+docker compose up -d mailpit
+```
+
+Para levantar también la base de datos, ejecuta `docker compose up -d postgres mailpit`. Configura el `.env` existente y reinicia la API.
+
+```dotenv
+AUTOQA_MAIL_MODE=mailpit
+AUTOQA_SMTP_HOST=127.0.0.1
+AUTOQA_SMTP_PORT=1025
+AUTOQA_MAIL_FROM=no-reply@autoqa.local
+AUTOQA_ACCOUNT_ORIGIN=http://localhost:3000
+```
+
+Si NestJS se ejecuta en un contenedor de la misma red que Mailpit, usa `AUTOQA_SMTP_HOST=mailpit`. El origen de cuenta siempre es la URL que abre el navegador.
+
+Registra una cuenta de prueba o usa **Reenviar verificación** desde **Iniciar sesión** si la cuenta ya existe. Abre el mensaje en Mailpit, pulsa el enlace, confirma la verificación e inicia sesión. Los enlaces de verificación vencen a las 24 horas, se consumen una sola vez y un reenvío exitoso reemplaza al enlace anterior. Si el servicio SMTP rechaza un registro, la cuenta queda pendiente y puede volver a solicitar el mensaje. [Buzón de Mailpit](http://localhost:8025)
+
+También puedes usar el binario oficial de Mailpit para Windows. Desde su carpeta ejecuta este comando, mantén Mailpit activo y arranca AutoQA normalmente. [Instalación de Mailpit](https://mailpit.axllent.org/docs/install/)
+
+```powershell
+.\mailpit.exe --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025 --database mailpit.db --allowed-hosts localhost,127.0.0.1
+```
+
+Para producción configura `AUTOQA_DEPLOYMENT=hosted`, `AUTOQA_MAIL_MODE=smtp` y un `AUTOQA_ACCOUNT_ORIGIN` HTTPS. Indica el servidor, puerto, remitente verificado y credenciales del proveedor con `AUTOQA_SMTP_HOST`, `AUTOQA_SMTP_PORT`, `AUTOQA_MAIL_FROM`, `AUTOQA_SMTP_USER` y `AUTOQA_SMTP_PASS`. El puerto 587 usa STARTTLS obligatorio. El 465 usa TLS desde la conexión. Para otros puertos puedes configurar `AUTOQA_SMTP_SECURE` según el proveedor. Mantén las credenciales en la configuración privada del servidor. [Opciones SMTP](https://nodemailer.com/smtp)
+
+Con Mailpit y una base de pruebas migrada en `AUTOQA_TEST_DATABASE_URL`, puedes repetir la validación.
+
+```powershell
+npm.cmd run test:commerce
+npm.cmd run test:commerce:e2e
+```
+
+## Verificar el registro en la web
+
+1. En **Registrar aplicación**, escribe el nombre y pulsa **Guardar borrador**. Vuelve a **Proyectos**, abre el registro y comprueba que aparecen el estado y los campos pendientes. Pulsa **Completar registro** para comprobar que se bloquea mientras falten requisitos.
+2. Declara un propietario, añade un entorno QA e introduce `https://qa.example.com/catalogo`. Selecciona **Privada**. Declara `qa.example.com` como dominio permitido, `qa.example.com/catalogo` como ruta permitida y `qa.example.com/catalogo/pagos` como exclusión. Agrega una acción prohibida y confirma la autorización después de definir el alcance. **Solo lectura** viene activado.
+3. Añade un rol **Lector** con el permiso esperado **Catálogo / Ver / Permitido**. Puedes agregar otro permiso **Catálogo / Borrar / Denegado** y una referencia sintética `vault:qa/lector`. El registro admite modos **Pública**, **Privada** y **SSO**. Los dos últimos requieren roles con su matriz de permisos.
+4. Agrega otro entorno con su URL, dominio, ruta y autorización. Declara módulos prioritarios y, si aplica, datos sintéticos, semillas, limpieza, integraciones, navegador, frecuencia, límites y preferencias de notificación.
+5. Guarda con **Completar registro** y vuelve a abrirlo desde **Proyectos**. Verifica que se recuperan todos los entornos, prioridades, restricciones y permisos. Cambia una parte del alcance y comprueba que la interfaz desmarca la autorización de ese entorno. Prueba a excluir la URL base y a completar el registro para ver el rechazo. Puedes guardar los cambios como borrador y retomarlos después.
+
+`READY` indica que se completaron los datos obligatorios del registro. La fase guarda declaraciones de autorización, políticas y preferencias. La verificación del titular de la aplicación, la bóveda, la navegación, la ejecución y las notificaciones pertenecen a fases posteriores. Ejecuta esta entrega localmente y usa datos sintéticos. Mantén fuera del formulario y del API las contraseñas, tokens y datos personales.
+
+
+## Documentación y requisitos
+
+El formulario admite seleccionar o arrastrar archivos, clasificarlos, analizarlos y revisar la evidencia de sus hallazgos. El IPA muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
+
+## API de onboarding
+
+| Método | Ruta | Comportamiento |
+| --- | --- | --- |
+| GET | `/api/projects` | Lista proyectos con sus entornos. |
+| GET | `/api/projects/:id` | Devuelve la configuración y los requisitos pendientes. Responde `404` para un UUID inexistente. |
+| POST | `/api/projects` | Crea un borrador por defecto. Con `status: "READY"` valida que el registro esté completo antes de crearlo. |
+| PUT | `/api/projects/:id` | Guarda la configuración completa del proyecto. Exige la revisión actual y devuelve `409` ante una revisión obsoleta o un proyecto archivado. |
+
+Prueba las cuatro rutas desde PowerShell:
+
+```powershell
+$api = 'http://127.0.0.1:3001/api/projects'
+$draft = Invoke-RestMethod -Uri $api -Method Post -ContentType 'application/json' `
+  -Body (@{ name = 'Portal de prueba' } | ConvertTo-Json)
+
+$config = @{
+  revision = $draft.revision
+  status = 'READY'
+  name = $draft.name
+  ownerLabel = 'Equipo QA'
+  priorityModules = @('Catálogo')
+  environments = @(@{
+    type = 'QA'
+    baseUrl = 'https://qa.example.com/catalogo'
+    accessMode = 'PRIVATE'
+    authorizationConfirmed = $true
+    readOnly = $true
+    allowedHosts = @('qa.example.com')
+    allowedPaths = @(@{ host = 'qa.example.com'; path = '/catalogo' })
+    excludedPaths = @(@{ host = 'qa.example.com'; path = '/catalogo/pagos' })
+    prohibitedActions = @('Comprar', 'Borrar')
+    testData = @{
+      syntheticData = 'Catálogo ficticio'
+      seeds = 'Carga inicial de QA'
+      cleanupStrategy = 'Restaurar datos semilla'
+      integrations = @('Pasarela simulada')
+    }
+  })
+  roles = @(@{
+    name = 'Lector'
+    secretReference = 'vault:qa/lector'
+    permissions = @(
+      @{ resource = 'Catálogo'; action = 'Ver'; allowed = $true }
+      @{ resource = 'Catálogo'; action = 'Borrar'; allowed = $false }
+    )
+  })
+  executionSettings = @{
+    browser = 'CHROMIUM'
+    frequency = 'Semanal'
+    maxPages = 10
+    maxDurationSeconds = 30
+    maxConcurrency = 1
+    requestsPerMinute = 20
+    notifications = 'Equipo QA'
+  }
+}
+$projectUri = "$api/$($draft.id)"
+Invoke-RestMethod -Uri $projectUri -Method Put -ContentType 'application/json' `
+  -Body ($config | ConvertTo-Json -Depth 10)
+Invoke-RestMethod -Uri $projectUri | ConvertTo-Json -Depth 10
+Invoke-RestMethod -Uri $api
+```
+
+El `PUT` sustituye la configuración de onboarding en una sola escritura. Envía los ID de los entornos existentes para conservarlos. Los entornos omitidos se quitan, los que llegan sin ID se crean y los roles conservan su identidad mientras mantienen el nombre. Envía `authorizationConfirmed: true` por entorno cuando confirmes la autorización para la configuración enviada. Si cambia la URL, el acceso o las restricciones, esa confirmación registra una fecha nueva. El formato básico anterior con `baseUrl`, `environment`, `authorizationConfirmed` y `readOnly` sigue disponible para crear borradores.
+
+La API valida el propietario declarado, el tipo y modo de acceso, HTTPS, la confirmación y el alcance explícito por entorno para `READY`. Las rutas se aplican por dominio exacto y prefijo de segmentos. Por ejemplo, `/catalogo` incluye `/catalogo/producto`, mientras que `/catalogos` requiere su propia regla. La ruta `/` abarca todo el dominio cuando se declara explícitamente. Las exclusiones tienen prioridad. Usa dominios sin IP ni comodines y rutas absolutas sin codificación porcentual ni segmentos ambiguos. Las URLs base deben omitir credenciales, consultas, fragmentos y puertos personalizados. La API limita cada cuerpo JSON a 100 KiB.
+
+## Migraciones y pruebas automatizadas
+
+La migración inicial reproduce el esquema base con los enums válidos. La migración de onboarding agrega configuración, permisos y autorización por entorno. Conserva los datos existentes, copia la autorización histórica a su único entorno cuando corresponde y vuelve a borrador los registros previos con estado `READY` para que completen el alcance. Si Prisma reporta `P3005` en una base creada manualmente, compara su esquema con [la migración inicial](prisma/migrations/20261114000000_init/migration.sql). Solo si coinciden, registra esa migración con `npx.cmd prisma migrate resolve --applied 20261114000000_init` antes de aplicar las pendientes.
+
+En una terminal de pruebas independiente, crea una base separada y aplica las migraciones. El comando `createdb` es necesario una vez:
+
+```powershell
+docker compose exec -T postgres createdb -U autoqa autoqa_test
+$env:AUTOQA_TEST_DATABASE_URL = 'postgresql://autoqa:autoqa_local_only@127.0.0.1:5432/autoqa_test?schema=public'
+$env:DATABASE_URL = $env:AUTOQA_TEST_DATABASE_URL
+npm.cmd run db:deploy
+npm.cmd run test:onboarding
+```
+
+La suite inicia NestJS en un puerto local, usa Prisma y PostgreSQL reales y elimina los proyectos sintéticos que crea. Cubre persistencia, estados, autorización, alcance, roles, restricciones y ediciones concurrentes. Para inspeccionar la base de desarrollo, abre otra terminal en la raíz y ejecuta `npx.cmd prisma studio`.

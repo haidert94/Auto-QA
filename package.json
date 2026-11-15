@@ -1,0 +1,32 @@
+{
+  "name": "autoqa",
+  "private": true,
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run start:dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build": "npm --workspace apps/api run build && npm --workspace apps/web run build",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "test:onboarding": "npm --workspace apps/api run build && node --test apps/api/test/onboarding.test.cjs",
+    "test:documents": "npm --workspace apps/api run build && node --test apps/api/test/document-files.test.cjs apps/api/test/documents.test.cjs",
+    "test:commerce": "npm --workspace apps/api run build && node --test apps/api/test/commerce.test.cjs",
+    "test:commerce:e2e": "npm run build && node apps/web/test/commercial.e2e.cjs",
+    "test:plans": "npm --workspace apps/api run build && node --test apps/api/test/plan-capabilities.test.cjs"
+  },
+  "workspaces": [
+    "apps/*"
+  ],
+  "devDependencies": {
+    "playwright-core": "^1.65.1",
+    "prisma": "^6.9.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "multer": "2.5.0"
+  },
+  "overrides": {
+    "multer": "2.5.0"
+  }
+}

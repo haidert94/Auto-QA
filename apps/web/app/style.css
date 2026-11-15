@@ -1,0 +1,57 @@
+* { box-sizing: border-box; }
+body { font-family: Inter, system-ui, sans-serif; background: #f5f7fb; color: #172033; margin: 0; }
+main { max-width: 960px; margin: 32px auto; padding: 20px; }
+h1, h2 { color: #173a5e; }
+h2 { font-size: 1.25rem; margin-top: 28px; }
+a { color: #126a9c; }
+label { display: block; margin: 12px 0 6px; font-weight: 600; }
+input, select, textarea {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #a7b4c3;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 400;
+  margin-top: 5px;
+}
+textarea { resize: vertical; }
+input[type="checkbox"] { width: auto; margin: 0; }
+button {
+  background: #0d6576;
+  color: white;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  margin-top: 12px;
+  font: inherit;
+  font-weight: 600;
+}
+button:disabled { opacity: .6; cursor: default; }
+button.secondary { color: #173a5e; background: #fff; border-color: #a7b4c3; }
+.panel { background: white; border-radius: 12px; padding: 28px; box-shadow: 0 3px 16px #17203314; }
+.muted { color: #526279; }
+.error { color: #a72020; }
+.success { color: #137333; }
+.item { padding: 4px 0 14px; border-bottom: 1px solid #e5e7eb; overflow-wrap: anywhere; }
+.status { background: #f5f7fb; padding: 12px 16px; border-radius: 7px; }
+.status ul { margin-bottom: 0; }
+fieldset { border: 1px solid #ccd6e2; border-radius: 8px; padding: 16px; margin: 12px 0; min-width: 0; }
+legend { padding: 0 6px; font-weight: 700; color: #173a5e; }
+.form-content { border: none; padding: 0; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.check, .actions { display: flex; align-items: center; gap: 10px; }
+.actions { flex-wrap: wrap; }
+details { margin-top: 18px; }
+summary { cursor: pointer; color: #173a5e; font-weight: 600; }
+@media (max-width: 640px) {
+  main { margin: 0 auto; padding: 12px; }
+  .panel { padding: 18px; }
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+.document-drop { border: 1px dashed #a7b4c3; border-radius: 8px; padding: 12px 16px; }
+.document-list { list-style: none; padding: 0; }
+.document-list > li { border-bottom: 1px solid #e5e7eb; padding: 12px 0; overflow-wrap: anywhere; }
+.document-list p { margin: 6px 0; }

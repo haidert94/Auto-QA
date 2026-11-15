@@ -1,0 +1,506 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EnvironmentType {
+  DEVELOPMENT
+  QA
+  STAGING
+  PRODUCTION
+}
+
+enum ProjectStatus {
+  DRAFT
+  READY
+  ARCHIVED
+}
+
+enum AccessMode {
+  PUBLIC
+  PRIVATE
+  SSO
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ResultStatus {
+  PASSED
+  FAILED
+  BLOCKED
+  SKIPPED
+}
+
+enum DocumentType {
+  USER_STORY
+  REQUIREMENTS
+  ACCEPTANCE_CRITERIA
+  BUSINESS_RULE
+  FLOW
+  API
+  OTHER
+}
+
+enum AssessmentType {
+  READINESS
+  TEST_QUALITY
+}
+
+model User {
+  passwordHash   String?
+  verifiedAt     DateTime?
+  consentVersion String?
+  consentAt      DateTime?
+  membership     OrganizationMember?
+  sessions       AccountSession[]
+  accountTokens  AccountToken[]
+  id             String              @id @default(uuid())
+  email          String              @unique
+  name           String?
+  projects       Project[]
+  createdAt      DateTime            @default(now())
+}
+
+model Project {
+  organizationId         String?
+  organization           Organization?       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                     String              @id @default(uuid())
+  name                   String
+  description            String?
+  status                 ProjectStatus       @default(DRAFT)
+  authorizationConfirmed Boolean             @default(false)
+  authorizedAt           DateTime?
+  ownerLabel             String?
+  priorityModules        String[]            @default([])
+  executionSettings      Json?
+  revision               Int                 @default(0)
+  ownerId                String?
+  owner                  User?               @relation(fields: [ownerId], references: [id])
+  environments           Environment[]
+  roles                  TestRole[]
+  documents              Document[]
+  documentAnalyses       DocumentAnalysis[]
+  requirements           Requirement[]
+  scenarios              TestScenario[]
+  runs                   TestRun[]
+  assessments            QualityAssessment[]
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  @@index([organizationId])
+}
+
+model Environment {
+  id                     String           @id @default(uuid())
+  projectId              String
+  project                Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type                   EnvironmentType?
+  baseUrl                String?
+  accessMode             AccessMode?
+  authorizationConfirmed Boolean          @default(false)
+  authorizedAt           DateTime?
+  position               Int              @default(0)
+  allowedHosts           Json
+  allowedPaths           Json             @default("[]")
+  excludedPaths          Json             @default("[]")
+  prohibitedActions      String[]         @default([])
+  testData               Json?
+  readOnly               Boolean          @default(true)
+  createdAt              DateTime         @default(now())
+}
+
+model TestRole {
+  id              String  @id @default(uuid())
+  projectId       String
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  secretReference String?
+  permissions     Json    @default("[]")
+  description     String?
+
+  @@unique([projectId, name])
+}
+
+enum DocumentFormat {
+  PDF
+  DOCX
+  XLSX
+  CSV
+  TXT
+  MD
+  JSON
+  YAML
+  YML
+}
+
+enum ClassificationSource {
+  PENDING
+  MANUAL
+  AUTOMATIC
+}
+
+enum FindingKind {
+  USER_STORY
+  FUNCTIONAL
+  NON_FUNCTIONAL
+  REQUIREMENT
+  ACCEPTANCE_CRITERION
+  BUSINESS_RULE
+  ROLE
+  PERMISSION
+  SCENARIO
+  AMBIGUITY
+  CONTRADICTION
+}
+
+model Document {
+  id                   String               @id @default(uuid())
+  projectId            String
+  project              Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type                 DocumentType
+  classificationSource ClassificationSource @default(PENDING)
+  filename             String
+  legacyStorageKey     String?              @map("storageKey")
+  version              Int                  @default(1)
+  versions             DocumentVersion[]
+  removedAt            DateTime?
+  createdAt            DateTime             @default(now())
+
+  @@index([projectId, filename, removedAt])
+}
+
+model DocumentVersion {
+  id          String                    @id @default(uuid())
+  documentId  String
+  document    Document                  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  number      Int
+  format      DocumentFormat?
+  size        Int?
+  sha256      String?
+  storageKey  String?                   @unique
+  uploadedAt  DateTime?
+  processedAt DateTime?
+  validatedAt DateTime?
+  hasText     Boolean                   @default(false)
+  analyses    DocumentAnalysis[]
+  primaryUses RequirementTraceability[] @relation("PrimarySource")
+  relatedUses RequirementTraceability[] @relation("RelatedSource")
+
+  @@unique([documentId, number])
+}
+
+model DocumentAnalysis {
+  id           String                    @id @default(uuid())
+  projectId    String
+  project      Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  signature    String
+  versions     DocumentVersion[]
+  warnings     String[]
+  findings     RequirementTraceability[]
+  requirements Requirement[]
+  criteria     AcceptanceCriterion[]
+  rules        BusinessRule[]
+  assessment   QualityAssessment?
+  createdAt    DateTime                  @default(now())
+
+  @@unique([projectId, signature])
+}
+
+model Requirement {
+  id                 String                    @id @default(uuid())
+  projectId          String
+  project            Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  analysisId         String?
+  analysis           DocumentAnalysis?         @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  kind               FindingKind?
+  externalKey        String?
+  title              String
+  description        String?
+  acceptanceCriteria Json?
+  scenarios          TestScenario[]
+  criteria           AcceptanceCriterion[]
+  sources            RequirementTraceability[]
+
+  @@index([analysisId])
+}
+
+model AcceptanceCriterion {
+  id            String                    @id @default(uuid())
+  analysisId    String
+  analysis      DocumentAnalysis          @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  requirementId String?
+  requirement   Requirement?              @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+  text          String
+  sources       RequirementTraceability[]
+
+  @@index([analysisId])
+}
+
+model BusinessRule {
+  id         String                    @id @default(uuid())
+  analysisId String
+  analysis   DocumentAnalysis          @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  text       String
+  sources    RequirementTraceability[]
+
+  @@index([analysisId])
+}
+
+model RequirementTraceability {
+  id                  String               @id @default(uuid())
+  analysisId          String
+  analysis            DocumentAnalysis     @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  ordinal             Int
+  kind                FindingKind
+  text                String
+  pendingConfirmation Boolean
+  versionId           String
+  version             DocumentVersion      @relation("PrimarySource", fields: [versionId], references: [id], onDelete: Cascade)
+  locator             String
+  relatedVersionId    String?
+  relatedVersion      DocumentVersion?     @relation("RelatedSource", fields: [relatedVersionId], references: [id], onDelete: Cascade)
+  relatedLocator      String?
+  requirementId       String?
+  requirement         Requirement?         @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+  criterionId         String?
+  criterion           AcceptanceCriterion? @relation(fields: [criterionId], references: [id], onDelete: SetNull)
+  ruleId              String?
+  rule                BusinessRule?        @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@unique([analysisId, ordinal])
+}
+
+model TestScenario {
+  id             String       @id @default(uuid())
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirementId  String?
+  requirement    Requirement? @relation(fields: [requirementId], references: [id])
+  title          String
+  steps          Json
+  expectedResult String?
+  results        TestResult[]
+}
+
+model TestRun {
+  id          String       @id @default(uuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status      RunStatus    @default(QUEUED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  results     TestResult[]
+  createdAt   DateTime     @default(now())
+}
+
+model TestResult {
+  id           String       @id @default(uuid())
+  runId        String
+  run          TestRun      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  scenarioId   String
+  scenario     TestScenario @relation(fields: [scenarioId], references: [id])
+  status       ResultStatus
+  durationMs   Int?
+  errorMessage String?
+  evidenceKey  String?
+}
+
+model QualityAssessment {
+  id         String            @id @default(uuid())
+  projectId  String
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  analysisId String?           @unique
+  analysis   DocumentAnalysis? @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  type       AssessmentType
+  score      Int?
+  details    Json
+  createdAt  DateTime          @default(now())
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  TRIALING
+  PAYMENT_FAILED
+  CANCELED
+  EXPIRED
+}
+
+enum AccountTokenKind {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+model Organization {
+  id              String               @id @default(uuid())
+  name            String
+  members         OrganizationMember[]
+  meteredRuns     MeteredRun[]
+  meteredMonitors MeteredMonitor[]
+  subscription    Subscription?
+  projects        Project[]
+  createdAt       DateTime             @default(now())
+}
+
+model OrganizationMember {
+  userId         String       @id
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model AccountSession {
+  digest    String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+
+  @@index([userId])
+}
+
+model AccountToken {
+  digest    String           @id
+  kind      AccountTokenKind
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+
+  @@unique([userId, kind])
+}
+
+model Plan {
+  code          String           @id
+  name          String
+  priceCop      Int
+  maxProjects   Int
+  maxRoles      Int
+  frequency     String
+  parallelRuns  Int
+  historyDays   Int
+  position      Int
+  enabled       Boolean          @default(true)
+  subscriptions Subscription[]
+  capabilities  PlanCapability[]
+}
+
+model Subscription {
+  id             String             @id @default(uuid())
+  organizationId String             @unique
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planCode       String
+  plan           Plan               @relation(fields: [planCode], references: [code])
+  status         SubscriptionStatus @default(PENDING)
+  reference      String?            @unique
+  quotedPriceCop Int?
+  periodEndsAt   DateTime?
+  trialUsed      Boolean            @default(false)
+  events         BillingEvent[]
+  payments       Payment[]
+}
+
+model BillingEvent {
+  id             String       @id
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  receivedAt     DateTime     @default(now())
+}
+
+model Payment {
+  reference      String       @id
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  provider       String
+  amountCop      Int
+  approved       Boolean
+  createdAt      DateTime     @default(now())
+}
+
+enum CapabilityCode {
+  FUNCTIONAL_TESTS
+  API_TESTS
+  BROWSER_TESTS
+  RESPONSIVE_TESTS
+  HTTP_MONITORS
+  FLOW_MONITORS
+  PERFORMANCE_TESTS
+  DOCUMENT_ANALYSIS
+  DOCUMENT_AI
+  IPA
+  ICSP
+  CI_CD
+  ADVANCED_REPORTS
+  TRACEABILITY
+}
+
+enum CapabilityAvailability {
+  OPERATIONAL
+  BETA
+  UPCOMING
+  NOT_INCLUDED
+}
+
+model PlanCapability {
+  planCode           String
+  plan               Plan                   @relation(fields: [planCode], references: [code], onDelete: Cascade)
+  code               CapabilityCode
+  availability       CapabilityAvailability
+  label              String
+  detail             String?
+  position           Int
+  browsers           String[]
+  monthlyLimit       Int?
+  monitorLimit       Int?
+  minIntervalMinutes Int?
+  maxVirtualUsers    Int?
+  maxDurationMinutes Int?
+
+  @@id([planCode, code])
+}
+
+enum MeteredRunKind {
+  BROWSER
+  API
+  PERFORMANCE
+}
+
+model MeteredRun {
+  organizationId           String
+  organization             Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runKey                   String
+  projectId                String
+  kind                     MeteredRunKind
+  requestedBrowser         String?
+  requestedVirtualUsers    Int?
+  requestedDurationMinutes Int?
+  month                    DateTime       @db.Date
+  reservedBrowserSeconds   Int
+  browserSeconds           Int?
+  startedAt                DateTime       @default(now())
+  completedAt              DateTime?
+
+  @@id([organizationId, runKey])
+  @@index([organizationId, month])
+  @@index([organizationId, completedAt])
+}
+
+model MeteredMonitor {
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  monitorKey      String
+  projectId       String
+  intervalMinutes Int
+  createdAt       DateTime     @default(now())
+  disabledAt      DateTime?
+
+  @@id([organizationId, monitorKey])
+  @@index([organizationId, disabledAt])
+}
