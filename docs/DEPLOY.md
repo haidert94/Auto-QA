@@ -33,6 +33,21 @@ Se usa un solo servicio porque `AUTOQA_INTERNAL_API_URL` solo admite `http` en l
 
 No subas `.env` a Git ni a la imagen (está en `.gitignore` y `.dockerignore`). Configura los secretos en el panel del PaaS.
 
-## Limitación conocida
+## Activación manual de suscripciones
 
-Con `AUTOQA_DEPLOYMENT=hosted` los cobros simulados quedan deshabilitados y no existe aún un proveedor de pagos real. Una cuenta puede registrarse y verificar su correo, pero no activar una suscripción. Hay que decidir cómo habilitar la demo (por ejemplo, activar suscripciones manualmente en la base de datos) antes de compartirla.
+Con `AUTOQA_DEPLOYMENT=hosted` los cobros simulados quedan deshabilitados y no existe aún un proveedor de pagos real. Para la demo hay un endpoint de activación manual, protegido por `AUTOQA_ADMIN_TOKEN` (64 hex). Genera el token con:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Cópialo a `AUTOQA_ADMIN_TOKEN` en las variables del PaaS y guárdalo donde solo tú lo veas. Si el valor no está configurado, el endpoint responde `503` y no deja activar nada. Para activar una cuenta registrada y verificada:
+
+```powershell
+curl -X POST "https://<subdominio>/api/commerce/admin/activate" `
+  -H "Content-Type: application/json" `
+  -H "X-Admin-Token: <token>" `
+  -d '{"email":"usuaria@ejemplo.com","plan":"starter","days":30}'
+```
+
+`plan` acepta `starter`, `pro` o `business`. `days` es opcional y por defecto 30 (máximo 365). La respuesta incluye el estado y la fecha de vencimiento. Si el token cambia, las cuentas ya activadas siguen activas; solo se bloquean nuevas activaciones.

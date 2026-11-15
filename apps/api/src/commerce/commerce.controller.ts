@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, HttpCode, Ip, Post } from '@nestjs/common';
-import { IsEmail, IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 import { AccountService } from './account';
+import { AdminService } from './admin';
 import { BillingService, SandboxPaymentProvider, subscriptionStatus } from './payments';
 import { publicPlan } from './plan-capabilities';
 import { UsageService } from './usage.service';
@@ -33,11 +34,17 @@ class PaymentEventDto {
   @IsString() @Length(2, 4000) payload!: string;
   @Matches(/^[a-f0-9]{64}$/) signature!: string;
 }
+class AdminActivateDto {
+  @IsEmail() @Length(3, 254) email!: string;
+  @Matches(/^[a-z][a-z0-9-]{1,29}$/) plan!: string;
+  @IsOptional() @IsInt() @Min(1) @Max(365) days?: number;
+}
 
 @Controller('commerce')
 export class CommerceController {
   constructor(private readonly accounts: AccountService, private readonly billing: BillingService,
-    private readonly sandbox: SandboxPaymentProvider, private readonly usage: UsageService) {}
+    private readonly sandbox: SandboxPaymentProvider, private readonly usage: UsageService,
+    private readonly admin: AdminService) {}
 
   @Get('plans') plans() { return this.billing.plans(); }
 
@@ -126,5 +133,11 @@ export class CommerceController {
   event(@Body() body: PaymentEventDto, @Ip() ip: string) {
     this.accounts.limit('sandbox-event', ip, 100);
     return this.billing.accept(this.sandbox, body.payload, body.signature);
+  }
+
+  @Post('admin/activate') @HttpCode(200)
+  activate(@Body() body: AdminActivateDto, @Headers('x-admin-token') token: string | undefined, @Ip() ip: string) {
+    this.accounts.limit('admin-activate-ip', ip, 20);
+    return this.admin.activate({ email: body.email, plan: body.plan, days: body.days ?? 30 }, token);
   }
 }
