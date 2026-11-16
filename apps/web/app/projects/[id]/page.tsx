@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
 import { ProjectForm } from '../project-form';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
+import { ScenariosPanel } from './scenarios-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
 
   return <>
     <ProjectForm initial={project} />
+    <ScenariosPanel projectId={project.id} />
     {showExploration && <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />}
   </>;
 }
