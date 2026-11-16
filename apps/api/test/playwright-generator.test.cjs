@@ -134,6 +134,42 @@ test('generatePlaywrightConfig escapa el outputDir y emite JSON reporter', () =>
   assert.ok(config.includes("browserName: 'chromium'"));
 });
 
+test('generatePlaywrightConfig con wsEndpoint emite connectOptions', () => {
+  const config = generatePlaywrightConfig({
+    outputDir: '/tmp/x',
+    browser: 'CHROMIUM',
+    wsEndpoint: 'wss://cdp.browserstack.com/playwright?caps=XYZ',
+  });
+  assert.ok(config.includes("connectOptions:"));
+  assert.ok(config.includes("wsEndpoint: 'wss://cdp.browserstack.com/playwright?caps=XYZ'"));
+});
+
+test('generatePlaywrightConfig sin wsEndpoint omite connectOptions', () => {
+  const config = generatePlaywrightConfig({ outputDir: '/tmp/x' });
+  assert.ok(!config.includes('connectOptions'));
+});
+
+test('buildBrowserstackWsEndpoint mapea browser y device en los caps', () => {
+  const { buildBrowserstackWsEndpoint } = require('../dist/scenarios/playwright-generator');
+  const endpoint = buildBrowserstackWsEndpoint({
+    userName: 'u', accessKey: 'k', browser: 'FIREFOX', device: 'iPhone 15',
+  });
+  assert.ok(endpoint.startsWith('wss://cdp.browserstack.com/playwright?caps='));
+  const caps = JSON.parse(decodeURIComponent(endpoint.split('caps=')[1]));
+  assert.equal(caps.browser, 'playwright-firefox');
+  assert.equal(caps.deviceName, 'iPhone 15');
+  assert.equal(caps['browserstack.username'], 'u');
+  assert.equal(caps['browserstack.accessKey'], 'k');
+});
+
+test('isSupportedProvider valida LOCAL y BROWSERSTACK', () => {
+  const { isSupportedProvider } = require('../dist/scenarios/playwright-generator');
+  assert.equal(isSupportedProvider('LOCAL'), true);
+  assert.equal(isSupportedProvider('BROWSERSTACK'), true);
+  assert.equal(isSupportedProvider('SAUCE'), false);
+  assert.equal(isSupportedProvider(null), true);
+});
+
 test('generatePlaywrightConfig cambia el motor según browser', () => {
   const firefox = generatePlaywrightConfig({ outputDir: '/tmp/x', browser: 'FIREFOX' });
   assert.ok(firefox.includes("name: 'firefox'"));

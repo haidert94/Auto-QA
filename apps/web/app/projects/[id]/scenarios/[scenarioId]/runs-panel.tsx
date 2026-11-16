@@ -22,8 +22,15 @@ type Run = {
   createdAt: string;
   targetBrowser: string | null;
   targetDevice: string | null;
+  targetProvider: string | null;
+  providerSessionUrl: string | null;
   results: RunResult[];
 };
+
+const PROVIDER_OPTIONS = [
+  { value: 'LOCAL', label: 'Local · worker AutoQA' },
+  { value: 'BROWSERSTACK', label: 'BrowserStack · dispositivos reales' },
+] as const;
 
 const BROWSER_OPTIONS = [
   { value: 'CHROMIUM', label: 'Chromium' },
@@ -76,6 +83,7 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
   const [targetBrowser, setTargetBrowser] = useState<'CHROMIUM' | 'FIREFOX' | 'WEBKIT'>('CHROMIUM');
   const [targetDevice, setTargetDevice] = useState('');
+  const [targetProvider, setTargetProvider] = useState<'LOCAL' | 'BROWSERSTACK'>('LOCAL');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -111,6 +119,7 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
           environmentId: envId,
           targetBrowser,
           targetDevice: targetDevice || undefined,
+          targetProvider,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -149,6 +158,9 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
       <label>Dispositivo<select value={targetDevice} onChange={e => setTargetDevice(e.target.value)}>
         {DEVICE_OPTIONS.map(d => <option key={d.value || 'desktop'} value={d.value}>{d.label}</option>)}
       </select></label>
+      <label>Dónde se ejecuta<select value={targetProvider} onChange={e => setTargetProvider(e.target.value as typeof targetProvider)}>
+        {PROVIDER_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+      </select></label>
       <div className="actions">
         <button type="submit" disabled={busy}>{busy ? 'Encolando…' : 'Ejecutar'}</button>
         <button type="button" className="secondary" onClick={load}>Actualizar</button>
@@ -167,7 +179,8 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
             <div className="run-head">
               <span className={`badge badge-${run.status.toLowerCase()}`}>{runStatusLabel[run.status]}</span>
               <span className="muted">{formatDate(run.createdAt)}</span>
-              <span className="muted">· {run.targetBrowser ?? 'CHROMIUM'}{run.targetDevice ? ' · ' + run.targetDevice : ''}</span>
+              <span className="muted">· {run.targetBrowser ?? 'CHROMIUM'}{run.targetDevice ? ' · ' + run.targetDevice : ''}{run.targetProvider && run.targetProvider !== 'LOCAL' ? ' · ' + run.targetProvider : ''}</span>
+              {run.providerSessionUrl && <a href={run.providerSessionUrl} target="_blank" rel="noopener">Sesión remota ↗</a>}
               {run.errorCode && <span className="muted">· {run.errorCode}</span>}
               {(run.status === 'COMPLETED' || run.status === 'FAILED') && <button type="button" className="secondary"
                 onClick={() => loadDiff(run.id)}>Comparar con anterior</button>}

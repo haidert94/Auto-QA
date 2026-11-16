@@ -147,6 +147,42 @@ export const SUPPORTED_DEVICES = [
 
 export const SUPPORTED_BROWSERS = ['CHROMIUM', 'FIREFOX', 'WEBKIT'] as const;
 
+export const SUPPORTED_PROVIDERS = ['LOCAL', 'BROWSERSTACK'] as const;
+
+export function isSupportedProvider(name: string | null | undefined): boolean {
+  if (!name) return true;
+  return (SUPPORTED_PROVIDERS as readonly string[]).includes(name);
+}
+
+// Construye el wsEndpoint de Playwright-over-CDP de BrowserStack a partir de
+// un conjunto de capacidades. El `userName` y `accessKey` van dentro del
+// JSON de caps; BrowserStack los extrae de ahí (no usa Basic auth del URL).
+export function buildBrowserstackWsEndpoint(options: {
+  userName: string;
+  accessKey: string;
+  browser?: string | null;
+  device?: string | null;
+  projectName?: string;
+  buildName?: string;
+  sessionName?: string;
+}): string {
+  const caps: Record<string, unknown> = {
+    'browserstack.username': options.userName,
+    'browserstack.accessKey': options.accessKey,
+    browser: (options.browser ?? 'CHROMIUM').toLowerCase() === 'firefox' ? 'playwright-firefox'
+      : (options.browser ?? 'CHROMIUM').toLowerCase() === 'webkit' ? 'playwright-webkit'
+      : 'playwright-chromium',
+    browser_version: 'latest',
+    os: 'osx',
+    os_version: 'Ventura',
+    name: options.sessionName ?? 'AutoQA scenario',
+    build: options.buildName ?? 'AutoQA',
+    project: options.projectName ?? 'AutoQA',
+  };
+  if (options.device) caps.deviceName = options.device;
+  return 'wss://cdp.browserstack.com/playwright?caps=' + encodeURIComponent(JSON.stringify(caps));
+}
+
 export function isSupportedDevice(name: string | null | undefined): boolean {
   if (!name) return true;
   return (SUPPORTED_DEVICES as readonly string[]).includes(name);
@@ -238,10 +274,37 @@ export function generateHarnessedSpec(
 // Config mínimo para que el worker arranque Playwright con trace y
 // resultados JSON legibles. Se escribe al lado del spec en el directorio
 // temporal de la ejecución. `browser` elige el motor del "project"; default
-// chromium para no romper los runs previos.
-export function generatePlaywrightConfig(options: { outputDir: string; browser?: string | null }): string {
+// chromium para no romper los runs previos. `wsEndpoint` opcional hace que
+// Playwright se conecte a un browser REMOTO (BrowserStack u otro provider
+// compatible con el protocolo CDP) en vez de lanzar uno local.
+export function generatePlaywrightConfig(options: {
+  outputDir: string;
+  browser?: string | null;
+  wsEndpoint?: string | null;
+}): string {
   const projectName = (options.browser ?? 'CHROMIUM').toLowerCase();
   const engine = projectName === 'firefox' ? 'firefox' : projectName === 'webkit' ? 'webkit' : 'chromium';
+  const useBlock = options.wsEndpoint
+    ? [
+      "    headless: true,",
+      "    trace: 'on',",
+      "    screenshot: 'only-on-failure',",
+      "    video: 'off',",
+      '    actionTimeout: 15000,',
+      '    navigationTimeout: 30000,',
+      '    connectOptions: {',
+      `      wsEndpoint: '${escapeJsString(options.wsEndpoint)}',`,
+      '      timeout: 60000,',
+      '    },',
+    ]
+    : [
+      "    headless: true,",
+      "    trace: 'on',",
+      "    screenshot: 'only-on-failure',",
+      "    video: 'off',",
+      '    actionTimeout: 15000,',
+      '    navigationTimeout: 30000,',
+    ];
   return [
     "import { defineConfig } from '@playwright/test';",
     '',
@@ -255,12 +318,7 @@ export function generatePlaywrightConfig(options: { outputDir: string; browser?:
     `    { name: '${engine}', use: { browserName: '${engine}' } },`,
     '  ],',
     '  use: {',
-    '    headless: true,',
-    "    trace: 'on',",
-    "    screenshot: 'only-on-failure',",
-    "    video: 'off',",
-    '    actionTimeout: 15000,',
-    '    navigationTimeout: 30000,',
+    ...useBlock,
     '  },',
     '});',
     '',

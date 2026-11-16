@@ -323,10 +323,12 @@ model TestRun {
   runKey          String?       @unique
   createdByUserId String?
   createdBy       User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-  specText        String?
-  targetBrowser   String?
-  targetDevice    String?
-  results         TestResult[]
+  specText          String?
+  targetBrowser     String?
+  targetDevice      String?
+  targetProvider    String?
+  providerSessionUrl String?
+  results           TestResult[]
   createdAt       DateTime      @default(now())
 
   @@index([projectId, status, createdAt])

@@ -85,7 +85,7 @@ export async function claimNextRun(prisma: PrismaClient): Promise<ExecutionClaim
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
-    RETURNING id, "projectId", "scenarioId", "environmentId", "runKey", "targetBrowser", "targetDevice";
+    RETURNING id, "projectId", "scenarioId", "environmentId", "runKey", "targetBrowser", "targetDevice", "targetProvider";
   `;
   return rows[0] ?? null;
 }

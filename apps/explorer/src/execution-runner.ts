@@ -13,7 +13,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
-import { generateHarnessedSpec, generatePlaywrightConfig, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
 import { type ScreenshotStorage } from './screenshot-storage';
 
 export type ExecutionClaim = {
@@ -24,7 +24,30 @@ export type ExecutionClaim = {
   runKey: string | null;
   targetBrowser: string | null;
   targetDevice: string | null;
+  targetProvider: string | null;
 };
+
+function resolveWsEndpoint(claim: ExecutionClaim): { wsEndpoint: string | null; error: string | null } {
+  const provider = (claim.targetProvider ?? 'LOCAL').toUpperCase();
+  if (provider === 'LOCAL') return { wsEndpoint: null, error: null };
+  if (provider === 'BROWSERSTACK') {
+    const userName = process.env.AUTOQA_BROWSERSTACK_USERNAME?.trim();
+    const accessKey = process.env.AUTOQA_BROWSERSTACK_ACCESS_KEY?.trim();
+    if (!userName || !accessKey) {
+      return { wsEndpoint: null, error: 'provider-not-configured' };
+    }
+    const wsEndpoint = buildBrowserstackWsEndpoint({
+      userName, accessKey,
+      browser: claim.targetBrowser,
+      device: claim.targetDevice,
+      projectName: 'AutoQA',
+      buildName: 'autoqa-' + (process.env.AUTOQA_BROWSERSTACK_BUILD ?? new Date().toISOString().slice(0, 10)),
+      sessionName: 'run-' + claim.id.slice(0, 8),
+    });
+    return { wsEndpoint, error: null };
+  }
+  return { wsEndpoint: null, error: 'provider-not-supported' };
+}
 
 type Logger = (level: 'INFO' | 'WARN' | 'ERROR', detail: string) => void;
 
@@ -94,7 +117,14 @@ export async function runTestRun(
   const configPath = join(workdir, 'playwright.config.ts');
   await mkdir(outputDir, { recursive: true });
   await writeFile(specPath, spec, { encoding: 'utf8' });
-  await writeFile(configPath, generatePlaywrightConfig({ outputDir, browser: claim.targetBrowser }), { encoding: 'utf8' });
+  const { wsEndpoint, error: providerError } = resolveWsEndpoint(claim);
+  if (providerError) {
+    await failRun(prisma, claim, providerError, 'El proveedor ' + (claim.targetProvider ?? '') + ' no está disponible.');
+    return;
+  }
+  await writeFile(configPath, generatePlaywrightConfig({
+    outputDir, browser: claim.targetBrowser, wsEndpoint,
+  }), { encoding: 'utf8' });
 
   try {
     const outcome = await spawnPlaywright(workdir, configPath, log);
@@ -111,6 +141,7 @@ export async function runTestRun(
       }
     }
 
+    const providerSessionUrl = extractProviderSessionUrl(report, claim.targetProvider);
     await prisma.$transaction(async tx => {
       await tx.testResult.create({
         data: {
@@ -129,6 +160,7 @@ export async function runTestRun(
           completedAt: new Date(),
           errorCode: summary.status === 'PASSED' ? null : (summary.errorCode ?? 'test-failed'),
           specText: spec,
+          providerSessionUrl,
         },
       });
     });
@@ -206,6 +238,23 @@ function summariseReport(report: any, exitCode: number | null): { status: 'PASSE
     default:
       return { status: 'FAILED', durationMs, errorMessage: errorMessage ?? 'failed', errorCode: 'failed' };
   }
+}
+
+function extractProviderSessionUrl(report: any, provider: string | null): string | null {
+  if (!provider || provider.toUpperCase() === 'LOCAL') return null;
+  // BrowserStack adjunta la URL de la sesión en los stdout/stderr del test
+  // con un prefijo bs:// o la emite como attachment. Acá miramos los
+  // attachments buscando una URL dashboard.browserstack.com.
+  const attachments: any[] = report?.suites?.flatMap((s: any) =>
+    s?.specs?.flatMap((spec: any) =>
+      spec?.tests?.flatMap((t: any) =>
+        t?.results?.flatMap((r: any) => r?.attachments ?? []) ?? []) ?? []) ?? []) ?? [];
+  const link = attachments.find(a => typeof a?.body === 'string' && /browserstack\.com\/sessions/.test(a.body));
+  if (link) {
+    const match = /https?:\/\/[^\s"]+browserstack\.com\/sessions\/[a-f0-9-]+/i.exec(link.body);
+    if (match) return match[0];
+  }
+  return null;
 }
 
 function extractTracePath(report: any, outputDir: string): string | null {

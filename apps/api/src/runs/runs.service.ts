@@ -95,7 +95,7 @@ export class RunsService {
       select: {
         id: true, status: true, environmentId: true,
         startedAt: true, completedAt: true, errorCode: true, createdAt: true,
-        targetBrowser: true, targetDevice: true,
+        targetBrowser: true, targetDevice: true, targetProvider: true, providerSessionUrl: true,
         results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true } },
       },
       take: 50,
@@ -137,8 +137,9 @@ export class RunsService {
         createdByUserId: workspace.userId ?? null,
         targetBrowser: dto.targetBrowser ?? null,
         targetDevice: dto.targetDevice ?? null,
+        targetProvider: dto.targetProvider ?? null,
       },
-      select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true, targetBrowser: true, targetDevice: true },
+      select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true, targetBrowser: true, targetDevice: true, targetProvider: true },
     });
   }
 
