@@ -70,6 +70,7 @@ model User {
   explorations   Exploration[]
   runs           TestRun[]
   performanceAudits PerformanceAudit[]
+  monitors          Monitor[]
   invitesCreated OrganizationInvite[] @relation("InviteAuthor")
   audits         AccessAudit[]
   createdAt      DateTime            @default(now())
@@ -98,6 +99,7 @@ model Project {
   scenarios              TestScenario[]
   runs                   TestRun[]
   performanceAudits      PerformanceAudit[]
+  monitors               Monitor[]
   assessments            QualityAssessment[]
   explorations           Exploration[]
   createdAt              DateTime            @default(now())
@@ -125,6 +127,7 @@ model Environment {
   explorations           Exploration[]
   runs                   TestRun[]
   performanceAudits      PerformanceAudit[]
+  monitors               Monitor[]
   createdAt              DateTime         @default(now())
 }
 
@@ -337,6 +340,47 @@ model TestResult {
   durationMs   Int?
   errorMessage String?
   evidenceKey  String?
+}
+
+model Monitor {
+  id              String        @id @default(uuid())
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environmentId   String?
+  environment     Environment?  @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  name            String
+  url             String
+  intervalMinutes Int           @default(15)
+  timeoutMs       Int           @default(10000)
+  active          Boolean       @default(true)
+  notifyEmails    String[]      @default([])
+  createdByUserId String?
+  createdBy       User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  // Último chequeo: se actualiza cada vez que el worker pasa.
+  lastCheckedAt  DateTime?
+  lastStatus     String?
+  lastLatencyMs  Int?
+  lastHttpStatus Int?
+
+  checks    MonitorCheck[]
+  createdAt DateTime       @default(now())
+
+  @@index([projectId])
+  @@index([active, lastCheckedAt])
+}
+
+model MonitorCheck {
+  id         String   @id @default(uuid())
+  monitorId  String
+  monitor    Monitor  @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  at         DateTime @default(now())
+  status     String
+  httpStatus Int?
+  latencyMs  Int?
+  errorCode  String?
+
+  @@index([monitorId, at])
 }
 
 model PerformanceAudit {

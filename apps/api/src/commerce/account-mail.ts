@@ -110,6 +110,18 @@ export class AccountMail {
     });
   }
 
+  async sendMonitorAlert(email: string, monitor: { name: string; url: string }, status: 'UP' | 'DOWN', detail: string) {
+    const subject = (status === 'DOWN' ? '🔴 Caída detectada: ' : '🟢 Monitor recuperado: ') + monitor.name;
+    const text =
+      subject + '.\n\nURL: ' + monitor.url +
+      '\nEstado: ' + status +
+      (detail ? '\nDetalle: ' + detail : '') +
+      '\n\nAutoQA sigue vigilando este monitor al intervalo configurado.';
+    return this.transport.deliver({
+      recipient: email, kind: 'VERIFY_EMAIL', url: monitor.url, subject, text,
+    });
+  }
+
   async sendInvite(email: string, token: string, organizationName: string, role: string) {
     const url = accountOrigin() + '/invite/' + token;
     const subject = 'Te invitaron a ' + organizationName + ' en AutoQA';

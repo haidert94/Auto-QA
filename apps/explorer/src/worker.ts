@@ -6,6 +6,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { runAudit, type AuditClaim } from './audit-runner';
 import { runExploration } from './explorer';
 import { runTestRun, type ExecutionClaim } from './execution-runner';
+import { tickMonitors } from './monitor-runner';
 import { createScreenshotStorage } from './screenshot-storage';
 
 export type ClaimedExploration = {
@@ -96,6 +97,14 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     });
     return true;
   }
+  // Monitores: no son una cola, son chequeos programados. Procesamos un
+  // batch si hay alguno vencido. notify stub por ahora — el ticker llama
+  // al correo si existe destinatario, pero si Mailpit no está no detiene
+  // la ejecución (los logs lo registran).
+  const checked = await tickMonitors(prisma, (level, detail) => {
+    console.log(`[monitor] ${level}: ${detail}`);
+  }, async () => { /* noop: el correo se envía desde el API en fases siguientes */ });
+  if (checked > 0) return true;
   return false;
 }
 
