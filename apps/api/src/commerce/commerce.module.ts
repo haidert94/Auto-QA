@@ -16,6 +16,6 @@ import { UsageService } from './usage.service';
     AccountMail, AccountService, AdminService, BillingService, SandboxPaymentProvider, WorkspaceGuard, UsageService,
     { provide: ACCOUNT_MAIL_TRANSPORT, useClass: SmtpAccountMailTransport },
   ],
-  exports: [AccountService, WorkspaceGuard],
+  exports: [AccountService, WorkspaceGuard, UsageService],
 })
 export class CommerceModule {}

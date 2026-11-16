@@ -8,6 +8,7 @@ import { chromium, type Browser, type BrowserContext, type Request as PwRequest 
 import type { PrismaClient, Exploration, Environment } from '@prisma/client';
 import { defaultResolver, type GuardScope } from '../../api/src/exploration/url-guard';
 import { createCache, decideRequest, type FilterDecision } from './request-filter';
+import { LocalScreenshotStorage, type ScreenshotStorage } from './screenshot-storage';
 
 export type RunLimits = {
   maxPages: number;
@@ -60,12 +61,14 @@ export async function runExploration(
   prisma: PrismaClient,
   exploration: Exploration,
   environment: Pick<Environment, 'allowedHosts' | 'allowedPaths' | 'excludedPaths'>,
+  storage: ScreenshotStorage = new LocalScreenshotStorage(),
 ): Promise<void> {
   const limits = readLimits(exploration.limits);
   const scope = scopeFromEnvironment(environment);
   const log = await withLogger(prisma, exploration.id);
   const cache = createCache();
   const deadline = Date.now() + limits.totalBudgetSeconds * 1000;
+  const startedAt = Date.now();
 
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
@@ -141,6 +144,14 @@ export async function runExploration(
           await log('WARN', 'dom-too-large', `${domSize} > ${limits.maxResponseBytes}`);
         }
 
+        let screenshotKey: string | null = null;
+        try {
+          const buffer = await page.screenshot({ fullPage: false, type: 'png' });
+          screenshotKey = await storage.put(Buffer.from(buffer));
+        } catch (error) {
+          await log('WARN', 'screenshot-failed', error instanceof Error ? error.message : undefined);
+        }
+
         position += 1;
         await prisma.explorationPage.create({
           data: {
@@ -149,6 +160,7 @@ export async function runExploration(
             httpStatus: httpStatus ?? undefined,
             title: title?.slice(0, 500) || null,
             domSize,
+            screenshotKey,
           },
         });
         await log('INFO', 'page-visited', (httpStatus ?? 'noresp') + ' ' + url);
@@ -161,12 +173,14 @@ export async function runExploration(
       where: { id: exploration.id },
       data: { status: 'COMPLETED', finishedAt: new Date() },
     });
+    await settleUsage(prisma, exploration, startedAt);
   } catch (error) {
     await log('ERROR', 'worker-crashed', error instanceof Error ? error.message : undefined);
     await prisma.exploration.update({
       where: { id: exploration.id },
       data: { status: 'FAILED', finishedAt: new Date(), errorCode: 'worker-crashed' },
     });
+    await settleUsage(prisma, exploration, startedAt);
   } finally {
     await context?.close().catch(() => {});
     await browser?.close().catch(() => {});
@@ -174,4 +188,20 @@ export async function runExploration(
 
   // avoid unused import tree-shake complaints
   void (null as PwRequest | null);
+}
+
+// Equivalente a UsageService.settleRun pero sin NestJS: el worker no está en
+// el DI container y solo necesita contabilizar los segundos reales usados.
+async function settleUsage(prisma: PrismaClient, exploration: Exploration, startedAt: number): Promise<void> {
+  const runKey = (exploration as { runKey?: string | null }).runKey;
+  if (!runKey) return;
+  const project = await prisma.project.findUnique({
+    where: { id: exploration.projectId }, select: { organizationId: true },
+  });
+  if (!project?.organizationId) return;
+  const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+  await prisma.meteredRun.updateMany({
+    where: { organizationId: project.organizationId, runKey, completedAt: null },
+    data: { browserSeconds: elapsedSeconds, completedAt: new Date() },
+  });
 }

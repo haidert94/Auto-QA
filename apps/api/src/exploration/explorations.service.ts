@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
+import { UsageService } from '../commerce/usage.service';
 import type { Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { CreateExplorationDto, ExplorationLimitsDto } from './dto/create-exploration.dto';
@@ -28,7 +30,7 @@ function mergeLimits(provided?: ExplorationLimitsDto) {
 
 @Injectable()
 export class ExplorationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly usage: UsageService) {}
 
   async list(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
@@ -74,15 +76,25 @@ export class ExplorationsService {
       throw new BadRequestException({ issue: guard.issue, detail: guard.detail, message: 'La URL no pasó las validaciones de exploración.' });
     }
 
+    const limits = mergeLimits(dto.limits);
+    const runKey = workspace.organizationId ? 'exp-' + randomUUID() : null;
+    if (workspace.organizationId && runKey) {
+      await this.usage.reserveRun(workspace.organizationId, projectId, runKey, {
+        kind: 'BROWSER', browser: 'CHROMIUM', browserSeconds: limits.totalBudgetSeconds,
+      });
+    }
+
     return this.prisma.exploration.create({
       data: {
         projectId,
         environmentId: environment.id,
         startUrl: guard.url.toString(),
-        limits: mergeLimits(dto.limits) as unknown as Prisma.InputJsonValue,
+        limits: limits as unknown as Prisma.InputJsonValue,
         status: 'QUEUED',
+        runKey,
+        createdByUserId: workspace.userId ?? null,
       },
-      select: { id: true, status: true, startUrl: true, environmentId: true, queuedAt: true, limits: true },
+      select: { id: true, status: true, startUrl: true, environmentId: true, queuedAt: true, limits: true, runKey: true },
     });
   }
 

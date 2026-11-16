@@ -10,7 +10,7 @@ import { planInclude, requireCapability } from './plan-capabilities';
 const PLAN_CAPABILITY = Symbol('PLAN_CAPABILITY');
 export const RequiresPlanCapability = (code: CapabilityCode) => SetMetadata(PLAN_CAPABILITY, code);
 
-export type Workspace = { organizationId: string | null };
+export type Workspace = { organizationId: string | null; userId?: string | null };
 type Request = { headers: { authorization?: string }; params: { projectId?: string }; workspace: Workspace };
 
 export const CurrentWorkspace = createParamDecorator((_: unknown, ctx: ExecutionContext) =>
@@ -42,15 +42,16 @@ export class WorkspaceGuard implements CanActivate {
       Buffer.byteLength(authorization) === 71 &&
       timingSafeEqual(Buffer.from(authorization), Buffer.from('Bearer ' + legacyToken));
     if (legacyWorkspace() && (legacyDocument || (!projectId && !authorization))) {
-      request.workspace = { organizationId: null };
+      request.workspace = { organizationId: null, userId: null };
     } else {
-      const { organization } = await this.accounts.identity(authorization);
+      const identity = await this.accounts.identity(authorization);
+      const { organization } = identity;
       if (!['ACTIVE', 'TRIALING'].includes(subscriptionStatus(organization.subscription))) {
         throw new ForbiddenException('Activa tu suscripción para acceder a los proyectos.');
       }
       const code = this.reflector.get<CapabilityCode | undefined>(PLAN_CAPABILITY, context.getHandler());
       if (code && organization.subscription) requireCapability(organization.subscription.plan, code);
-      request.workspace = { organizationId: organization.id };
+      request.workspace = { organizationId: organization.id, userId: identity.userId };
     }
     if (projectId) {
       const found = await this.db.project.findFirst({ where: { id: projectId, ...request.workspace }, select: { id: true } });

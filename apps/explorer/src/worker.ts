@@ -11,6 +11,8 @@ export type ClaimedExploration = {
   environmentId: string;
   startUrl: string;
   limits: Prisma.JsonValue;
+  runKey: string | null;
+  createdByUserId: string | null;
   queuedAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -30,7 +32,7 @@ export async function claimNext(prisma: PrismaClient): Promise<ClaimedExploratio
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
-    RETURNING id, "projectId", "environmentId", "startUrl", limits, "queuedAt", "startedAt", "finishedAt", "errorCode", status;
+    RETURNING id, "projectId", "environmentId", "startUrl", limits, "runKey", "createdByUserId", "queuedAt", "startedAt", "finishedAt", "errorCode", status;
   `;
   return rows[0] ?? null;
 }
@@ -55,6 +57,8 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     environmentId: claim.environmentId,
     startUrl: claim.startUrl,
     limits: claim.limits,
+    runKey: claim.runKey,
+    createdByUserId: claim.createdByUserId,
     queuedAt: claim.queuedAt,
     startedAt: claim.startedAt,
     finishedAt: claim.finishedAt,
