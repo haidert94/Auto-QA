@@ -1,6 +1,6 @@
 import { CanActivate, createParamDecorator, ExecutionContext, ForbiddenException, Injectable, NotFoundException, SetMetadata } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
-import type { CapabilityCode, Prisma } from '@prisma/client';
+import type { CapabilityCode, OrgRole, Prisma } from '@prisma/client';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { AccountService } from './account';
@@ -10,7 +10,17 @@ import { planInclude, requireCapability } from './plan-capabilities';
 const PLAN_CAPABILITY = Symbol('PLAN_CAPABILITY');
 export const RequiresPlanCapability = (code: CapabilityCode) => SetMetadata(PLAN_CAPABILITY, code);
 
-export type Workspace = { organizationId: string | null; userId?: string | null };
+const ROLE_REQUIREMENT = Symbol('ROLE_REQUIREMENT');
+export const RequiresRole = (...roles: OrgRole[]) => SetMetadata(ROLE_REQUIREMENT, roles);
+
+// Jerarquía de roles: cualquier rol >= al requerido pasa.
+const ROLE_RANK: Record<OrgRole, number> = { OWNER: 3, ADMIN: 2, EDITOR: 1, VIEWER: 0 };
+export function hasRole(actual: OrgRole, required: OrgRole[]): boolean {
+  const minRequired = Math.min(...required.map(r => ROLE_RANK[r]));
+  return ROLE_RANK[actual] >= minRequired;
+}
+
+export type Workspace = { organizationId: string | null; userId?: string | null; role?: OrgRole | null };
 type Request = { headers: { authorization?: string }; params: { projectId?: string }; workspace: Workspace };
 
 export const CurrentWorkspace = createParamDecorator((_: unknown, ctx: ExecutionContext) =>
@@ -42,7 +52,8 @@ export class WorkspaceGuard implements CanActivate {
       Buffer.byteLength(authorization) === 71 &&
       timingSafeEqual(Buffer.from(authorization), Buffer.from('Bearer ' + legacyToken));
     if (legacyWorkspace() && (legacyDocument || (!projectId && !authorization))) {
-      request.workspace = { organizationId: null, userId: null };
+      // El modo legacy ignora roles; cualquier operación pasa.
+      request.workspace = { organizationId: null, userId: null, role: null };
     } else {
       const identity = await this.accounts.identity(authorization);
       const { organization } = identity;
@@ -51,7 +62,11 @@ export class WorkspaceGuard implements CanActivate {
       }
       const code = this.reflector.get<CapabilityCode | undefined>(PLAN_CAPABILITY, context.getHandler());
       if (code && organization.subscription) requireCapability(organization.subscription.plan, code);
-      request.workspace = { organizationId: organization.id, userId: identity.userId };
+      const required = this.reflector.get<OrgRole[] | undefined>(ROLE_REQUIREMENT, context.getHandler());
+      if (required && required.length && !hasRole(identity.role, required)) {
+        throw new ForbiddenException('No tienes el rol necesario para esta acción.');
+      }
+      request.workspace = { organizationId: organization.id, userId: identity.userId, role: identity.role };
     }
     if (projectId) {
       const found = await this.db.project.findFirst({ where: { id: projectId, ...request.workspace }, select: { id: true } });

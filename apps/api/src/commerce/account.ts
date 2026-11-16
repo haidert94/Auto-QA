@@ -172,11 +172,16 @@ export class AccountService {
         include: { organization: { include: { subscription: { include: { plan: { include: planInclude } } } } } },
       } } } },
     });
-    const organization = session?.user.membership?.organization;
+    const membership = session?.user.membership;
+    const organization = membership?.organization;
     if (!session || session.expiresAt <= new Date() || !session.user.verifiedAt || !organization) {
       throw new UnauthorizedException('Inicia sesión.');
     }
-    return { digest: session.digest, userId: session.user.id, name: session.user.name, email: session.user.email, organization };
+    return {
+      digest: session.digest, userId: session.user.id,
+      name: session.user.name, email: session.user.email,
+      role: membership.role, organization,
+    };
   }
 
   async logout(authorization?: string) {

@@ -109,4 +109,14 @@ export class AccountMail {
       text: subject + '.\n\nAbre este enlace de un solo uso:\n\n' + url + '\n\nEl enlace vence en ' + time + '.',
     });
   }
+
+  async sendInvite(email: string, token: string, organizationName: string, role: string) {
+    const url = accountOrigin() + '/invite/' + token;
+    const subject = 'Te invitaron a ' + organizationName + ' en AutoQA';
+    return this.transport.deliver({
+      recipient: email, kind: 'VERIFY_EMAIL', url, subject,
+      text: subject + '.\n\nRol asignado: ' + role + '.\n\nAcepta la invitación en:\n\n' + url +
+        '\n\nEl enlace vence en 7 días. Si no la esperabas, ignora este mensaje.',
+    });
+  }
 }

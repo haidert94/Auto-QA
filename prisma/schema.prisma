@@ -69,6 +69,8 @@ model User {
   projects       Project[]
   explorations   Exploration[]
   runs           TestRun[]
+  invitesCreated OrganizationInvite[] @relation("InviteAuthor")
+  audits         AccessAudit[]
   createdAt      DateTime            @default(now())
 }
 
@@ -360,6 +362,8 @@ model Organization {
   id              String               @id @default(uuid())
   name            String
   members         OrganizationMember[]
+  invites         OrganizationInvite[]
+  audits          AccessAudit[]
   meteredRuns     MeteredRun[]
   meteredMonitors MeteredMonitor[]
   subscription    Subscription?
@@ -367,11 +371,53 @@ model Organization {
   createdAt       DateTime             @default(now())
 }
 
+enum OrgRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
 model OrganizationMember {
   userId         String       @id
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role           OrgRole      @default(VIEWER)
+  joinedAt       DateTime     @default(now())
+
+  @@index([organizationId])
+}
+
+model OrganizationInvite {
+  id              String       @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email           String
+  role            OrgRole
+  digest          String       @unique
+  expiresAt       DateTime
+  invitedByUserId String
+  invitedBy       User         @relation("InviteAuthor", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+}
+
+model AccessAudit {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action         String
+  targetKind     String?
+  targetId       String?
+  ip             String?
+  at             DateTime     @default(now())
+
+  @@index([organizationId, at])
 }
 
 model AccountSession {

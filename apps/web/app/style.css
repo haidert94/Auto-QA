@@ -195,6 +195,27 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
   a[href]:after { content: ""; }
 }
 
+.members-panel { max-width: 960px; }
+.members-section { margin-top: 20px; }
+.members-invite { display: grid; grid-template-columns: 2fr 1fr auto; gap: 12px; align-items: end; }
+.members-invite label { margin: 0; }
+.members-invite button { margin: 0; }
+.members-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.members-table th, .members-table td { padding: 10px; border-bottom: 1px solid #e5e7eb; text-align: left; overflow-wrap: anywhere; }
+.members-table th { background: #f5f7fb; color: #173a5e; font-size: 0.9em; }
+.members-table select { margin: 0; }
+.members-table button { margin: 0; padding: 6px 12px; }
+.badge-role-owner { background: #fff4d6; color: #7a5a00; }
+.badge-role-admin { background: #e8edf7; color: #4b5a77; }
+.badge-role-editor { background: #d6f5e3; color: #0d6540; }
+.badge-role-viewer { background: #e5e7eb; color: #4b5a77; }
+@media (max-width: 640px) {
+  .members-invite { grid-template-columns: 1fr; }
+}
+.invite-panel { max-width: 640px; }
+.invite-cta { margin-top: 18px; padding: 14px; background: #f5f7fb; border-radius: 8px; }
+.invite-cta button { margin: 0; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }
