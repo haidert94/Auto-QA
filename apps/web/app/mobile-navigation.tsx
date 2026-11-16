@@ -18,7 +18,7 @@ export default function MobileNavigation({ links, loginHref }: {
     <details className="mobile-nav" ref={menu}>
       <summary aria-label="Abrir menú"><Menu size={22} aria-hidden="true"/></summary>
       <nav aria-label="Navegación móvil">
-        {links.map(([label, href]) => <a key={href} href={href} onClick={close}>{label}</a>)}
+        {links.map(([label, href]) => <Link key={href} href={href} onClick={close}>{label}</Link>)}
         <Link href={loginHref} onClick={close}>Iniciar sesión</Link>
       </nav>
     </details>

@@ -6,7 +6,6 @@ import { accountFetch, activeStatuses, listPlans, requireAccount, setting } from
 import { CommercialFooter, CommercialHeader } from '../commercial';
 import { UsageSummary } from '../usage-summary';
 
-const anchors: Record<string, string> = { producto: 'producto', 'como-funciona': 'como-funciona', precios: 'precios', faq: 'faq' };
 const flows = {
   registro: ['Crear cuenta', 'register'], login: ['Iniciar sesión', 'login'], verificar: ['Verificar correo', 'verify'],
   recuperar: ['Recuperar acceso', 'forgot'], restablecer: ['Restablecer contraseña', 'reset'], reenviar: ['Reenviar verificación', 'resend'],
@@ -20,7 +19,7 @@ const legal = {
 export async function generateMetadata({ params }: { params: Promise<{ flow: string }> }): Promise<Metadata> {
   const { flow } = await params;
   const title = flows[flow as keyof typeof flows]?.[0] ?? legal[flow as keyof typeof legal]?.[0] ?? 'AutoQA';
-  const index = Object.hasOwn(legal, flow) || Object.hasOwn(anchors, flow) || flow === 'estado';
+  const index = Object.hasOwn(legal, flow) || flow === 'estado';
   return { title: title + ' · AutoQA', robots: { index, follow: true } };
 }
 
@@ -37,7 +36,6 @@ export default async function Page({ params, searchParams }: {
   params: Promise<{ flow: string }>; searchParams: Promise<{ plan?: string }>;
 }) {
   const { flow } = await params;
-  if (Object.hasOwn(anchors, flow)) redirect('/#' + anchors[flow]);
   if (Object.hasOwn(flows, flow)) {
     const [title, mode] = flows[flow as keyof typeof flows];
     const { plan } = await searchParams;

@@ -5,9 +5,9 @@ import { PlanCards, PlanComparison } from './plan-comparison';
 import MobileNavigation from './mobile-navigation';
 
 const navigation = [
-  ['Producto', '#producto'],
-  ['Cómo funciona', '#como-funciona'],
-  ['Precios', '#precios'],
+  ['Producto', '/#producto'],
+  ['Cómo funciona', '/#como-funciona'],
+  ['Precios', '/#precios'],
 ] as const;
 
 const steps = [
@@ -79,7 +79,7 @@ export function CommercialHeader({ accountOrigin = '' }: { accountOrigin?: strin
     <div className="wrap nav-wrap">
       <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
       <nav className="desktop-nav" aria-label="Navegación principal">
-        {navigation.map(([label, href]) => <Link key={href} href={'/' + href.replace(/^#/, '')}>{label}</Link>)}
+        {navigation.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
       </nav>
       <div className="desktop-actions">
         <Link href={accountOrigin + '/login'}>Iniciar sesión</Link>
@@ -91,11 +91,11 @@ export function CommercialHeader({ accountOrigin = '' }: { accountOrigin?: strin
 }
 
 export function CommercialFooter() {
-  return <footer className="commerce-footer" id="contacto">
+  return <footer className="commerce-footer">
     <div className="wrap footer-grid">
       <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
       <nav aria-label="Pie de página">
-        {navigation.map(([label, href]) => <Link key={href} href={'/' + href.replace(/^#/, '')}>{label}</Link>)}
+        {navigation.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
         <Link href="/contacto">Contacto</Link>
         <Link href="/terminos">Términos</Link>
         <Link href="/privacidad">Privacidad</Link>
