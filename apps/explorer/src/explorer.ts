@@ -4,9 +4,9 @@
 // visita solo startUrl y recoge la información básica de esa página);
 // el BFS queda para una iteración posterior.
 
-import { chromium, type Browser, type BrowserContext, type Request as PwRequest } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type Page, type Request as PwRequest } from 'playwright-core';
 import type { PrismaClient, Exploration, Environment } from '@prisma/client';
-import { defaultResolver, type GuardScope } from '../../api/src/exploration/url-guard';
+import { defaultResolver, validateExplorationUrlSync, type GuardScope } from '../../api/src/exploration/url-guard';
 import { createCache, decideRequest, type FilterDecision } from './request-filter';
 import { LocalScreenshotStorage, type ScreenshotStorage } from './screenshot-storage';
 
@@ -164,6 +164,16 @@ export async function runExploration(
           },
         });
         await log('INFO', 'page-visited', (httpStatus ?? 'noresp') + ' ' + url);
+
+        if (httpStatus && httpStatus >= 200 && httpStatus < 400) {
+          const discovered = await discoverLinks(page, url);
+          for (const next of discovered) {
+            if (queue.length + visited.size >= limits.maxPages) break;
+            if (visited.has(next) || queue.includes(next)) continue;
+            const guard = validateExplorationUrlSync(next, scope);
+            if (guard.ok) queue.push(next);
+          }
+        }
       } catch (error) {
         await log('ERROR', 'navigation-failed', error instanceof Error ? error.message : undefined);
       }
@@ -188,6 +198,35 @@ export async function runExploration(
 
   // avoid unused import tree-shake complaints
   void (null as PwRequest | null);
+}
+
+// Extrae URLs candidatas del DOM actual. Solo anclas HTTP(S), normalizadas,
+// sin fragmento y sin credenciales. El filtro final de allowlist, paths y DNS
+// se hace en la validación síncrona del url-guard; aquí solo se recolectan.
+async function discoverLinks(page: Page, baseUrl: string): Promise<string[]> {
+  try {
+    const raw = await page.$$eval('a[href]', anchors =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (anchors as any[]).map(a => a.getAttribute('href') ?? '').filter((s: string) => s.length > 0),
+    );
+    const base = new URL(baseUrl);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const href of raw) {
+      try {
+        const resolved = new URL(href, base);
+        if (!['http:', 'https:'].includes(resolved.protocol)) continue;
+        resolved.hash = '';
+        resolved.username = '';
+        resolved.password = '';
+        const canonical = resolved.toString();
+        if (seen.has(canonical)) continue;
+        seen.add(canonical);
+        out.push(canonical);
+      } catch { /* enlace mal formado */ }
+    }
+    return out;
+  } catch { return []; }
 }
 
 // Equivalente a UsageService.settleRun pero sin NestJS: el worker no está en

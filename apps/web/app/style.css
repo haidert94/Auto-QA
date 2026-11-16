@@ -92,6 +92,7 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .exploration-logs { list-style: none; padding: 0; }
 .exploration-logs > li { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 0.9em; overflow-wrap: anywhere; }
 .exploration-logs code { background: #f5f7fb; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+.page-screenshot { max-width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 8px; display: block; }
 
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }

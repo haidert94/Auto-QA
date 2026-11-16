@@ -66,8 +66,12 @@ export default async function ExplorationDetailPage({ params }: { params: Promis
             <p className="muted">
               {page.domSize !== null && `DOM ${(page.domSize / 1024).toFixed(1)} KB · `}
               Visitada {new Date(page.visitedAt).toLocaleString('es-CO')}
-              {page.screenshotKey && ' · captura disponible'}
             </p>
+            {page.screenshotKey && <p>
+              <img className="page-screenshot" loading="lazy"
+                src={`/api/projects/${id}/explorations/${expId}/pages/${page.id}/screenshot`}
+                alt={`Captura de ${page.title ?? page.url}`}/>
+            </p>}
           </li>)}
         </ol>}
     </section>

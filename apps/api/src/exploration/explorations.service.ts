@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { UsageService } from '../commerce/usage.service';
 import type { Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { CreateExplorationDto, ExplorationLimitsDto } from './dto/create-exploration.dto';
+import { SCREENSHOT_READER, type ScreenshotReader } from './screenshot-storage';
 import { validateExplorationUrlSync, type GuardScope } from './url-guard';
 
 const DEFAULT_LIMITS = {
@@ -30,7 +31,24 @@ function mergeLimits(provided?: ExplorationLimitsDto) {
 
 @Injectable()
 export class ExplorationsService {
-  constructor(private readonly prisma: PrismaService, private readonly usage: UsageService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly usage: UsageService,
+    @Inject(SCREENSHOT_READER) private readonly screenshots: ScreenshotReader,
+  ) {}
+
+  async screenshot(projectId: string, explorationId: string, pageId: string, workspace: Workspace): Promise<Buffer> {
+    await this.ensureProject(projectId, workspace);
+    const page = await this.prisma.explorationPage.findFirst({
+      where: { id: pageId, explorationId, exploration: { projectId } },
+      select: { screenshotKey: true },
+    });
+    if (!page) throw new NotFoundException('Página de exploración no encontrada.');
+    if (!page.screenshotKey) throw new NotFoundException('Esta página no tiene captura asociada.');
+    const bytes = await this.screenshots.read(page.screenshotKey);
+    if (!bytes) throw new NotFoundException('Captura no disponible en el almacenamiento.');
+    return bytes;
+  }
 
   async list(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
