@@ -1,4 +1,5 @@
-main:has(.commercial) { max-width: none; margin: 0; padding: 0; }
+main:has(.commercial) { max-width: none; margin: 0; padding: 0; min-height: 100vh; display: flex; flex-direction: column; }
+main:has(.commercial) > .commercial { flex: 1; }
 .commercial, .commercial-auth { color: var(--ink); background: var(--surface); }
 .commercial a, .commercial-auth a { text-decoration: none; }
 .commercial :focus-visible, .commercial-auth :focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
@@ -15,7 +16,11 @@ main:has(.commercial) { max-width: none; margin: 0; padding: 0; }
   font-family: var(--landing-geist), "Segoe UI", system-ui, sans-serif;
   background: var(--canvas);
   color-scheme: light;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
+.commercial-auth-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 .commercial h1, .commercial h2, .commercial h3, .commercial a { color: inherit; }
 .commercial h1, .commercial h2, .commercial h3, .commercial p { margin: 0; }
 .commercial [id] { scroll-margin-top: 84px; }
@@ -222,7 +227,7 @@ main:has(.commercial) { max-width: none; margin: 0; padding: 0; }
 .footer-grid { display: flex; align-items: center; justify-content: space-between; gap: 22px; }
 .footer-grid nav { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 13px; color: var(--muted); }
 
-.commercial-auth-wrap { padding-block: clamp(32px, 6vw, 72px); }
+.commercial-auth-wrap { padding-block: clamp(32px, 6vw, 72px); width: 100%; }
 .commercial-auth {
   background: var(--surface);
   border: 1px solid var(--line);
