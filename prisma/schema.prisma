@@ -494,6 +494,8 @@ model Organization {
   audits          AccessAudit[]
   meteredRuns     MeteredRun[]
   meteredMonitors MeteredMonitor[]
+  meteredAi       MeteredAi[]
+  budgets         OrgBudget[]
   subscription    Subscription?
   projects        Project[]
   createdAt       DateTime             @default(now())
@@ -629,6 +631,14 @@ enum CapabilityCode {
   CI_CD
   ADVANCED_REPORTS
   TRACEABILITY
+  LIGHTHOUSE_AUDITS
+  LOAD_TESTS
+  UPTIME_MONITORS
+  CROSS_BROWSER
+  DEVICE_CLOUD
+  AI_DOCUMENT_ANALYSIS
+  AI_SCENARIO_GENERATION
+  AI_FAILURE_EXPLANATION
 }
 
 enum CapabilityAvailability {
@@ -680,6 +690,36 @@ model MeteredRun {
   @@id([organizationId, runKey])
   @@index([organizationId, month])
   @@index([organizationId, completedAt])
+}
+
+model MeteredAi {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projectId      String?
+  operation      String
+  model          String
+  inputTokens    Int
+  outputTokens  Int
+  costCop        Int
+  runKey         String?
+  month          DateTime     @db.Date
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, month])
+  @@index([organizationId, operation, createdAt])
+}
+
+model OrgBudget {
+  id              String       @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  monthKey        String
+  aiTokensUsed   Int          @default(0)
+  aiCostCop       Int          @default(0)
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([organizationId, monthKey])
 }
 
 model MeteredMonitor {
