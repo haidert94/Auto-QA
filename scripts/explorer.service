@@ -1,0 +1,67 @@
+# Unidad systemd para el worker de exploración de AutoQA.
+# Copiar a /etc/systemd/system/autoqa-explorer.service y ajustar rutas si hace falta.
+# Requiere que scripts/explorer-setup.sh haya corrido antes.
+
+[Unit]
+Description=AutoQA explorer worker (Playwright + Chromium)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=autoqa
+Group=autoqa
+WorkingDirectory=/opt/autoqa
+EnvironmentFile=/etc/autoqa/explorer.env
+Environment=NODE_ENV=production
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/autoqa/playwright-browsers
+Environment=AUTOQA_EXPLORATIONS_DIR=/var/lib/autoqa/explorations
+ExecStart=/usr/bin/node apps/explorer/dist/explorer/src/index.js
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGINT
+# Dar tiempo a cerrar el navegador antes de SIGKILL.
+TimeoutStopSec=45s
+
+# --- Aislamiento ---
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=yes
+RestrictNamespaces=user pid mnt
+# Chromium necesita user namespaces para su sandbox: no se desactivan.
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+# TCP + Unix son suficientes: la DB y los sitios externos van por IP.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# El worker escribe capturas y Playwright descarga browsers (ya cacheado):
+ReadWritePaths=/var/lib/autoqa /opt/autoqa/apps/explorer/dist
+
+# --- Límites de recursos ---
+# 2G RAM es suficiente para 1 Chromium concurrente. Subir a 4G para más.
+MemoryMax=2G
+MemorySwapMax=0
+# 150% = 1.5 vCPU. Subir para más concurrencia real.
+CPUQuota=150%
+TasksMax=512
+LimitNOFILE=4096
+
+# --- Logs ---
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=autoqa-explorer
+
+[Install]
+WantedBy=multi-user.target
