@@ -1,9 +1,9 @@
 // Arranque de un solo contenedor: aplica migraciones, levanta la API en loopback
-// (127.0.0.1:3001, nunca expuesta) y Next.js en el puerto público ($PORT).
+// (127.0.0.1:4001, nunca expuesta) y Next.js en el puerto público ($PORT).
 import { spawn, spawnSync } from 'node:child_process';
 
 const publicPort = process.env.PORT || '8080';
-const apiPort = '3001';
+const apiPort = '4001';
 const sh = process.platform === 'win32';
 
 const migrate = spawnSync('npx', ['prisma', 'migrate', 'deploy'], { stdio: 'inherit', shell: sh });
