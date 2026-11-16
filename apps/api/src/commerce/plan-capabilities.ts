@@ -6,7 +6,7 @@ export type CatalogPlan = Prisma.PlanGetPayload<{ include: typeof planInclude }>
 
 // Runtime support is separate from the proposed entitlement stored in the catalog.
 // Enable a code here only when its engine, worker and integration tests are ready.
-const implemented = new Set<CapabilityCode>(['DOCUMENT_ANALYSIS', 'IPA']);
+const implemented = new Set<CapabilityCode>(['DOCUMENT_ANALYSIS', 'IPA', 'BROWSER_TESTS']);
 
 export function availability(capability: Pick<PlanCapability, 'code' | 'availability'>) {
   return capability.availability === 'NOT_INCLUDED' || implemented.has(capability.code)

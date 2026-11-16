@@ -1,10 +1,16 @@
-import { accountFetch } from '../../autoqa-server';
+import { accountFetch, requireAccount } from '../../autoqa-server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
 import { ProjectForm } from '../project-form';
+import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
 
 export const dynamic = 'force-dynamic';
+
+function hasBrowserTests(account: Awaited<ReturnType<typeof requireAccount>>) {
+  const capability = account.subscription.plan?.capabilities.find(c => c.code === 'BROWSER_TESTS');
+  return !!capability && capability.availability !== 'NOT_INCLUDED';
+}
 
 export default async function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,5 +30,19 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
     );
   }
   const project: Project = await response.json();
-  return <ProjectForm initial={project} />;
+
+  let showExploration = true;
+  try {
+    const account = await requireAccount();
+    showExploration = hasBrowserTests(account);
+  } catch { showExploration = false; }
+
+  const readOnlyEnvs: PanelEnvironment[] = project.environments
+    .filter(env => env.authorizationConfirmed)
+    .map(env => ({ id: env.id, type: env.type, baseUrl: env.baseUrl }));
+
+  return <>
+    <ProjectForm initial={project} />
+    {showExploration && <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />}
+  </>;
 }
