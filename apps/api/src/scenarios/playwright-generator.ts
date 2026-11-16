@@ -128,21 +128,61 @@ export type HarnessEnvironment = {
   excludedPaths: string[];
 };
 
+export type HarnessTarget = {
+  // CHROMIUM | FIREFOX | WEBKIT. Null = CHROMIUM por compatibilidad.
+  browser?: string | null;
+  // Nombre de un preset de Playwright: 'iPhone 13', 'Pixel 7', etc. Null = desktop.
+  device?: string | null;
+};
+
+// Lista blanca de dispositivos soportados; coincide con los presets estables
+// de Playwright. La UI la usa para poblar el dropdown; el worker la valida
+// antes de inyectarla en el spec.
+export const SUPPORTED_DEVICES = [
+  'Desktop Chrome', 'Desktop Firefox', 'Desktop Safari', 'Desktop Edge',
+  'iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone SE',
+  'Pixel 5', 'Pixel 7', 'Galaxy S9+',
+  'iPad (gen 7)', 'iPad Pro 11',
+] as const;
+
+export const SUPPORTED_BROWSERS = ['CHROMIUM', 'FIREFOX', 'WEBKIT'] as const;
+
+export function isSupportedDevice(name: string | null | undefined): boolean {
+  if (!name) return true;
+  return (SUPPORTED_DEVICES as readonly string[]).includes(name);
+}
+
+export function isSupportedBrowser(name: string | null | undefined): boolean {
+  if (!name) return true;
+  return (SUPPORTED_BROWSERS as readonly string[]).includes(name);
+}
+
 // Spec "con arnes" para el worker: incluye configuracion Playwright embebida,
 // baseURL del entorno y un test.beforeEach que aplica el mismo filtro de
 // url-guard que usa la exploracion (lista de hosts permitida, paths vetados,
 // prohibicion de IPs literales, redireccion forzada por scope).
-export function generateHarnessedSpec(scenario: GeneratorScenario, env: HarnessEnvironment): string {
+export function generateHarnessedSpec(
+  scenario: GeneratorScenario, env: HarnessEnvironment, target: HarnessTarget = {},
+): string {
   const title = escapeJsString(scenario.title);
   const baseURL = env.baseUrl ? escapeJsString(env.baseUrl) : '';
   const hosts = env.allowedHosts.map(h => `'${escapeJsString(h)}'`).join(', ');
   const allowed = env.allowedPaths.map(p => `'${escapeJsString(p)}'`).join(', ');
   const excluded = env.excludedPaths.map(p => `'${escapeJsString(p)}'`).join(', ');
+  const device = isSupportedDevice(target.device) ? (target.device ?? null) : null;
 
   const lines: string[] = [];
-  lines.push("import { expect, test } from '@playwright/test';");
+  if (device) {
+    lines.push("import { devices, expect, test } from '@playwright/test';");
+  } else {
+    lines.push("import { expect, test } from '@playwright/test';");
+  }
   lines.push('');
-  lines.push(`test.use({ baseURL: '${baseURL}' });`);
+  if (device) {
+    lines.push(`test.use({ ...devices['${escapeJsString(device)}'], baseURL: '${baseURL}' });`);
+  } else {
+    lines.push(`test.use({ baseURL: '${baseURL}' });`);
+  }
   lines.push('');
   lines.push('// Filtro de requests: idéntico contrato que la exploración.');
   lines.push('// Bloquea hosts fuera del allowlist, paths excluidos y esquemas no HTTP(S).');
@@ -197,8 +237,11 @@ export function generateHarnessedSpec(scenario: GeneratorScenario, env: HarnessE
 
 // Config mínimo para que el worker arranque Playwright con trace y
 // resultados JSON legibles. Se escribe al lado del spec en el directorio
-// temporal de la ejecución.
-export function generatePlaywrightConfig(options: { outputDir: string }): string {
+// temporal de la ejecución. `browser` elige el motor del "project"; default
+// chromium para no romper los runs previos.
+export function generatePlaywrightConfig(options: { outputDir: string; browser?: string | null }): string {
+  const projectName = (options.browser ?? 'CHROMIUM').toLowerCase();
+  const engine = projectName === 'firefox' ? 'firefox' : projectName === 'webkit' ? 'webkit' : 'chromium';
   return [
     "import { defineConfig } from '@playwright/test';",
     '',
@@ -208,6 +251,9 @@ export function generatePlaywrightConfig(options: { outputDir: string }): string
     '  retries: 0,',
     '  workers: 1,',
     '  reporter: [[\'json\', { outputFile: \'report.json\' }]],',
+    '  projects: [',
+    `    { name: '${engine}', use: { browserName: '${engine}' } },`,
+    '  ],',
     '  use: {',
     '    headless: true,',
     "    trace: 'on',",

@@ -20,8 +20,29 @@ type Run = {
   completedAt: string | null;
   errorCode: string | null;
   createdAt: string;
+  targetBrowser: string | null;
+  targetDevice: string | null;
   results: RunResult[];
 };
+
+const BROWSER_OPTIONS = [
+  { value: 'CHROMIUM', label: 'Chromium' },
+  { value: 'FIREFOX', label: 'Firefox' },
+  { value: 'WEBKIT', label: 'WebKit (Safari)' },
+] as const;
+
+const DEVICE_OPTIONS = [
+  { value: '', label: 'Desktop' },
+  { value: 'iPhone 13', label: 'iPhone 13' },
+  { value: 'iPhone 14', label: 'iPhone 14' },
+  { value: 'iPhone 15', label: 'iPhone 15' },
+  { value: 'iPhone SE', label: 'iPhone SE' },
+  { value: 'Pixel 5', label: 'Pixel 5' },
+  { value: 'Pixel 7', label: 'Pixel 7' },
+  { value: 'Galaxy S9+', label: 'Galaxy S9+' },
+  { value: 'iPad (gen 7)', label: 'iPad' },
+  { value: 'iPad Pro 11', label: 'iPad Pro' },
+] as const;
 
 type DiffPayload = {
   previous: { id: string; status: string; createdAt: string; completedAt: string | null } | null;
@@ -53,6 +74,8 @@ function formatDuration(ms: number | null) {
 export function RunsPanel({ projectId, scenarioId, environments }: { projectId: string; scenarioId: string; environments: EnvironmentOption[] }) {
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
+  const [targetBrowser, setTargetBrowser] = useState<'CHROMIUM' | 'FIREFOX' | 'WEBKIT'>('CHROMIUM');
+  const [targetDevice, setTargetDevice] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -84,7 +107,11 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
     try {
       const response = await fetch(`/api/projects/${projectId}/scenarios/${scenarioId}/runs`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ environmentId: envId }),
+        body: JSON.stringify({
+          environmentId: envId,
+          targetBrowser,
+          targetDevice: targetDevice || undefined,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) { setError(payload.message ?? 'No se pudo encolar la ejecución.'); return; }
@@ -110,13 +137,18 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
       de requests y guarda el trace.
     </p>
 
-    <form onSubmit={queue} className="exploration-form">
+    <form onSubmit={queue} className="run-form">
       <label>Entorno<select value={envId} onChange={e => setEnvId(e.target.value)} required>
         {environments.map(env => <option key={env.id} value={env.id}>
           {env.type ?? 'Entorno'} · {env.baseUrl ?? env.id.slice(0, 8)}
         </option>)}
       </select></label>
-      <div />
+      <label>Navegador<select value={targetBrowser} onChange={e => setTargetBrowser(e.target.value as typeof targetBrowser)}>
+        {BROWSER_OPTIONS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+      </select></label>
+      <label>Dispositivo<select value={targetDevice} onChange={e => setTargetDevice(e.target.value)}>
+        {DEVICE_OPTIONS.map(d => <option key={d.value || 'desktop'} value={d.value}>{d.label}</option>)}
+      </select></label>
       <div className="actions">
         <button type="submit" disabled={busy}>{busy ? 'Encolando…' : 'Ejecutar'}</button>
         <button type="button" className="secondary" onClick={load}>Actualizar</button>
@@ -135,6 +167,7 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
             <div className="run-head">
               <span className={`badge badge-${run.status.toLowerCase()}`}>{runStatusLabel[run.status]}</span>
               <span className="muted">{formatDate(run.createdAt)}</span>
+              <span className="muted">· {run.targetBrowser ?? 'CHROMIUM'}{run.targetDevice ? ' · ' + run.targetDevice : ''}</span>
               {run.errorCode && <span className="muted">· {run.errorCode}</span>}
               {(run.status === 'COMPLETED' || run.status === 'FAILED') && <button type="button" className="secondary"
                 onClick={() => loadDiff(run.id)}>Comparar con anterior</button>}

@@ -95,6 +95,7 @@ export class RunsService {
       select: {
         id: true, status: true, environmentId: true,
         startedAt: true, completedAt: true, errorCode: true, createdAt: true,
+        targetBrowser: true, targetDevice: true,
         results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true } },
       },
       take: 50,
@@ -134,8 +135,10 @@ export class RunsService {
         status: 'QUEUED',
         runKey,
         createdByUserId: workspace.userId ?? null,
+        targetBrowser: dto.targetBrowser ?? null,
+        targetDevice: dto.targetDevice ?? null,
       },
-      select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true },
+      select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true, targetBrowser: true, targetDevice: true },
     });
   }
 

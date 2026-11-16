@@ -333,6 +333,14 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .wizard-actions .button-like { padding: 10px 18px; border-radius: 7px; text-decoration: none; font-weight: 600; }
 .wizard-actions .button-like.secondary { background: #fff; color: #173a5e; border: 1px solid #a7b4c3; }
 
+.run-form {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px; align-items: end; margin: 14px 0;
+}
+.run-form label { margin: 0; }
+.run-form .actions { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }
+.run-form .actions button { margin: 0; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }

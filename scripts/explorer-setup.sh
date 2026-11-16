@@ -88,23 +88,35 @@ fi
 log "Ajustando permisos del repositorio…"
 chown -R "${AUTOQA_USER}:${AUTOQA_GROUP}" "${REPO_DIR}"
 
-# --- 6. Dependencias del sistema para Chromium ------------------------------
-log "Instalando dependencias nativas de Chromium…"
-# Lista mínima: Playwright las valida y pedirá más si falta algo.
+# --- 6. Dependencias del sistema para los tres motores ----------------------
+log "Instalando dependencias nativas (Chromium + Firefox + WebKit)…"
+# Playwright validará y pedirá más si falta algo. Cubre:
+#  - Chromium: libnss3, libatk, libxkbcommon, libgbm, libasound…
+#  - Firefox: libdbus-glib (además de las de Chromium)
+#  - WebKit: libwoff1, libharfbuzz-icu, libenchant-2, libhyphen,
+#    libgstreamer-plugins-bad, libwebpdemux2, libavif
 apt-get install -y --no-install-recommends \
   libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 \
   libatspi2.0-0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-  libgbm1 libasound2t64 2>/dev/null || apt-get install -y --no-install-recommends libasound2
+  libgbm1 libasound2t64 \
+  libdbus-glib-1-2 \
+  libwoff1 libharfbuzz-icu0 libenchant-2-2 libhyphen0 libmanette-0.2-0 \
+  libgstreamer-plugins-bad1.0-0 libwebpdemux2 libavif16 2>/dev/null \
+  || apt-get install -y --no-install-recommends libasound2 \
+       libdbus-glib-1-2 libwoff1 libharfbuzz-icu0 libenchant-2-2 libhyphen0
 
 # --- 7. Dependencias de node + Chromium -------------------------------------
 log "Ejecutando npm ci como ${AUTOQA_USER}…"
 sudo -u "${AUTOQA_USER}" env HOME="${REPO_DIR}" bash -lc \
   "cd '${REPO_DIR}' && npm ci --omit=dev=false"
 
-log "Instalando el binario de Chromium (playwright-core, sin --with-deps)…"
+log "Instalando los tres motores de Playwright (Chromium + Firefox + WebKit)…"
+# Cada motor pesa ~350 MB. Los instalamos todos aunque el default sea
+# Chromium: el worker puede recibir TestRun.targetBrowser = FIREFOX|WEBKIT
+# sin necesitar reinstalar.
 sudo -u "${AUTOQA_USER}" env HOME="${REPO_DIR}" \
      PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_DIR}" \
-     bash -lc "cd '${REPO_DIR}' && npx --yes playwright@1.65.1 install chromium"
+     bash -lc "cd '${REPO_DIR}' && npx --yes playwright@1.65.1 install chromium firefox webkit"
 
 # --- 8. Build ---------------------------------------------------------------
 log "Compilando API + web + explorer…"

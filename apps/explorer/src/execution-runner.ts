@@ -22,6 +22,8 @@ export type ExecutionClaim = {
   scenarioId: string | null;
   environmentId: string | null;
   runKey: string | null;
+  targetBrowser: string | null;
+  targetDevice: string | null;
 };
 
 type Logger = (level: 'INFO' | 'WARN' | 'ERROR', detail: string) => void;
@@ -83,7 +85,7 @@ export async function runTestRun(
   };
   const spec = generateHarnessedSpec({
     id: scenario.id, title: scenario.title, expectedResult: scenario.expectedResult, steps,
-  }, harness);
+  }, harness, { browser: claim.targetBrowser, device: claim.targetDevice });
 
   // Directorio de trabajo aislado; limpiamos al final (éxito o error).
   const workdir = await mkdtemp(join(tmpdir(), 'autoqa-run-'));
@@ -92,7 +94,7 @@ export async function runTestRun(
   const configPath = join(workdir, 'playwright.config.ts');
   await mkdir(outputDir, { recursive: true });
   await writeFile(specPath, spec, { encoding: 'utf8' });
-  await writeFile(configPath, generatePlaywrightConfig({ outputDir }), { encoding: 'utf8' });
+  await writeFile(configPath, generatePlaywrightConfig({ outputDir, browser: claim.targetBrowser }), { encoding: 'utf8' });
 
   try {
     const outcome = await spawnPlaywright(workdir, configPath, log);

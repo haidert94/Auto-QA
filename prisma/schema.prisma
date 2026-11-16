@@ -315,6 +315,8 @@ model TestRun {
   createdByUserId String?
   createdBy       User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   specText        String?
+  targetBrowser   String?
+  targetDevice    String?
   results         TestResult[]
   createdAt       DateTime      @default(now())
 

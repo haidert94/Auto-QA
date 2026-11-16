@@ -130,6 +130,59 @@ test('generatePlaywrightConfig escapa el outputDir y emite JSON reporter', () =>
   assert.ok(config.includes("outputDir: 'C:\\\\temp\\\\run'"));
   assert.ok(config.includes("['json', { outputFile: 'report.json' }]"));
   assert.ok(config.includes("trace: 'on'"));
+  assert.ok(config.includes("name: 'chromium'"));
+  assert.ok(config.includes("browserName: 'chromium'"));
+});
+
+test('generatePlaywrightConfig cambia el motor según browser', () => {
+  const firefox = generatePlaywrightConfig({ outputDir: '/tmp/x', browser: 'FIREFOX' });
+  assert.ok(firefox.includes("name: 'firefox'"));
+  assert.ok(firefox.includes("browserName: 'firefox'"));
+  const webkit = generatePlaywrightConfig({ outputDir: '/tmp/x', browser: 'WEBKIT' });
+  assert.ok(webkit.includes("name: 'webkit'"));
+  assert.ok(webkit.includes("browserName: 'webkit'"));
+});
+
+test('generateHarnessedSpec sin device no importa devices', () => {
+  const { generateHarnessedSpec } = require('../dist/scenarios/playwright-generator');
+  const spec = generateHarnessedSpec({
+    id: 'x', title: 't', steps: [{ ordinal: 1, action: 'navigate: /' }],
+  }, { baseUrl: 'https://example.com', allowedHosts: ['example.com'], allowedPaths: [], excludedPaths: [] });
+  assert.ok(spec.includes("import { expect, test } from '@playwright/test';"));
+  assert.ok(!spec.includes('devices'));
+  assert.ok(spec.includes("test.use({ baseURL: 'https://example.com' });"));
+});
+
+test('generateHarnessedSpec con device importa devices y hace spread', () => {
+  const { generateHarnessedSpec } = require('../dist/scenarios/playwright-generator');
+  const spec = generateHarnessedSpec({
+    id: 'x', title: 't', steps: [{ ordinal: 1, action: 'navigate: /' }],
+  }, { baseUrl: 'https://example.com', allowedHosts: ['example.com'], allowedPaths: [], excludedPaths: [] },
+  { device: 'iPhone 13' });
+  assert.ok(spec.includes("import { devices, expect, test } from '@playwright/test';"));
+  assert.ok(spec.includes("test.use({ ...devices['iPhone 13'], baseURL: 'https://example.com' });"));
+});
+
+test('generateHarnessedSpec ignora un device no soportado', () => {
+  const { generateHarnessedSpec } = require('../dist/scenarios/playwright-generator');
+  const spec = generateHarnessedSpec({
+    id: 'x', title: 't', steps: [{ ordinal: 1, action: 'navigate: /' }],
+  }, { baseUrl: 'https://example.com', allowedHosts: ['example.com'], allowedPaths: [], excludedPaths: [] },
+  { device: "' + process.exit(1) + '" });
+  assert.ok(!spec.includes('devices'));
+  assert.ok(!spec.includes('process.exit'));
+});
+
+test('isSupportedBrowser/isSupportedDevice validan nombres', () => {
+  const { isSupportedBrowser, isSupportedDevice } = require('../dist/scenarios/playwright-generator');
+  assert.equal(isSupportedBrowser('CHROMIUM'), true);
+  assert.equal(isSupportedBrowser('FIREFOX'), true);
+  assert.equal(isSupportedBrowser('WEBKIT'), true);
+  assert.equal(isSupportedBrowser('OPERA'), false);
+  assert.equal(isSupportedBrowser(null), true);
+  assert.equal(isSupportedDevice('iPhone 13'), true);
+  assert.equal(isSupportedDevice('malicious'), false);
+  assert.equal(isSupportedDevice(null), true);
 });
 
 test('suggestedFilename produce slug seguro', () => {
