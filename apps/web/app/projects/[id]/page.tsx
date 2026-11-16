@@ -44,6 +44,13 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
 
   return <>
     <ProjectForm initial={project} />
+    <section className="panel">
+      <h2>Calidad</h2>
+      <p className="muted">
+        Consulta el IPA (Índice de Preparación) con evidencia trazable a documentos, versiones y requisitos.
+      </p>
+      <p><Link href={`/projects/${project.id}/ipa`}>Ver IPA del proyecto →</Link></p>
+    </section>
     <ScenariosPanel projectId={project.id} />
     {showExploration && <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />}
   </>;

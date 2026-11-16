@@ -9,7 +9,27 @@ import { analyzeFindings, classifyDocument, type DocumentAnalysisProvider, type 
 import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-files';
 import { analysisSelect, describeAnalysis, documentSelect, metadata, persistFindings } from './document-records';
 import { DOCUMENT_STORAGE, type DocumentStorage } from './document-storage';
-import { readiness } from './readiness';
+import { readiness, type ReadinessFinding } from './readiness';
+
+type AnalysisFindingRow = Prisma.RequirementTraceabilityGetPayload<{
+  select: { id: true; kind: true; text: true; pendingConfirmation: true; requirementId: true; locator: true;
+    version: { select: { id: true; number: true; document: { select: { id: true; filename: true } } } } };
+}>;
+
+function toReadinessFinding(row: AnalysisFindingRow): ReadinessFinding {
+  return {
+    id: row.id,
+    kind: row.kind,
+    pendingConfirmation: row.pendingConfirmation,
+    text: row.text,
+    locator: row.locator,
+    documentId: row.version.document.id,
+    documentFilename: row.version.document.filename,
+    versionId: row.version.id,
+    versionNumber: row.version.number,
+    requirementId: row.requirementId,
+  };
+}
 
 export const DOCUMENT_ANALYZER = Symbol('DOCUMENT_ANALYZER');
 
@@ -209,7 +229,8 @@ export class DocumentsService {
       const record = await tx.documentAnalysis.findUnique({
         where: { projectId_signature: { projectId, signature } }, select: analysisSelect,
       });
-      return { analysis: describeAnalysis(record), ipa: readiness(project, documents, record?.findings ?? []) };
+      const findings = (record?.findings ?? []).map(toReadinessFinding);
+      return { analysis: describeAnalysis(record), ipa: readiness(project, documents, findings) };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
@@ -280,7 +301,11 @@ export class DocumentsService {
           });
         }
         await persistFindings(tx, projectId, record.id, findings);
-        const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), findings);
+        const persisted = await tx.documentAnalysis.findUnique({
+          where: { id: record.id }, select: analysisSelect,
+        });
+        const enriched = (persisted?.findings ?? []).map(toReadinessFinding);
+        const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), enriched);
         await tx.qualityAssessment.create({
           data: { projectId, analysisId: record.id, type: 'READINESS', score: ipa.score, details: ipa },
         });

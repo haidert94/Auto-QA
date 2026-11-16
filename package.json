@@ -21,6 +21,7 @@
     "test:screenshot-storage": "npm --workspace apps/api run build && node --test apps/api/test/screenshot-storage.test.cjs",
     "test:playwright-generator": "npm --workspace apps/api run build && node --test apps/api/test/playwright-generator.test.cjs",
     "test:runs": "npm --workspace apps/api run build && node --test apps/api/test/playwright-generator.test.cjs apps/api/test/screenshot-storage.test.cjs",
+    "test:readiness": "npm --workspace apps/api run build && node --test apps/api/test/readiness.test.cjs",
     "test:request-filter": "npm --workspace apps/explorer run build && node --test apps/explorer/test/request-filter.test.cjs"
   },
   "workspaces": [

@@ -13,5 +13,6 @@ import { DocumentsService, DOCUMENT_ANALYZER } from './documents.service';
     { provide: DOCUMENT_STORAGE, useClass: LocalDocumentStorage },
     { provide: DOCUMENT_ANALYZER, useClass: RuleBasedDocumentAnalyzer },
   ],
+  exports: [DocumentsService],
 })
 export class DocumentsModule {}
