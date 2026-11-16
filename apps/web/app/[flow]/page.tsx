@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AccountForm, BillingForm, Logout } from '../account-forms';
-import { accountFetch, activeStatuses, listPlans, requireAccount, setting } from '../autoqa-server';
-import { CommercialFooter, CommercialHeader } from '../commercial';
+import { accountFetch, activeStatuses, listPlans, requireAccount } from '../autoqa-server';
+import { CommercialShell } from '../commercial';
 import { UsageSummary } from '../usage-summary';
 
 const flows = {
@@ -24,12 +24,9 @@ export async function generateMetadata({ params }: { params: Promise<{ flow: str
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
-  return <div className="commercial">
-    <CommercialHeader accountOrigin={accountOrigin}/>
+  return <CommercialShell>
     <div className="wrap commercial-auth-wrap"><section className="commercial-auth">{children}</section></div>
-    <CommercialFooter/>
-  </div>;
+  </CommercialShell>;
 }
 
 export default async function Page({ params, searchParams }: {

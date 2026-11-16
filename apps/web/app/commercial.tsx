@@ -1,31 +1,22 @@
 import Link from 'next/link';
 import { ArrowDown, ArrowRight, ChevronDown, FileText, Link2, ScanLine } from 'lucide-react';
-import { listPlans, setting } from './autoqa-server';
+import { listPlans, setting, type Plan } from './autoqa-server';
 import { PlanCards, PlanComparison } from './plan-comparison';
 import MobileNavigation from './mobile-navigation';
 
 const navigation = [
-  ['Producto', '/#producto'],
-  ['Cómo funciona', '/#como-funciona'],
-  ['Precios', '/#precios'],
+  ['Producto', '/producto'],
+  ['Cómo funciona', '/como-funciona'],
+  ['Precios', '/precios'],
 ] as const;
 
 const steps = [
-  {
-    label: 'Alcance',
-    title: 'Registra tu aplicación',
-    description: 'Declara qué entornos, dominios y rutas se pueden probar, y cuáles quedan fuera del alcance.',
-  },
-  {
-    label: 'Documentación',
-    title: 'Adjunta requisitos y configura roles',
-    description: 'Sube historias de usuario, criterios o especificaciones y define los permisos de cada rol.',
-  },
-  {
-    label: 'Preparación',
-    title: 'Revisa los hallazgos y el IPA',
-    description: 'Consulta la fuente de cada hallazgo y prioriza lo que falta para que tus requisitos se puedan verificar.',
-  },
+  { label: 'Alcance', title: 'Registra tu aplicación',
+    description: 'Declara qué entornos, dominios y rutas se pueden probar, y cuáles quedan fuera del alcance.' },
+  { label: 'Documentación', title: 'Adjunta requisitos y configura roles',
+    description: 'Sube historias de usuario, criterios o especificaciones y define los permisos de cada rol.' },
+  { label: 'Preparación', title: 'Revisa los hallazgos y el IPA',
+    description: 'Consulta la fuente de cada hallazgo y prioriza lo que falta para que tus requisitos se puedan verificar.' },
 ];
 
 const faqs = [
@@ -44,8 +35,7 @@ function InspectorDemo() {
     <figure className="inspector" aria-labelledby="inspector-caption">
       <figcaption id="inspector-caption" className="inspector-bar">
         <span className="inspector-dots" aria-hidden="true"><i/><i/><i/></span>
-        <span>AutoQA Inspector</span>
-        <span>Ejemplo de análisis</span>
+        <span>AutoQA Inspector</span><span>Ejemplo de análisis</span>
       </figcaption>
       <div className="inspector-body">
         <section className="inspector-source" aria-labelledby="inspector-source">
@@ -105,89 +95,104 @@ export function CommercialFooter() {
   </footer>;
 }
 
+export function CommercialShell({ children }: { children: React.ReactNode }) {
+  const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
+  return <div className="commercial">
+    <CommercialHeader accountOrigin={accountOrigin}/>
+    {children}
+    <CommercialFooter/>
+  </div>;
+}
+
+export function HeroSection() {
+  return <section className="hero" aria-labelledby="hero-title">
+    <div className="wrap hero-grid">
+      <div className="hero-copy">
+        <p className="section-label">Análisis documental de requisitos</p>
+        <h1 id="hero-title">Detecta qué le falta a un requisito para poder probarlo</h1>
+        <p className="hero-lead">Registra tu aplicación, define el alcance autorizado y revisa qué requisitos son verificables antes de automatizar.</p>
+        <div className="hero-actions">
+          <Link href="/precios" className="button primary">Ver planes <ArrowRight size={16} aria-hidden="true"/></Link>
+          <Link href="/como-funciona" className="button outline">Cómo funciona <ArrowDown size={15} aria-hidden="true"/></Link>
+        </div>
+        <Link className="hero-ipa" href="/como-funciona">
+          <span><span className="section-label">Evaluación del proyecto</span>Índice de Preparación para Automatización</span>
+          <span className="hero-ipa-code">IPA <ArrowRight size={14} aria-hidden="true"/></span>
+        </Link>
+      </div>
+      <InspectorDemo/>
+    </div>
+  </section>;
+}
+
+export function WorkflowSection() {
+  return <section className="workflow" aria-label="Cómo funciona AutoQA">
+    <ol className="wrap steps">
+      {steps.map(({ label, title, description }) => (
+        <li key={label}>
+          <p className="section-label">{label}</p>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </li>
+      ))}
+    </ol>
+  </section>;
+}
+
+export function PricingSection({ plans, accountOrigin }: { plans: Plan[]; accountOrigin: string }) {
+  return <section className="wrap landing-pricing" aria-labelledby="pricing-title">
+    <div className="section-intro pricing-intro">
+      <h2 id="pricing-title">Planes según las pruebas que necesitas</h2>
+      <p>Precios en pesos colombianos. Tarifas y límites preliminares sujetos a validación.</p>
+    </div>
+    {plans.length > 0
+      ? <PlanCards plans={plans} accountOrigin={accountOrigin}/>
+      : <p role="status">El catálogo de planes no está disponible en este momento.</p>}
+    {plans.length > 0 && (
+      <section className="landing-comparison" aria-labelledby="comparison-title">
+        <div className="section-intro">
+          <h2 id="comparison-title">Comparativa técnica</h2>
+          <p>Consulta las capacidades operativas, las previstas y los límites de cada plan.</p>
+        </div>
+        <PlanComparison plans={plans}/>
+      </section>
+    )}
+  </section>;
+}
+
+export function FaqSection({ accountOrigin }: { accountOrigin: string }) {
+  return <section className="landing-faq" aria-labelledby="faq-title">
+    <div className="wrap faq-grid">
+      <div>
+        <div className="section-intro"><h2 id="faq-title">Preguntas sobre análisis y ejecución</h2></div>
+        <div className="questions">
+          {faqs.map(([question, answer]) => (
+            <details key={question}>
+              <summary>{question}<ChevronDown size={17} aria-hidden="true"/></summary>
+              <p>{answer}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+      <section className="landing-cta" aria-labelledby="cta-title">
+        <h2 id="cta-title">Revisa tus requisitos con AutoQA</h2>
+        <p>Crea una cuenta para registrar tu primera aplicación y consultar qué falta para automatizar sus pruebas.</p>
+        <div>
+          <Link href={accountOrigin + '/registro'} className="button primary">Crear mi cuenta <ArrowRight size={16} aria-hidden="true"/></Link>
+          <Link href={accountOrigin + '/login'} className="button outline">Iniciar sesión</Link>
+        </div>
+      </section>
+    </div>
+  </section>;
+}
+
 export default async function Commercial() {
   const plans = await listPlans();
   const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
-
-  return (
-    <div className="commercial">
-      <CommercialHeader accountOrigin={accountOrigin}/>
-
-      <section id="producto" className="hero" aria-labelledby="hero-title">
-        <div className="wrap hero-grid">
-          <div className="hero-copy">
-            <p className="section-label">Análisis documental de requisitos</p>
-            <h1 id="hero-title">Detecta qué le falta a un requisito para poder probarlo</h1>
-            <p className="hero-lead">Registra tu aplicación, define el alcance autorizado y revisa qué requisitos son verificables antes de automatizar.</p>
-            <div className="hero-actions">
-              <a href="#precios" className="button primary">Ver planes <ArrowRight size={16} aria-hidden="true"/></a>
-              <a href="#como-funciona" className="button outline">Cómo funciona <ArrowDown size={15} aria-hidden="true"/></a>
-            </div>
-            <a className="hero-ipa" href="#como-funciona">
-              <span><span className="section-label">Evaluación del proyecto</span>Índice de Preparación para Automatización</span>
-              <span className="hero-ipa-code">IPA <ArrowRight size={14} aria-hidden="true"/></span>
-            </a>
-          </div>
-          <InspectorDemo/>
-        </div>
-      </section>
-
-      <section className="workflow" id="como-funciona" aria-label="Cómo funciona AutoQA">
-        <ol className="wrap steps">
-          {steps.map(({ label, title, description }) => (
-            <li key={label}>
-              <p className="section-label">{label}</p>
-              <h2>{title}</h2>
-              <p>{description}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="wrap landing-pricing" id="precios" aria-labelledby="pricing-title">
-        <div className="section-intro pricing-intro">
-          <h2 id="pricing-title">Planes según las pruebas que necesitas</h2>
-          <p>Precios en pesos colombianos. Tarifas y límites preliminares sujetos a validación.</p>
-        </div>
-        {plans.length > 0
-          ? <PlanCards plans={plans} accountOrigin={accountOrigin}/>
-          : <p role="status">El catálogo de planes no está disponible en este momento.</p>}
-        {plans.length > 0 && (
-          <section className="landing-comparison" id="funcionalidades" aria-labelledby="comparison-title">
-            <div className="section-intro">
-              <h2 id="comparison-title">Comparativa técnica</h2>
-              <p>Consulta las capacidades operativas, las previstas y los límites de cada plan.</p>
-            </div>
-            <PlanComparison plans={plans}/>
-          </section>
-        )}
-      </section>
-
-      <section className="landing-faq" id="faq" aria-labelledby="faq-title">
-        <div className="wrap faq-grid">
-          <div>
-            <div className="section-intro"><h2 id="faq-title">Preguntas sobre análisis y ejecución</h2></div>
-            <div className="questions">
-              {faqs.map(([question, answer]) => (
-                <details key={question}>
-                  <summary>{question}<ChevronDown size={17} aria-hidden="true"/></summary>
-                  <p>{answer}</p>
-                </details>
-              ))}
-            </div>
-          </div>
-          <section className="landing-cta" aria-labelledby="cta-title">
-            <h2 id="cta-title">Revisa tus requisitos con AutoQA</h2>
-            <p>Crea una cuenta para registrar tu primera aplicación y consultar qué falta para automatizar sus pruebas.</p>
-            <div>
-              <Link href={accountOrigin + '/registro'} className="button primary">Crear mi cuenta <ArrowRight size={16} aria-hidden="true"/></Link>
-              <Link href={accountOrigin + '/login'} className="button outline">Iniciar sesión</Link>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <CommercialFooter/>
-    </div>
-  );
+  return <CommercialShell>
+    <HeroSection/>
+    <WorkflowSection/>
+    <PricingSection plans={plans} accountOrigin={accountOrigin}/>
+    <FaqSection accountOrigin={accountOrigin}/>
+  </CommercialShell>;
 }
