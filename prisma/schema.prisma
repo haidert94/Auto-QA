@@ -71,6 +71,7 @@ model User {
   runs           TestRun[]
   performanceAudits PerformanceAudit[]
   monitors          Monitor[]
+  loadTests         LoadTest[]
   invitesCreated OrganizationInvite[] @relation("InviteAuthor")
   audits         AccessAudit[]
   createdAt      DateTime            @default(now())
@@ -100,6 +101,7 @@ model Project {
   runs                   TestRun[]
   performanceAudits      PerformanceAudit[]
   monitors               Monitor[]
+  loadTests              LoadTest[]
   assessments            QualityAssessment[]
   explorations           Exploration[]
   createdAt              DateTime            @default(now())
@@ -128,6 +130,7 @@ model Environment {
   runs                   TestRun[]
   performanceAudits      PerformanceAudit[]
   monitors               Monitor[]
+  loadTests              LoadTest[]
   createdAt              DateTime         @default(now())
 }
 
@@ -340,6 +343,42 @@ model TestResult {
   durationMs   Int?
   errorMessage String?
   evidenceKey  String?
+}
+
+model LoadTest {
+  id              String       @id @default(uuid())
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environmentId   String?
+  environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  name            String
+  url             String
+  stages          Json
+  thresholds      Json?
+  status          RunStatus    @default(QUEUED)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorCode       String?
+  runKey          String?      @unique
+  createdByUserId String?
+  createdBy       User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  // Métricas de resumen (null hasta que k6 termine).
+  totalRequests Int?
+  reqPerSec     Float?
+  failRate      Float?
+  p50Ms         Int?
+  p95Ms         Int?
+  p99Ms         Int?
+  maxVus        Int?
+  durationSec   Int?
+
+  // Resumen completo de k6 en el ScreenshotStorage.
+  summaryKey String?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 model Monitor {

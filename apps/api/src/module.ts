@@ -12,6 +12,8 @@ import { IcspController } from './icsp/icsp.controller';
 import { IcspService } from './icsp/icsp.service';
 import { IpaController } from './ipa/ipa.controller';
 import { IpaService } from './ipa/ipa.service';
+import { LoadController } from './load/load.controller';
+import { LoadService } from './load/load.service';
 import { MonitorsController } from './monitors/monitors.controller';
 import { MonitorsService } from './monitors/monitors.service';
 import { PerformanceController } from './performance/performance.controller';
@@ -25,7 +27,7 @@ import { ScenariosService } from './scenarios/scenarios.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ envFilePath: ['../../.env', '.env'], isGlobal: true }), PrismaModule, CommerceModule, DocumentsModule],
-  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController, IpaController, IcspController, ReportsController, PerformanceController, MonitorsController],
+  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController, IpaController, IcspController, ReportsController, PerformanceController, MonitorsController, LoadController],
   providers: [
     ProjectsService,
     ExplorationsService,
@@ -36,6 +38,7 @@ import { ScenariosService } from './scenarios/scenarios.service';
     ReportsService,
     PerformanceService,
     MonitorsService,
+    LoadService,
     { provide: SCREENSHOT_READER, useFactory: () => createScreenshotReader() },
   ],
 })

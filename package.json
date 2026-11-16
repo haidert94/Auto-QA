@@ -27,6 +27,7 @@
     "test:diffs": "npm --workspace apps/api run build && node --test apps/api/test/diffs.test.cjs",
     "test:lighthouse": "npm --workspace apps/api run build && node --test apps/api/test/lighthouse-report.test.cjs",
     "test:monitors": "npm --workspace apps/explorer run build && node --test apps/api/test/monitor-runner.test.cjs",
+    "test:k6": "npm --workspace apps/api run build && node --test apps/api/test/k6-summary.test.cjs",
     "test:request-filter": "npm --workspace apps/explorer run build && node --test apps/explorer/test/request-filter.test.cjs"
   },
   "workspaces": [

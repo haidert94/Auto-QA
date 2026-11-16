@@ -118,6 +118,20 @@ sudo -u "${AUTOQA_USER}" env HOME="${REPO_DIR}" \
      PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_DIR}" \
      bash -lc "cd '${REPO_DIR}' && npx --yes playwright@1.65.1 install chromium firefox webkit"
 
+# --- 7b. k6 (pruebas de carga) ----------------------------------------------
+if ! command -v k6 >/dev/null 2>&1; then
+  log "Instalando k6 desde el repo oficial de Grafana…"
+  apt-get install -y --no-install-recommends gnupg2
+  install -d -m 0755 /etc/apt/keyrings
+  curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor --yes -o /etc/apt/keyrings/k6.gpg
+  echo 'deb [signed-by=/etc/apt/keyrings/k6.gpg] https://dl.k6.io/deb stable main' \
+    > /etc/apt/sources.list.d/k6.list
+  apt-get update -y
+  apt-get install -y --no-install-recommends k6
+else
+  log "k6 ya está instalado: $(k6 version | head -n1)"
+fi
+
 # --- 8. Build ---------------------------------------------------------------
 log "Compilando API + web + explorer…"
 sudo -u "${AUTOQA_USER}" env HOME="${REPO_DIR}" bash -lc \

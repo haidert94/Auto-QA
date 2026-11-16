@@ -6,6 +6,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { runAudit, type AuditClaim } from './audit-runner';
 import { runExploration } from './explorer';
 import { runTestRun, type ExecutionClaim } from './execution-runner';
+import { runLoadTest, type LoadClaim } from './load-runner';
 import { tickMonitors } from './monitor-runner';
 import { createScreenshotStorage } from './screenshot-storage';
 
@@ -37,6 +38,22 @@ export async function claimNext(prisma: PrismaClient): Promise<ClaimedExploratio
       LIMIT 1
     )
     RETURNING id, "projectId", "environmentId", "startUrl", limits, "runKey", "createdByUserId", "queuedAt", "startedAt", "finishedAt", "errorCode", status;
+  `;
+  return rows[0] ?? null;
+}
+
+export async function claimNextLoadTest(prisma: PrismaClient): Promise<LoadClaim | null> {
+  const rows = await prisma.$queryRaw<LoadClaim[]>`
+    UPDATE "LoadTest"
+    SET status = 'RUNNING', "startedAt" = now()
+    WHERE id = (
+      SELECT id FROM "LoadTest"
+      WHERE status = 'QUEUED'
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    RETURNING id, "projectId", url, stages, "runKey";
   `;
   return rows[0] ?? null;
 }
@@ -94,6 +111,14 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     const storage = createScreenshotStorage();
     await runAudit(prisma, auditClaim, storage, (level, detail) => {
       console.log(`[audit ${auditClaim.id}] ${level}: ${detail}`);
+    });
+    return true;
+  }
+  const loadClaim = await claimNextLoadTest(prisma);
+  if (loadClaim) {
+    const storage = createScreenshotStorage();
+    await runLoadTest(prisma, loadClaim, storage, (level, detail) => {
+      console.log(`[load ${loadClaim.id}] ${level}: ${detail}`);
     });
     return true;
   }
