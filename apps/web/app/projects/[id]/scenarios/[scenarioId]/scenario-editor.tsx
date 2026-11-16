@@ -28,6 +28,29 @@ export function ScenarioEditor({ initial, requirements }: { initial: Scenario; r
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [playwrightCode, setPlaywrightCode] = useState<{ filename: string; code: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function loadPlaywright() {
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/projects/${initial.projectId}/scenarios/${initial.id}/playwright`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) { setError(payload.message ?? 'No se pudo generar el código.'); return; }
+      setPlaywrightCode(payload);
+      setCopied(false);
+    } catch { setError('No se pudo generar el código.'); }
+    finally { setBusy(false); }
+  }
+
+  async function copyCode() {
+    if (!playwrightCode) return;
+    try {
+      await navigator.clipboard.writeText(playwrightCode.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { setError('No se pudo copiar al portapapeles.'); }
+  }
 
   function updateStep(index: number, patch: Partial<ScenarioStep>) {
     setSteps(prev => prev.map((s, i) => i === index ? { ...s, ...patch } : s));
@@ -135,10 +158,28 @@ export function ScenarioEditor({ initial, requirements }: { initial: Scenario; r
 
     <div className="actions">
       <button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
+      <button type="button" className="secondary" onClick={loadPlaywright} disabled={busy}>Ver código Playwright</button>
       <button type="button" className="secondary" onClick={remove} disabled={busy}>Eliminar escenario</button>
     </div>
 
     {notice && <p className="success" role="status">{notice}</p>}
     {error && <p className="error" role="alert">{error}</p>}
+
+    {playwrightCode && <section className="playwright-preview">
+      <header>
+        <strong>{playwrightCode.filename}</strong>
+        <div className="actions">
+          <button type="button" className="secondary" onClick={copyCode}>
+            {copied ? 'Copiado' : 'Copiar al portapapeles'}
+          </button>
+          <button type="button" className="secondary" onClick={() => setPlaywrightCode(null)}>Cerrar</button>
+        </div>
+      </header>
+      <p className="muted">
+        Vocabulario reconocido: <code>navigate:</code>, <code>click:</code>, <code>fill:</code>, <code>press:</code>,
+        <code> expect-text:</code>, <code>expect-url:</code>. Los pasos fuera del vocabulario salen como <code>// TODO</code>.
+      </p>
+      <pre><code>{playwrightCode.code}</code></pre>
+    </section>}
   </form>;
 }

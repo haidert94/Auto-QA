@@ -37,6 +37,15 @@ export class ScenariosController {
     return this.service.create(projectId, dto, workspace);
   }
 
+  @Get(':id/playwright')
+  playwright(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.generatePlaywright(projectId, id, workspace);
+  }
+
   @Patch(':id')
   update(
     @Param('projectId', ParseUUIDPipe) projectId: string,

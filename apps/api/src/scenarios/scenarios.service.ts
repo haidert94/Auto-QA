@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import type { Workspace } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
+import { generateSpec, suggestedFilename, type GeneratorStep } from './playwright-generator';
 
 function normalizeSteps(steps: ScenarioStepDto[]): Prisma.InputJsonValue {
   // Re-numeramos los ordinales en el servidor: el cliente puede enviar
@@ -101,6 +102,28 @@ export class ScenariosService {
     const existing = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId }, select: { id: true } });
     if (!existing) throw new NotFoundException('Escenario no encontrado.');
     await this.prisma.testScenario.delete({ where: { id: scenarioId } });
+  }
+
+  async generatePlaywright(projectId: string, scenarioId: string, workspace: Workspace) {
+    const scenario = await this.get(projectId, scenarioId, workspace);
+    // steps viene como Prisma.JsonValue; lo normalizamos defensivamente.
+    const rawSteps: unknown[] = Array.isArray(scenario.steps) ? (scenario.steps as unknown[]) : [];
+    const steps: GeneratorStep[] = rawSteps
+      .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+      .map((s, i) => ({
+        ordinal: typeof s.ordinal === 'number' ? s.ordinal : i + 1,
+        action: typeof s.action === 'string' ? s.action : '',
+        data: typeof s.data === 'string' ? s.data : undefined,
+        expected: typeof s.expected === 'string' ? s.expected : undefined,
+      }))
+      .filter(s => s.action.length > 0);
+    const code = generateSpec({
+      id: scenario.id,
+      title: scenario.title,
+      expectedResult: scenario.expectedResult,
+      steps,
+    });
+    return { filename: suggestedFilename(scenario), code };
   }
 
   async listRequirements(projectId: string, workspace: Workspace) {

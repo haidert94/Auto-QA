@@ -118,6 +118,14 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
   .step-ordinal { padding-top: 0; }
 }
 
+.playwright-preview { margin-top: 20px; padding: 14px; background: #0f172a; color: #e2e8f0; border-radius: 10px; }
+.playwright-preview header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; flex-wrap: wrap; }
+.playwright-preview header strong { color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.playwright-preview .muted { color: #94a3b8; font-size: 0.85em; }
+.playwright-preview .muted code { background: #1e293b; color: #e2e8f0; padding: 1px 6px; border-radius: 4px; margin: 0 2px; }
+.playwright-preview pre { background: #020617; color: #e2e8f0; padding: 14px; border-radius: 8px; overflow: auto; max-height: 480px; }
+.playwright-preview pre code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; line-height: 1.5; white-space: pre; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }
