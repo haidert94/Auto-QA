@@ -16,7 +16,8 @@
     "test:commerce:e2e": "npm run build && node apps/web/test/commercial.e2e.cjs",
     "test:plans": "npm --workspace apps/api run build && node --test apps/api/test/plan-capabilities.test.cjs",
     "test:url-guard": "npm --workspace apps/api run build && node --test apps/api/test/url-guard.test.cjs",
-    "test:explorations": "npm --workspace apps/api run build && node --test apps/api/test/explorations.test.cjs"
+    "test:explorations": "npm --workspace apps/api run build && node --test apps/api/test/explorations.test.cjs",
+    "test:request-filter": "npm --workspace apps/explorer run build && node --test apps/explorer/test/request-filter.test.cjs"
   },
   "workspaces": [
     "apps/*"
