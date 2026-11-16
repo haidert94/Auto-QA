@@ -104,7 +104,9 @@ export function CommercialShell({ children }: { children: React.ReactNode }) {
   </div>;
 }
 
-export function HeroSection() {
+export function HeroSection({ pricingHref = '#precios', workflowHref = '#como-funciona' }: {
+  pricingHref?: string; workflowHref?: string;
+} = {}) {
   return <section className="hero" aria-labelledby="hero-title">
     <div className="wrap hero-grid">
       <div className="hero-copy">
@@ -112,10 +114,10 @@ export function HeroSection() {
         <h1 id="hero-title">Detecta qué le falta a un requisito para poder probarlo</h1>
         <p className="hero-lead">Registra tu aplicación, define el alcance autorizado y revisa qué requisitos son verificables antes de automatizar.</p>
         <div className="hero-actions">
-          <Link href="/precios" className="button primary">Ver planes <ArrowRight size={16} aria-hidden="true"/></Link>
-          <Link href="/como-funciona" className="button outline">Cómo funciona <ArrowDown size={15} aria-hidden="true"/></Link>
+          <Link href={pricingHref} className="button primary">Ver planes <ArrowRight size={16} aria-hidden="true"/></Link>
+          <Link href={workflowHref} className="button outline">Cómo funciona <ArrowDown size={15} aria-hidden="true"/></Link>
         </div>
-        <Link className="hero-ipa" href="/como-funciona">
+        <Link className="hero-ipa" href={workflowHref}>
           <span><span className="section-label">Evaluación del proyecto</span>Índice de Preparación para Automatización</span>
           <span className="hero-ipa-code">IPA <ArrowRight size={14} aria-hidden="true"/></span>
         </Link>
@@ -126,7 +128,7 @@ export function HeroSection() {
 }
 
 export function WorkflowSection() {
-  return <section className="workflow" aria-label="Cómo funciona AutoQA">
+  return <section className="workflow" id="como-funciona" aria-label="Cómo funciona AutoQA">
     <ol className="wrap steps">
       {steps.map(({ label, title, description }) => (
         <li key={label}>
@@ -140,7 +142,7 @@ export function WorkflowSection() {
 }
 
 export function PricingSection({ plans, accountOrigin }: { plans: Plan[]; accountOrigin: string }) {
-  return <section className="wrap landing-pricing" aria-labelledby="pricing-title">
+  return <section className="wrap landing-pricing" id="precios" aria-labelledby="pricing-title">
     <div className="section-intro pricing-intro">
       <h2 id="pricing-title">Planes según las pruebas que necesitas</h2>
       <p>Precios en pesos colombianos. Tarifas y límites preliminares sujetos a validación.</p>

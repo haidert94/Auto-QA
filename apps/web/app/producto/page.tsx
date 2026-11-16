@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function ProductoPage() {
   return <CommercialShell>
-    <HeroSection/>
+    <HeroSection pricingHref="/precios"/>
     <WorkflowSection/>
   </CommercialShell>;
 }
