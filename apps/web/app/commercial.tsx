@@ -5,10 +5,14 @@ import { PlanCards, PlanComparison } from './plan-comparison';
 import MobileNavigation from './mobile-navigation';
 
 const navigation = [
-  ['Producto', '/producto'],
-  ['Cómo funciona', '/como-funciona'],
-  ['Precios', '/precios'],
+  ['Producto', '/producto', '#producto'],
+  ['Cómo funciona', '/como-funciona', '#como-funciona'],
+  ['Precios', '/precios', '#precios'],
 ] as const;
+
+function navLinks(useAnchors: boolean) {
+  return navigation.map(([label, route, anchor]) => [label, useAnchors ? anchor : route] as const);
+}
 
 const steps = [
   { label: 'Alcance', title: 'Registra tu aplicación',
@@ -64,28 +68,32 @@ function InspectorDemo() {
   );
 }
 
-export function CommercialHeader({ accountOrigin = '' }: { accountOrigin?: string }) {
+export function CommercialHeader({ accountOrigin = '', useAnchors = false }: {
+  accountOrigin?: string; useAnchors?: boolean;
+}) {
+  const links = navLinks(useAnchors);
   return <header className="commercial-header">
     <div className="wrap nav-wrap">
       <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
       <nav className="desktop-nav" aria-label="Navegación principal">
-        {navigation.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
+        {links.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
       </nav>
       <div className="desktop-actions">
         <Link href={accountOrigin + '/login'}>Iniciar sesión</Link>
         <Link className="button primary" href={accountOrigin + '/registro'}>Crear cuenta</Link>
       </div>
-      <MobileNavigation links={navigation} loginHref={accountOrigin + '/login'}/>
+      <MobileNavigation links={links} loginHref={accountOrigin + '/login'}/>
     </div>
   </header>;
 }
 
-export function CommercialFooter() {
+export function CommercialFooter({ useAnchors = false }: { useAnchors?: boolean }) {
+  const links = navLinks(useAnchors);
   return <footer className="commerce-footer">
     <div className="wrap footer-grid">
       <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
       <nav aria-label="Pie de página">
-        {navigation.map(([label, href]) => <Link key={href} href={href}>{label}</Link>)}
+        {links.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
         <Link href="/contacto">Contacto</Link>
         <Link href="/terminos">Términos</Link>
         <Link href="/privacidad">Privacidad</Link>
@@ -95,19 +103,21 @@ export function CommercialFooter() {
   </footer>;
 }
 
-export function CommercialShell({ children }: { children: React.ReactNode }) {
+export function CommercialShell({ children, useAnchors = false }: {
+  children: React.ReactNode; useAnchors?: boolean;
+}) {
   const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
   return <div className="commercial">
-    <CommercialHeader accountOrigin={accountOrigin}/>
+    <CommercialHeader accountOrigin={accountOrigin} useAnchors={useAnchors}/>
     {children}
-    <CommercialFooter/>
+    <CommercialFooter useAnchors={useAnchors}/>
   </div>;
 }
 
 export function HeroSection({ pricingHref = '#precios', workflowHref = '#como-funciona' }: {
   pricingHref?: string; workflowHref?: string;
 } = {}) {
-  return <section className="hero" aria-labelledby="hero-title">
+  return <section className="hero" id="producto" aria-labelledby="hero-title">
     <div className="wrap hero-grid">
       <div className="hero-copy">
         <p className="section-label">Análisis documental de requisitos</p>
@@ -191,7 +201,7 @@ export function FaqSection({ accountOrigin }: { accountOrigin: string }) {
 export default async function Commercial() {
   const plans = await listPlans();
   const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
-  return <CommercialShell>
+  return <CommercialShell useAnchors>
     <HeroSection/>
     <WorkflowSection/>
     <PricingSection plans={plans} accountOrigin={accountOrigin}/>
