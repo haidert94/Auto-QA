@@ -23,21 +23,30 @@ async function main() {
   }
 
   process.env.AUTOQA_INTERNAL_API_URL = `http://127.0.0.1:${apiPort}/api`;
-  console.log('[startup] Iniciando API NestJS en loopback', apiPort);
-  const { createApp } = require(path.join(__dirname, 'apps', 'api', 'dist', 'app.js'));
-  const nest = await createApp();
-  await nest.listen(apiPort, '127.0.0.1');
 
+  // Next.js PRIMERO: Hostinger enruta al primer puerto detectado por el proceso.
   console.log('[startup] Iniciando Next.js en 0.0.0.0:' + publicPort);
   const next = require('next');
   const webApp = next({ dev: false, dir: path.join(__dirname, 'apps', 'web') });
   const handle = webApp.getRequestHandler();
   await webApp.prepare();
 
-  const server = http.createServer((req, res) => handle(req, res));
-  server.listen(publicPort, '0.0.0.0', () => {
-    console.log('[startup] AutoQA listo en puerto', publicPort);
+  await new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => handle(req, res));
+    server.once('error', reject);
+    server.listen(publicPort, '0.0.0.0', () => {
+      console.log('[startup] Next.js escuchando en', publicPort);
+      resolve();
+    });
   });
+
+  // NestJS DESPUÉS en loopback. Si el proxy de Hostinger detecta el primer
+  // listener, ya tomó el de Next.js arriba.
+  console.log('[startup] Iniciando API NestJS en loopback', apiPort);
+  const { createApp } = require(path.join(__dirname, 'apps', 'api', 'dist', 'app.js'));
+  const nest = await createApp();
+  await nest.listen(apiPort, '127.0.0.1');
+  console.log('[startup] API lista en 127.0.0.1:' + apiPort);
 }
 
 main().catch((err) => {
