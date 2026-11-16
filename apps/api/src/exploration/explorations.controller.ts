@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 
 type HttpResponse = { setHeader(name: string, value: string): unknown };
@@ -34,6 +34,19 @@ export class ExplorationsController {
     @CurrentWorkspace() workspace: Workspace,
   ) {
     return this.service.create(projectId, dto, workspace);
+  }
+
+  @Get(':id/diff')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  diff(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('previous') previousId: string | undefined,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+    const previous = previousId && uuid.test(previousId) ? previousId : null;
+    return this.service.diff(projectId, id, previous, workspace);
   }
 
   @Get(':id/pages/:pageId/screenshot')

@@ -314,10 +314,12 @@ model TestRun {
   runKey          String?       @unique
   createdByUserId String?
   createdBy       User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  specText        String?
   results         TestResult[]
   createdAt       DateTime      @default(now())
 
   @@index([projectId, status, createdAt])
+  @@index([projectId, scenarioId, createdAt])
 }
 
 model TestResult {
@@ -602,6 +604,7 @@ model Exploration {
 
   @@index([projectId, status])
   @@index([status, queuedAt])
+  @@index([projectId, environmentId, startUrl, finishedAt])
 }
 
 model ExplorationPage {

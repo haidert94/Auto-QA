@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { UsageService } from '../commerce/usage.service';
 import type { Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
+import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
 import { CreateRunDto } from './dto/create-run.dto';
 
@@ -41,6 +42,49 @@ export class RunsService {
     });
     if (!run) throw new NotFoundException('Ejecución no encontrada.');
     return run;
+  }
+
+  // Diff entre dos ejecuciones del mismo escenario. Si no se pasa previous,
+  // se toma la ejecución COMPLETED anterior más reciente del mismo scenario.
+  async diff(projectId: string, runId: string, previousId: string | null, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const current = await this.prisma.testRun.findFirst({
+      where: { id: runId, projectId },
+      select: { id: true, status: true, scenarioId: true, createdAt: true, completedAt: true, specText: true,
+        results: { select: { id: true, scenarioId: true, status: true, durationMs: true } } },
+    });
+    if (!current) throw new NotFoundException('Ejecución no encontrada.');
+
+    let previous: typeof current | null = null;
+    if (previousId) {
+      previous = await this.prisma.testRun.findFirst({
+        where: { id: previousId, projectId },
+        select: { id: true, status: true, scenarioId: true, createdAt: true, completedAt: true, specText: true,
+          results: { select: { id: true, scenarioId: true, status: true, durationMs: true } } },
+      });
+      if (!previous) throw new NotFoundException('Ejecución de comparación no encontrada.');
+    } else if (current.scenarioId) {
+      previous = await this.prisma.testRun.findFirst({
+        where: { projectId, scenarioId: current.scenarioId, createdAt: { lt: current.createdAt }, NOT: { id: current.id } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true, scenarioId: true, createdAt: true, completedAt: true, specText: true,
+          results: { select: { id: true, scenarioId: true, status: true, durationMs: true } } },
+      });
+    }
+
+    const prevResults = (previous?.results ?? []).map(r => ({
+      scenarioId: r.scenarioId, status: r.status as ResultStatus, durationMs: r.durationMs,
+    }));
+    const currResults = current.results.map(r => ({
+      scenarioId: r.scenarioId, status: r.status as ResultStatus, durationMs: r.durationMs,
+    }));
+    return {
+      previous: previous ? { id: previous.id, status: previous.status, createdAt: previous.createdAt, completedAt: previous.completedAt } : null,
+      current: { id: current.id, status: current.status, createdAt: current.createdAt, completedAt: current.completedAt },
+      resultChanges: diffResults(prevResults, currResults),
+      specDiff: diffText(previous?.specText ?? null, current.specText ?? null),
+      specs: { previous: previous?.specText ?? null, current: current.specText ?? null },
+    };
   }
 
   async listForScenario(projectId: string, scenarioId: string, workspace: Workspace) {

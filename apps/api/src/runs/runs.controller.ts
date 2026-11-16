@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateRunDto } from './dto/create-run.dto';
 import { RunsService } from './runs.service';
@@ -45,6 +45,19 @@ export class RunsController {
     @CurrentWorkspace() workspace: Workspace,
   ) {
     return this.service.create(projectId, scenarioId, dto, workspace);
+  }
+
+  @Get('projects/:projectId/runs/:runId/diff')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  diff(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Query('previous') previousId: string | undefined,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+    const previous = previousId && uuid.test(previousId) ? previousId : null;
+    return this.service.diff(projectId, runId, previous, workspace);
   }
 
   @Get('projects/:projectId/runs/:runId/trace/:resultId')

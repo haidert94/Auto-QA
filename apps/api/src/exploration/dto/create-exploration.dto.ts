@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 
 export class ExplorationLimitsDto {
   @IsOptional() @IsInt() @Min(1) @Max(200) maxPages?: number;
@@ -12,4 +12,6 @@ export class CreateExplorationDto {
   @IsUUID() environmentId!: string;
   @IsString() @MaxLength(2048) startUrl!: string;
   @IsOptional() @ValidateNested() @Type(() => ExplorationLimitsDto) limits?: ExplorationLimitsDto;
+  // Omite el caché de reutilización reciente y crea una nueva exploración.
+  @IsOptional() @IsBoolean() force?: boolean;
 }

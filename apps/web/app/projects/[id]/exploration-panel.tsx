@@ -43,15 +43,28 @@ export function ExplorationPanel({ projectId, environments }: { projectId: strin
 
   useEffect(() => { void load(); }, [projectId]);
 
-  async function queue(event: FormEvent<HTMLFormElement>) {
+  async function queue(event: FormEvent<HTMLFormElement>, force = false) {
     event.preventDefault();
     setBusy(true); setError(''); setNotice('');
     try {
       const response = await fetch(`/api/projects/${projectId}/explorations`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ environmentId: envId, startUrl }),
+        body: JSON.stringify({ environmentId: envId, startUrl, force: force || undefined }),
       });
       const payload = await response.json().catch(() => ({}));
+      if (response.status === 409 && payload.reused) {
+        const minutes = payload.reuseWindowMinutes ?? 15;
+        const confirmed = confirm(
+          `Ya hay una exploración de esta URL de los últimos ${minutes} minutos. ` +
+          '¿Forzar una nueva? Si cancelas, abriremos la existente.',
+        );
+        if (confirmed) {
+          await queue(event, true);
+          return;
+        }
+        window.location.href = `/projects/${projectId}/explorations/${payload.explorationId}`;
+        return;
+      }
       if (!response.ok) {
         setError(payload.detail ? `${payload.message ?? 'Error'} (${payload.issue}: ${payload.detail})` : payload.message ?? 'No se pudo encolar.');
         return;

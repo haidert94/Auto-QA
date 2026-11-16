@@ -216,6 +216,15 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .invite-cta { margin-top: 18px; padding: 14px; background: #f5f7fb; border-radius: 8px; }
 .invite-cta button { margin: 0; }
 
+.diff-panel { margin-top: 20px; padding: 14px; background: #f5f7fb; border-radius: 10px; }
+.diff-panel header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.diff-panel header button { margin: 0; }
+.diff-panel h3 { margin: 12px 0 6px; font-size: 1em; color: #173a5e; }
+.diff-urls { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.diff-urls > li { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: #fff; border-radius: 6px; overflow-wrap: anywhere; font-size: 0.9em; }
+.diff-urls.added > li { border-left: 3px solid #0d6540; }
+.diff-urls.removed > li { border-left: 3px solid #a72020; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }

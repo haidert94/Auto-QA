@@ -126,6 +126,7 @@ export async function runTestRun(
           status: summary.status === 'PASSED' ? 'COMPLETED' : 'FAILED',
           completedAt: new Date(),
           errorCode: summary.status === 'PASSED' ? null : (summary.errorCode ?? 'test-failed'),
+          specText: spec,
         },
       });
     });

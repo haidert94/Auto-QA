@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountFetch } from '../../../../autoqa-server';
+import { DiffPanel } from './diff-panel';
 
 type ExplorationPage = {
   id: string; position: number; url: string; httpStatus: number | null;
@@ -75,6 +76,8 @@ export default async function ExplorationDetailPage({ params }: { params: Promis
           </li>)}
         </ol>}
     </section>
+
+    {detail.status === 'COMPLETED' && <DiffPanel projectId={id} explorationId={expId} />}
 
     <section>
       <h2>Eventos ({detail.logs.length})</h2>

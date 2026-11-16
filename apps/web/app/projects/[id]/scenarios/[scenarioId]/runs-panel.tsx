@@ -23,6 +23,14 @@ type Run = {
   results: RunResult[];
 };
 
+type DiffPayload = {
+  previous: { id: string; status: string; createdAt: string; completedAt: string | null } | null;
+  current: { id: string; status: string; createdAt: string; completedAt: string | null };
+  resultChanges: Array<{ scenarioId: string; from: string | null; to: string | null; durationFromMs: number | null; durationToMs: number | null }>;
+  specDiff: { changed: boolean; previousLines: number; currentLines: number; addedLines: number; removedLines: number };
+  specs: { previous: string | null; current: string | null };
+};
+
 const runStatusLabel: Record<Run['status'], string> = {
   QUEUED: 'En cola', RUNNING: 'En curso', COMPLETED: 'Completada', FAILED: 'Falló', CANCELED: 'Cancelada',
 };
@@ -48,6 +56,17 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [diff, setDiff] = useState<DiffPayload | null>(null);
+
+  async function loadDiff(runId: string) {
+    setDiff(null); setError('');
+    try {
+      const response = await fetch(`/api/projects/${projectId}/runs/${runId}/diff`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload) { setError('No se pudo cargar el diff.'); return; }
+      setDiff(payload);
+    } catch { setError('No se pudo cargar el diff.'); }
+  }
 
   async function load() {
     try {
@@ -117,6 +136,8 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
               <span className={`badge badge-${run.status.toLowerCase()}`}>{runStatusLabel[run.status]}</span>
               <span className="muted">{formatDate(run.createdAt)}</span>
               {run.errorCode && <span className="muted">· {run.errorCode}</span>}
+              {(run.status === 'COMPLETED' || run.status === 'FAILED') && <button type="button" className="secondary"
+                onClick={() => loadDiff(run.id)}>Comparar con anterior</button>}
             </div>
             {run.results.length > 0 && <ul className="results-list">
               {run.results.map(result => <li key={result.id}>
@@ -130,5 +151,38 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
             </ul>}
           </li>)}
         </ul>}
+
+    {diff && <section className="diff-panel">
+      <header>
+        <strong>Comparación</strong>
+        <button type="button" className="secondary" onClick={() => setDiff(null)}>Cerrar</button>
+      </header>
+      {!diff.previous
+        ? <p className="muted">No hay una ejecución anterior con la que comparar.</p>
+        : <>
+          <p className="muted">
+            Actual {formatDate(diff.current.createdAt)} · Anterior {formatDate(diff.previous.createdAt)}
+          </p>
+          <h3>Cambios de resultado ({diff.resultChanges.length})</h3>
+          {diff.resultChanges.length === 0
+            ? <p className="muted">Sin cambios de estado ni duración.</p>
+            : <ul className="results-list">
+              {diff.resultChanges.map(c => <li key={c.scenarioId}>
+                <span className={`badge badge-result-${(c.from ?? 'blocked').toLowerCase()}`}>{c.from ?? '—'}</span>
+                <span>→</span>
+                <span className={`badge badge-result-${(c.to ?? 'blocked').toLowerCase()}`}>{c.to ?? '—'}</span>
+                {c.durationFromMs !== null && c.durationToMs !== null && <span className="muted">
+                  {formatDuration(c.durationFromMs)} → {formatDuration(c.durationToMs)}
+                </span>}
+              </li>)}
+            </ul>}
+          <h3>Diff del spec</h3>
+          <p className="muted">
+            {diff.specDiff.changed
+              ? `Cambió · +${diff.specDiff.addedLines} / -${diff.specDiff.removedLines} líneas.`
+              : 'Spec idéntico.'}
+          </p>
+        </>}
+    </section>}
   </section>;
 }
