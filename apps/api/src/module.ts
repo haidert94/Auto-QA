@@ -8,16 +8,19 @@ import { createScreenshotReader, SCREENSHOT_READER } from './exploration/screens
 import { PrismaModule } from './prisma.module';
 import { ProjectsController } from './projects/projects.controller';
 import { ProjectsService } from './projects/projects.service';
+import { RunsController } from './runs/runs.controller';
+import { RunsService } from './runs/runs.service';
 import { ScenariosController } from './scenarios/scenarios.controller';
 import { ScenariosService } from './scenarios/scenarios.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ envFilePath: ['../../.env', '.env'], isGlobal: true }), PrismaModule, CommerceModule, DocumentsModule],
-  controllers: [ProjectsController, ExplorationsController, ScenariosController],
+  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController],
   providers: [
     ProjectsService,
     ExplorationsService,
     ScenariosService,
+    RunsService,
     { provide: SCREENSHOT_READER, useFactory: () => createScreenshotReader() },
   ],
 })

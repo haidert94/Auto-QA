@@ -126,6 +126,19 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .playwright-preview pre { background: #020617; color: #e2e8f0; padding: 14px; border-radius: 8px; overflow: auto; max-height: 480px; }
 .playwright-preview pre code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; line-height: 1.5; white-space: pre; }
 
+.runs-panel { margin-top: 24px; padding: 20px; background: #fff; border-radius: 10px; border: 1px solid #e5e7eb; }
+.runs-panel > h2 { margin-top: 0; }
+.runs-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; }
+.runs-list > li { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.run-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.results-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
+.results-list > li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 0.9em; }
+.result-error { color: #a72020; overflow-wrap: anywhere; flex: 1 1 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+.badge-result-passed { background: #d6f5e3; color: #0d6540; }
+.badge-result-failed { background: #fbe0e0; color: #a72020; }
+.badge-result-blocked { background: #fff4d6; color: #7a5a00; }
+.badge-result-skipped { background: #e5e7eb; color: #4b5a77; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }

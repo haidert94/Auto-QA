@@ -12,8 +12,12 @@ import { createS3ClientFromConfig, isS3Enabled, readS3Config, resolveObjectKey, 
 
 const KEY = /^[0-9a-f]{32}$/;
 
+export interface PutOptions {
+  contentType?: string;
+}
+
 export interface ScreenshotStorage {
-  put(data: Buffer): Promise<string>;
+  put(data: Buffer, options?: PutOptions): Promise<string>;
   get(key: string): Promise<Buffer>;
   remove(key: string): Promise<void>;
 }
@@ -26,7 +30,7 @@ export class LocalScreenshotStorage implements ScreenshotStorage {
     return join(this.root, key);
   }
 
-  async put(data: Buffer): Promise<string> {
+  async put(data: Buffer, _options: PutOptions = {}): Promise<string> {
     const key = randomBytes(16).toString('hex');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     await writeFile(this.pathFor(key), data, { flag: 'wx', mode: 0o600 });
@@ -55,13 +59,13 @@ export class S3ScreenshotStorage implements ScreenshotStorage {
     return objectKey;
   }
 
-  async put(data: Buffer): Promise<string> {
+  async put(data: Buffer, options: PutOptions = {}): Promise<string> {
     const key = randomBytes(16).toString('hex');
     await this.client.send(new PutObjectCommand({
       Bucket: this.config.bucket,
       Key: this.resolve(key),
       Body: data,
-      ContentType: 'image/png',
+      ContentType: options.contentType ?? 'image/png',
       // Nunca public-read: la UI pasa siempre por el endpoint autenticado del API.
       ACL: 'private',
       CacheControl: 'private, max-age=86400',

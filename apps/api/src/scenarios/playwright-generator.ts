@@ -121,6 +121,106 @@ export function generateSpec(scenario: GeneratorScenario): string {
   return lines.join('\n');
 }
 
+export type HarnessEnvironment = {
+  baseUrl: string | null;
+  allowedHosts: string[];
+  allowedPaths: string[];
+  excludedPaths: string[];
+};
+
+// Spec "con arnes" para el worker: incluye configuracion Playwright embebida,
+// baseURL del entorno y un test.beforeEach que aplica el mismo filtro de
+// url-guard que usa la exploracion (lista de hosts permitida, paths vetados,
+// prohibicion de IPs literales, redireccion forzada por scope).
+export function generateHarnessedSpec(scenario: GeneratorScenario, env: HarnessEnvironment): string {
+  const title = escapeJsString(scenario.title);
+  const baseURL = env.baseUrl ? escapeJsString(env.baseUrl) : '';
+  const hosts = env.allowedHosts.map(h => `'${escapeJsString(h)}'`).join(', ');
+  const allowed = env.allowedPaths.map(p => `'${escapeJsString(p)}'`).join(', ');
+  const excluded = env.excludedPaths.map(p => `'${escapeJsString(p)}'`).join(', ');
+
+  const lines: string[] = [];
+  lines.push("import { expect, test } from '@playwright/test';");
+  lines.push('');
+  lines.push(`test.use({ baseURL: '${baseURL}' });`);
+  lines.push('');
+  lines.push('// Filtro de requests: idéntico contrato que la exploración.');
+  lines.push('// Bloquea hosts fuera del allowlist, paths excluidos y esquemas no HTTP(S).');
+  lines.push(`const ALLOWED_HOSTS = new Set<string>([${hosts}]);`);
+  lines.push(`const ALLOWED_PATHS: string[] = [${allowed}];`);
+  lines.push(`const EXCLUDED_PATHS: string[] = [${excluded}];`);
+  lines.push('');
+  lines.push('function hostAllowed(host: string): boolean {');
+  lines.push('  if (ALLOWED_HOSTS.has(host)) return true;');
+  lines.push('  for (const allowed of ALLOWED_HOSTS) {');
+  lines.push("    if (allowed.startsWith('*.')) {");
+  lines.push('      const suffix = allowed.slice(1);');
+  lines.push('      if (host.endsWith(suffix) && host.length > suffix.length) return true;');
+  lines.push('    }');
+  lines.push('  }');
+  lines.push('  return false;');
+  lines.push('}');
+  lines.push('');
+  lines.push('function pathAllowed(pathname: string): boolean {');
+  lines.push('  if (EXCLUDED_PATHS.some(p => pathname === p || pathname.startsWith(p.endsWith("/") ? p : p + "/"))) return false;');
+  lines.push('  if (ALLOWED_PATHS.length === 0) return true;');
+  lines.push('  return ALLOWED_PATHS.some(p => pathname === p || pathname.startsWith(p.endsWith("/") ? p : p + "/"));');
+  lines.push('}');
+  lines.push('');
+  lines.push('test.beforeEach(async ({ context }) => {');
+  lines.push("  await context.route('**/*', async route => {");
+  lines.push('    const request = route.request();');
+  lines.push('    let target: URL;');
+  lines.push('    try { target = new URL(request.url()); }');
+  lines.push("    catch { await route.abort('blockedbyclient'); return; }");
+  lines.push("    if (!['http:', 'https:'].includes(target.protocol)) { await route.abort('blockedbyclient'); return; }");
+  lines.push("    if (/^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(target.hostname)) { await route.abort('blockedbyclient'); return; }");
+  lines.push("    if (!hostAllowed(target.hostname)) { await route.abort('blockedbyclient'); return; }");
+  lines.push("    if (!pathAllowed(target.pathname)) { await route.abort('blockedbyclient'); return; }");
+  lines.push('    await route.continue();');
+  lines.push('  });');
+  lines.push('});');
+  lines.push('');
+  lines.push(`test('${title}', async ({ page }) => {`);
+  if (scenario.steps.length === 0) {
+    lines.push('  // Escenario sin pasos: nada que ejecutar.');
+  } else {
+    for (const step of scenario.steps) {
+      lines.push(...generateStepLines(step, '  '));
+      lines.push('');
+    }
+  }
+  lines.push('});');
+  lines.push('');
+  return lines.join('\n');
+}
+
+// Config mínimo para que el worker arranque Playwright con trace y
+// resultados JSON legibles. Se escribe al lado del spec en el directorio
+// temporal de la ejecución.
+export function generatePlaywrightConfig(options: { outputDir: string }): string {
+  return [
+    "import { defineConfig } from '@playwright/test';",
+    '',
+    'export default defineConfig({',
+    `  outputDir: '${escapeJsString(options.outputDir)}',`,
+    '  fullyParallel: false,',
+    '  retries: 0,',
+    '  workers: 1,',
+    '  reporter: [[\'json\', { outputFile: \'report.json\' }]],',
+    '  use: {',
+    '    headless: true,',
+    "    trace: 'on',",
+    "    screenshot: 'only-on-failure',",
+    "    video: 'off',",
+    '    actionTimeout: 15000,',
+    '    navigationTimeout: 30000,',
+    '  },',
+    '});',
+    '',
+  ].join('\n');
+}
+
 export function suggestedFilename(scenario: Pick<GeneratorScenario, 'title' | 'id'>): string {
   const slug = scenario.title
     .toLowerCase()

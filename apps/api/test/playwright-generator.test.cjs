@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
-const { escapeJsString, generateSpec, generateStepLines, suggestedFilename } = require('../dist/scenarios/playwright-generator');
+const { escapeJsString, generateHarnessedSpec, generatePlaywrightConfig, generateSpec, generateStepLines, suggestedFilename } = require('../dist/scenarios/playwright-generator');
 
 test('escapeJsString escapa comillas, backslashes y newlines', () => {
   assert.equal(escapeJsString("O'Reilly"), "O\\'Reilly");
@@ -94,6 +94,42 @@ test('generateSpec escapa el título contra comillas', () => {
 test('generateSpec sin pasos emite marcador TODO', () => {
   const spec = generateSpec({ id: 'x', title: 'Vacío', steps: [] });
   assert.ok(spec.includes('// TODO: define los pasos del escenario en AutoQA.'));
+});
+
+test('generateHarnessedSpec incluye baseURL y filtro de requests', () => {
+  const spec = generateHarnessedSpec({
+    id: 'abc', title: 'Compra en cuenta demo', steps: [{ ordinal: 1, action: 'navigate: /cart' }],
+  }, {
+    baseUrl: 'https://staging.example.com',
+    allowedHosts: ['staging.example.com', '*.cdn.example.com'],
+    allowedPaths: ['/cart'],
+    excludedPaths: ['/admin'],
+  });
+  assert.ok(spec.includes("test.use({ baseURL: 'https://staging.example.com' });"));
+  assert.ok(spec.includes("new Set<string>(['staging.example.com', '*.cdn.example.com'])"));
+  assert.ok(spec.includes("ALLOWED_PATHS: string[] = ['/cart']"));
+  assert.ok(spec.includes("EXCLUDED_PATHS: string[] = ['/admin']"));
+  assert.ok(spec.includes('test.beforeEach(async ({ context }) => {'));
+  assert.ok(spec.includes("await context.route('**/*'"));
+  assert.ok(spec.includes("if (!hostAllowed(target.hostname))"));
+  assert.ok(spec.includes("await page.goto('/cart');"));
+});
+
+test('generateHarnessedSpec sin hosts/paths produce arrays vacíos válidos', () => {
+  const spec = generateHarnessedSpec({
+    id: 'x', title: 'vacio', steps: [],
+  }, { baseUrl: '', allowedHosts: [], allowedPaths: [], excludedPaths: [] });
+  assert.ok(spec.includes("new Set<string>([])"));
+  assert.ok(spec.includes("ALLOWED_PATHS: string[] = []"));
+  assert.ok(spec.includes('// Escenario sin pasos: nada que ejecutar.'));
+});
+
+test('generatePlaywrightConfig escapa el outputDir y emite JSON reporter', () => {
+  const config = generatePlaywrightConfig({ outputDir: 'C:\\temp\\run' });
+  assert.ok(config.includes("import { defineConfig } from '@playwright/test';"));
+  assert.ok(config.includes("outputDir: 'C:\\\\temp\\\\run'"));
+  assert.ok(config.includes("['json', { outputFile: 'report.json' }]"));
+  assert.ok(config.includes("trace: 'on'"));
 });
 
 test('suggestedFilename produce slug seguro', () => {

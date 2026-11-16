@@ -4,6 +4,8 @@
 
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { runExploration } from './explorer';
+import { runTestRun, type ExecutionClaim } from './execution-runner';
+import { createScreenshotStorage } from './screenshot-storage';
 
 export type ClaimedExploration = {
   id: string;
@@ -37,9 +39,42 @@ export async function claimNext(prisma: PrismaClient): Promise<ClaimedExploratio
   return rows[0] ?? null;
 }
 
+export async function claimNextRun(prisma: PrismaClient): Promise<ExecutionClaim | null> {
+  const rows = await prisma.$queryRaw<ExecutionClaim[]>`
+    UPDATE "TestRun"
+    SET status = 'RUNNING', "startedAt" = now()
+    WHERE id = (
+      SELECT id FROM "TestRun"
+      WHERE status = 'QUEUED'
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    RETURNING id, "projectId", "scenarioId", "environmentId", "runKey";
+  `;
+  return rows[0] ?? null;
+}
+
 export async function tick(prisma: PrismaClient): Promise<boolean> {
-  const claim = await claimNext(prisma);
-  if (!claim) return false;
+  // Alternancia justa: primero una exploración, si no hay una ejecución.
+  const explorationClaim = await claimNext(prisma);
+  if (explorationClaim) {
+    await runExplorationClaim(prisma, explorationClaim);
+    return true;
+  }
+  const runClaim = await claimNextRun(prisma);
+  if (runClaim) {
+    const storage = createScreenshotStorage();
+    await runTestRun(prisma, runClaim, storage, (level, detail) => {
+      // Logs básicos; TestRun no tiene tabla de eventos todavía.
+      console.log(`[run ${runClaim.id}] ${level}: ${detail}`);
+    });
+    return true;
+  }
+  return false;
+}
+
+async function runExplorationClaim(prisma: PrismaClient, claim: ClaimedExploration): Promise<void> {
   const environment = await prisma.environment.findUnique({
     where: { id: claim.environmentId },
     select: { allowedHosts: true, allowedPaths: true, excludedPaths: true },
@@ -49,7 +84,7 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
       where: { id: claim.id },
       data: { status: 'FAILED', finishedAt: new Date(), errorCode: 'environment-missing' },
     });
-    return true;
+    return;
   }
   await runExploration(prisma, {
     id: claim.id,
@@ -65,7 +100,6 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     errorCode: claim.errorCode,
     status: 'RUNNING',
   }, environment);
-  return true;
 }
 
 export async function runLoop(prisma: PrismaClient, options: { pollIntervalMs?: number; signal?: AbortSignal } = {}): Promise<void> {
