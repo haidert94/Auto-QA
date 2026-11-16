@@ -14,7 +14,8 @@
     "test:documents": "npm --workspace apps/api run build && node --test apps/api/test/document-files.test.cjs apps/api/test/documents.test.cjs",
     "test:commerce": "npm --workspace apps/api run build && node --test apps/api/test/commerce.test.cjs",
     "test:commerce:e2e": "npm run build && node apps/web/test/commercial.e2e.cjs",
-    "test:plans": "npm --workspace apps/api run build && node --test apps/api/test/plan-capabilities.test.cjs"
+    "test:plans": "npm --workspace apps/api run build && node --test apps/api/test/plan-capabilities.test.cjs",
+    "test:url-guard": "npm --workspace apps/api run build && node --test apps/api/test/url-guard.test.cjs"
   },
   "workspaces": [
     "apps/*"
