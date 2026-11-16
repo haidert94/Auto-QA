@@ -101,9 +101,39 @@ Contenido mínimo (`/etc/autoqa/explorer.env`):
 # En producción con Neon: la URL con ?sslmode=require.
 DATABASE_URL=postgresql://usuario:password@host:5432/autoqa?sslmode=require
 
-# Opcional: donde guardar capturas. El script ya lo pone en el .service.
-# AUTOQA_EXPLORATIONS_DIR=/var/lib/autoqa/explorations
+# Almacenamiento de capturas. Opciones:
+#  - local: disco local (lo que ya pone systemd en AUTOQA_EXPLORATIONS_DIR).
+#           Requiere que API y worker vivan en la misma máquina.
+#  - s3:    bucket S3-compatible. Permite worker en VPS + API en Hostinger.
+AUTOQA_EXPLORATIONS_BACKEND=local
 ```
+
+Si eliges `s3`, añade (reemplazando con los valores reales):
+
+```ini
+AUTOQA_EXPLORATIONS_BACKEND=s3
+AUTOQA_S3_ENDPOINT=https://s3.eu-central-1.wasabisys.com
+AUTOQA_S3_REGION=auto
+AUTOQA_S3_BUCKET=autoqa-screenshots
+AUTOQA_S3_ACCESS_KEY=<access-key>
+AUTOQA_S3_SECRET_KEY=<secret-key>
+# Opcional: segrega entornos dentro del mismo bucket.
+# AUTOQA_S3_PREFIX=prod/
+# Activar para R2, B2, Hostinger Object Storage, MinIO (no AWS real).
+AUTOQA_S3_FORCE_PATH_STYLE=true
+```
+
+El MISMO archivo debe existir junto al API. Los dos procesos deben leer el
+mismo bucket (y, si lo usas, el mismo `AUTOQA_S3_PREFIX`). Si solo configuras
+S3 en un lado, el otro no verá las capturas.
+
+Políticas recomendadas del bucket:
+- Acceso privado (nunca public-read). La UI ya pasa por el endpoint
+  autenticado `/projects/:id/explorations/:id/pages/:id/screenshot`.
+- Usuario con permisos mínimos: `s3:PutObject`, `s3:GetObject`,
+  `s3:DeleteObject` sobre el bucket (y el prefix si lo usas).
+- Expiración automática a 30–90 días si las capturas no se necesitan
+  después (hoy no hay rotación en el código).
 
 Nunca metas este archivo en Git ni lo copies a /tmp.
 
@@ -133,23 +163,25 @@ ticks). Con un trabajo encolado desde la UI, aparecen las entradas de
    encolar una exploración de una URL dentro de `allowedHosts`.
 2. `journalctl -u autoqa-explorer -f` debe mostrar actividad.
 3. En la vista de la exploración debe aparecer la miniatura (capturas servidas
-   desde el endpoint de la fase 5.6 contra las imágenes guardadas en el VPS).
-   Como las capturas viven en el VPS del worker, el **API** debe poder leer
-   ese mismo almacenamiento — hoy esto implica que el worker y el API corran
-   en la misma máquina (o que `/var/lib/autoqa/explorations` se exponga por
-   NFS/S3; eso queda para una iteración futura).
+   desde el endpoint `GET /projects/:id/explorations/:id/pages/:id/screenshot`).
 
 ## Almacenamiento de capturas y el API
 
-Hoy `LocalScreenshotReader` del API lee del mismo filesystem donde escribe el
-worker. En el VPS esto funciona si el API también está en el VPS. Para
-desplegar el API en Hostinger y el worker en un VPS aparte, hace falta un
-adaptador de almacenamiento compartido (S3 / Spaces). Está planeado — por
-ahora, dos opciones:
+Hay dos topologías soportadas:
 
-- **Mismo VPS**: desplegar API + worker en el mismo host. Más simple.
-- **Fase intermedia**: dejar la UI mostrar solo la lista de páginas (sin
-  miniatura) mientras se termina el adaptador S3.
+- **Backend `local`**: worker y API en el mismo host. El worker escribe en
+  `AUTOQA_EXPLORATIONS_DIR`, el API lo lee del mismo directorio. Lo más
+  simple para empezar.
+- **Backend `s3`** (fase 5.9): worker en un VPS y API en Hostinger. Ambos
+  procesos apuntan al mismo bucket S3-compatible (Hostinger Object Storage,
+  Cloudflare R2, Backblaze B2, Spaces, AWS, MinIO). El API nunca expone URLs
+  públicas: el endpoint autenticado sigue siendo el que sirve el PNG; S3 es
+  almacenamiento interno, privado.
+
+Para cambiar entre backends solo toca las variables `AUTOQA_EXPLORATIONS_*` y
+reinicia los procesos. No hay migración automática de capturas viejas; si
+tienes capturas en el disco local y pasas a S3, esas imágenes dejarán de
+mostrarse (el endpoint devolverá 404). Las nuevas se guardarán en S3.
 
 ## Actualizaciones
 

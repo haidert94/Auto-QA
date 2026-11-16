@@ -8,7 +8,7 @@ import { chromium, type Browser, type BrowserContext, type Page, type Request as
 import type { PrismaClient, Exploration, Environment } from '@prisma/client';
 import { defaultResolver, validateExplorationUrlSync, type GuardScope } from '../../api/src/exploration/url-guard';
 import { createCache, decideRequest, type FilterDecision } from './request-filter';
-import { LocalScreenshotStorage, type ScreenshotStorage } from './screenshot-storage';
+import { createScreenshotStorage, type ScreenshotStorage } from './screenshot-storage';
 
 export type RunLimits = {
   maxPages: number;
@@ -61,7 +61,7 @@ export async function runExploration(
   prisma: PrismaClient,
   exploration: Exploration,
   environment: Pick<Environment, 'allowedHosts' | 'allowedPaths' | 'excludedPaths'>,
-  storage: ScreenshotStorage = new LocalScreenshotStorage(),
+  storage: ScreenshotStorage = createScreenshotStorage(),
 ): Promise<void> {
   const limits = readLimits(exploration.limits);
   const scope = scopeFromEnvironment(environment);
