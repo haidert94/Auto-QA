@@ -1,19 +1,5 @@
 import type { Metadata } from 'next';
-import localFont from 'next/font/local';
 import Commercial from './commercial';
-
-const geist = localFont({
-  src: './fonts/geist.woff2',
-  variable: '--landing-geist',
-  weight: '400 800',
-  display: 'swap',
-});
-const jetBrainsMono = localFont({
-  src: './fonts/jetbrains-mono.woff2',
-  variable: '--landing-mono',
-  weight: '400 600',
-  display: 'swap',
-});
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
@@ -28,5 +14,5 @@ export const metadata: Metadata = {
 };
 
 export default function Home() {
-  return <Commercial fontClasses={geist.variable + ' ' + jetBrainsMono.variable}/>;
+  return <Commercial/>;
 }

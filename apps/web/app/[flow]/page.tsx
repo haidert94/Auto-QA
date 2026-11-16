@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AccountForm, BillingForm, Logout } from '../account-forms';
-import { accountFetch, activeStatuses, listPlans, requireAccount } from '../autoqa-server';
-import { Brand } from '../commercial';
+import { accountFetch, activeStatuses, listPlans, requireAccount, setting } from '../autoqa-server';
+import { CommercialFooter, CommercialHeader } from '../commercial';
 import { UsageSummary } from '../usage-summary';
 
 const anchors: Record<string, string> = { producto: 'producto', 'como-funciona': 'como-funciona', precios: 'precios', faq: 'faq' };
@@ -24,6 +24,15 @@ export async function generateMetadata({ params }: { params: Promise<{ flow: str
   return { title: title + ' · AutoQA', robots: { index, follow: true } };
 }
 
+function Shell({ children }: { children: React.ReactNode }) {
+  const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
+  return <div className="commercial">
+    <CommercialHeader accountOrigin={accountOrigin}/>
+    <div className="wrap commercial-auth-wrap"><section className="commercial-auth">{children}</section></div>
+    <CommercialFooter/>
+  </div>;
+}
+
 export default async function Page({ params, searchParams }: {
   params: Promise<{ flow: string }>; searchParams: Promise<{ plan?: string }>;
 }) {
@@ -32,24 +41,24 @@ export default async function Page({ params, searchParams }: {
   if (Object.hasOwn(flows, flow)) {
     const [title, mode] = flows[flow as keyof typeof flows];
     const { plan } = await searchParams;
-    return <section className="commercial-auth"><Brand/><h1>{title}</h1>
+    return <Shell><h1>{title}</h1>
       {mode === 'register' && <p>Elige un plan y verifica tu correo para continuar con la contratación de prueba.</p>}
-      <AccountForm mode={mode} plan={plan} plans={mode === 'register' ? await listPlans() : []}/></section>;
+      <AccountForm mode={mode} plan={plan} plans={mode === 'register' ? await listPlans() : []}/></Shell>;
   }
   if (Object.hasOwn(legal, flow)) {
     const [title, body] = legal[flow as keyof typeof legal];
-    return <section className="commercial-auth"><Brand/><h1 id="datos">{title}</h1><p>{body}</p></section>;
+    return <Shell><h1 id="datos">{title}</h1><p>{body}</p></Shell>;
   }
   if (flow === 'estado') {
     let status = false;
     try { status = (await accountFetch('/commerce/plans', {}, { public: true })).ok; } catch {}
-    return <section className="commercial-auth"><Brand/><h1>Estado del servicio</h1>
-      <p>{status ? 'El catálogo de esta instalación responde.' : 'El catálogo de esta instalación no responde en este momento.'}</p></section>;
+    return <Shell><h1>Estado del servicio</h1>
+      <p>{status ? 'El catálogo de esta instalación responde.' : 'El catálogo de esta instalación no responde en este momento.'}</p></Shell>;
   }
   if (['dashboard', 'billing', 'settings'].includes(flow)) {
     const account = await requireAccount();
     if (flow === 'dashboard' && !activeStatuses.includes(account.subscription.status)) redirect('/billing');
-    return <section className="commercial-auth"><Brand/>
+    return <Shell>
       {flow === 'billing' ? <><h1>Facturación</h1><p>{account.organization.name}</p><BillingForm account={account} plans={await listPlans()}/><UsageSummary/></> :
         flow === 'settings' ? <><h1>Mi cuenta</h1><p>{account.name} · {account.email}</p><p>Organización · {account.organization.name}</p></> :
           <><h1>Dashboard</h1><p>{account.organization.name} · Plan {account.subscription.plan?.name}</p>
@@ -57,7 +66,7 @@ export default async function Page({ params, searchParams }: {
             <div className="actions"><Link className="button primary" href="/projects">Ver proyectos</Link>
               <Link className="button outline" href="/projects/new">Registrar aplicación</Link></div></>}
       <p><Link href="/billing">Facturación</Link> · <Link href="/settings">Mi cuenta</Link></p><Logout/>
-    </section>;
+    </Shell>;
   }
   notFound();
 }

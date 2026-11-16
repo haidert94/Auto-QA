@@ -74,25 +74,44 @@ function InspectorDemo() {
   );
 }
 
-export default async function Commercial({ fontClasses }: { fontClasses: string }) {
+export function CommercialHeader({ accountOrigin = '' }: { accountOrigin?: string }) {
+  return <header className="commercial-header">
+    <div className="wrap nav-wrap">
+      <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
+      <nav className="desktop-nav" aria-label="Navegación principal">
+        {navigation.map(([label, href]) => <Link key={href} href={'/' + href.replace(/^#/, '')}>{label}</Link>)}
+      </nav>
+      <div className="desktop-actions">
+        <Link href={accountOrigin + '/login'}>Iniciar sesión</Link>
+        <Link className="button primary" href={accountOrigin + '/registro'}>Crear cuenta</Link>
+      </div>
+      <MobileNavigation links={navigation} loginHref={accountOrigin + '/login'}/>
+    </div>
+  </header>;
+}
+
+export function CommercialFooter() {
+  return <footer className="commerce-footer" id="contacto">
+    <div className="wrap footer-grid">
+      <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
+      <nav aria-label="Pie de página">
+        {navigation.map(([label, href]) => <Link key={href} href={'/' + href.replace(/^#/, '')}>{label}</Link>)}
+        <Link href="/contacto">Contacto</Link>
+        <Link href="/terminos">Términos</Link>
+        <Link href="/privacidad">Privacidad</Link>
+        <Link href="/estado">Estado del servicio</Link>
+      </nav>
+    </div>
+  </footer>;
+}
+
+export default async function Commercial() {
   const plans = await listPlans();
   const accountOrigin = setting('AUTOQA_PUBLIC_WORKSPACE_ORIGIN') ?? '';
 
   return (
-    <div className={'commercial ' + fontClasses}>
-      <header className="commercial-header">
-        <div className="wrap nav-wrap">
-          <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
-          <nav className="desktop-nav" aria-label="Navegación principal">
-            {navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}
-          </nav>
-          <div className="desktop-actions">
-            <Link href={accountOrigin + '/login'}>Iniciar sesión</Link>
-            <a className="button primary" href="#precios">Ver planes</a>
-          </div>
-          <MobileNavigation links={navigation} loginHref={accountOrigin + '/login'}/>
-        </div>
-      </header>
+    <div className="commercial">
+      <CommercialHeader accountOrigin={accountOrigin}/>
 
       <section id="producto" className="hero" aria-labelledby="hero-title">
         <div className="wrap hero-grid">
@@ -168,18 +187,7 @@ export default async function Commercial({ fontClasses }: { fontClasses: string 
         </div>
       </section>
 
-      <footer className="commerce-footer" id="contacto">
-        <div className="wrap footer-grid">
-          <Link className="wordmark" href="/" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
-          <nav aria-label="Pie de página">
-            {navigation.map(([label, href]) => <a key={href} href={href}>{label}</a>)}
-            <Link href="/contacto">Contacto</Link>
-            <Link href="/terminos">Términos</Link>
-            <Link href="/privacidad">Privacidad</Link>
-            <Link href="/estado">Estado del servicio</Link>
-          </nav>
-        </div>
-      </footer>
+      <CommercialFooter/>
     </div>
   );
 }
