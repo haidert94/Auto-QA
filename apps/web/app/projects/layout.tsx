@@ -1,6 +1,5 @@
-import { requireWorkspace } from '../autoqa-server';
+import { AppShell } from '../app-shell';
 
-export default async function Layout({ children }: { children: React.ReactNode }) {
-  await requireWorkspace();
-  return children;
+export default function ProjectsLayout({ children }: { children: React.ReactNode }) {
+  return <AppShell>{children}</AppShell>;
 }

@@ -225,6 +225,79 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .diff-urls.added > li { border-left: 3px solid #0d6540; }
 .diff-urls.removed > li { border-left: 3px solid #a72020; }
 
+/* ---- App shell (nav superior para la zona firmada) ---- */
+.app-nav { background: #0d6576; color: #fff; }
+.app-nav-inner {
+  max-width: 1200px; margin: 0 auto; padding: 10px 20px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.app-nav-logo { color: #fff; font-weight: 800; font-size: 1.1rem; text-decoration: none; letter-spacing: 0.02em; }
+.app-nav-logo:hover { opacity: 0.85; }
+.app-nav-toggle {
+  display: none; background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.3);
+  padding: 6px 10px; border-radius: 6px; margin: 0; font-size: 1.1rem;
+}
+.app-nav-links { display: flex; gap: 6px; flex: 1; align-items: center; }
+.app-nav-links a {
+  color: rgba(255,255,255,0.85); text-decoration: none; padding: 8px 12px; border-radius: 6px;
+  font-weight: 500; transition: background 0.1s;
+}
+.app-nav-links a:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.app-nav-links a.active { background: rgba(255,255,255,0.18); color: #fff; }
+.app-nav-account { display: flex; gap: 12px; align-items: center; }
+.app-nav-org { color: rgba(255,255,255,0.75); font-size: 0.9em; }
+.app-nav-menu { position: relative; }
+.app-nav-menu > summary {
+  list-style: none; cursor: pointer; color: #fff; padding: 6px 12px;
+  background: rgba(255,255,255,0.12); border-radius: 6px; font-weight: 600;
+}
+.app-nav-menu > summary::-webkit-details-marker { display: none; }
+.app-nav-menu[open] > summary { background: rgba(255,255,255,0.2); }
+.app-nav-menu-content {
+  position: absolute; right: 0; top: calc(100% + 6px); background: #fff; color: #172033;
+  padding: 14px 16px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  min-width: 220px; z-index: 10;
+}
+.app-nav-menu-content p { margin: 4px 0; }
+.app-nav-menu-content button { margin-top: 10px; width: 100%; }
+.app-shell-body { padding-top: 8px; }
+@media (max-width: 720px) {
+  .app-nav-toggle { display: inline-block; order: 2; margin-left: auto; }
+  .app-nav-account { order: 3; width: 100%; justify-content: flex-end; }
+  .app-nav-links {
+    order: 4; width: 100%; flex-direction: column; align-items: stretch;
+    display: none; background: rgba(0,0,0,0.15); padding: 8px; border-radius: 8px;
+  }
+  .app-nav-links.open { display: flex; }
+}
+
+/* ---- Dashboard ---- */
+.dashboard-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.dashboard-hero h1 { margin: 6px 0 4px; }
+.dashboard-cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.dashboard-cta .button-like {
+  padding: 10px 18px; border-radius: 7px; text-decoration: none; font-weight: 600; display: inline-block;
+}
+.dashboard-cta .primary { background: #0d6576; color: #fff; }
+.dashboard-cta .secondary { background: #fff; color: #173a5e; border: 1px solid #a7b4c3; }
+.dashboard-steps { list-style: decimal inside; padding: 0; margin: 10px 0 0; display: grid; gap: 14px; }
+.dashboard-steps > li { padding: 14px 16px; background: #f5f7fb; border-radius: 8px; }
+.dashboard-steps > li strong { font-size: 1em; color: #173a5e; }
+.dashboard-steps > li p { margin: 4px 0 6px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 20px; }
+.dashboard-grid .panel { margin: 0; }
+.dashboard-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px 24px; margin: 12px 0; }
+.dashboard-metrics dt { color: #526279; font-size: 0.85em; font-weight: 600; }
+.dashboard-metrics dd { margin: 4px 0 0; font-size: 1.2em; font-weight: 700; color: #173a5e; }
+.dashboard-projects { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 14px; }
+.dashboard-projects > li { padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.dashboard-project-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dashboard-project-title { font-weight: 700; color: #173a5e; text-decoration: none; }
+.dashboard-project-title:hover { text-decoration: underline; }
+.dashboard-envs { list-style: none; padding: 0; margin: 8px 0; color: #526279; font-size: 0.9em; }
+.dashboard-envs > li { padding: 2px 0; }
+.dashboard-project-links { display: flex; gap: 14px; margin-top: 8px; font-size: 0.9em; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }
