@@ -47,9 +47,14 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
     <section className="panel">
       <h2>Calidad</h2>
       <p className="muted">
-        Consulta el IPA (Índice de Preparación) con evidencia trazable a documentos, versiones y requisitos.
+        IPA mide la preparación del proyecto; ICSP mide la salud del producto.
+        El reporte consolida ambos con trazabilidad requisito → escenario → resultado.
       </p>
-      <p><Link href={`/projects/${project.id}/ipa`}>Ver IPA del proyecto →</Link></p>
+      <p>
+        <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
+        <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
+        <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
+      </p>
     </section>
     <ScenariosPanel projectId={project.id} />
     {showExploration && <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />}
