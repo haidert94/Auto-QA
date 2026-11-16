@@ -298,6 +298,41 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .dashboard-envs > li { padding: 2px 0; }
 .dashboard-project-links { display: flex; gap: 14px; margin-top: 8px; font-size: 0.9em; }
 
+/* ---- Wizard de onboarding ---- */
+.onboarding-wizard { max-width: 760px; }
+.wizard-steps {
+  list-style: none; padding: 0; margin: 0 0 24px; display: flex; gap: 6px;
+  flex-wrap: wrap; counter-reset: wizard;
+}
+.wizard-steps > li {
+  flex: 1 1 120px; padding: 10px 12px; border-radius: 6px;
+  background: #e8edf7; color: #4b5a77; font-size: 0.85em; font-weight: 600;
+  border-left: 3px solid #a7b4c3;
+}
+.wizard-steps > li.done { background: #d6f5e3; color: #0d6540; border-left-color: #0d6540; }
+.wizard-steps > li.current { background: #0d6576; color: #fff; border-left-color: #fff; }
+.wizard-steps > li.pending { opacity: 0.6; }
+.onboarding-wizard > section > h1 { margin-top: 0; }
+.wizard-bullets { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
+.wizard-bullets > li { padding: 12px 14px; background: #f5f7fb; border-radius: 8px; }
+.wizard-auth { background: #fff7f7; border: 1px solid #f4b8b8; border-radius: 10px; padding: 14px 18px; margin-top: 12px; }
+.wizard-auth legend { padding: 0 8px; color: #7a1818; font-weight: 700; }
+.wizard-auth .check { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; }
+.wizard-auth .check input { margin-top: 4px; width: auto; }
+.wizard-auth .check span { flex: 1; }
+.wizard-review { display: grid; gap: 10px; margin: 14px 0; }
+.wizard-review > div { padding: 10px 14px; background: #f5f7fb; border-radius: 8px; }
+.wizard-review dt { font-weight: 700; color: #173a5e; font-size: 0.85em; margin-bottom: 2px; }
+.wizard-review dd { margin: 0; }
+.wizard-review ul { list-style: none; padding: 0; margin: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.wizard-review ul > li { padding: 2px 8px; background: #fff; border-radius: 4px; }
+.wizard-actions {
+  display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+.wizard-actions .button-like { padding: 10px 18px; border-radius: 7px; text-decoration: none; font-weight: 600; }
+.wizard-actions .button-like.secondary { background: #fff; color: #173a5e; border: 1px solid #a7b4c3; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }

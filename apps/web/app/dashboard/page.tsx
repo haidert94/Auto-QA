@@ -38,7 +38,7 @@ export default async function Dashboard() {
         </p>
       </div>
       <div className="dashboard-cta">
-        <Link href="/projects/new" className="button-like primary">Registrar aplicación</Link>
+        <Link href="/onboarding" className="button-like primary">Registrar aplicación</Link>
         <Link href="/projects" className="button-like secondary">Ver proyectos</Link>
       </div>
     </section>
@@ -81,7 +81,7 @@ export default async function Dashboard() {
     <section className="panel">
       <h2>Proyectos recientes</h2>
       {projects.length === 0
-        ? <p className="muted">Aún no has registrado aplicaciones. Empieza con <Link href="/projects/new">Registrar aplicación</Link>.</p>
+        ? <p className="muted">Aún no has registrado aplicaciones. Empieza con <Link href="/onboarding">Registrar aplicación</Link>.</p>
         : <ul className="dashboard-projects">
           {projects.slice(0, 5).map(project => <li key={project.id}>
             <div className="dashboard-project-head">
@@ -119,7 +119,7 @@ function buildNextSteps(account: Awaited<ReturnType<typeof requireAccount>>, pro
     steps.push({
       title: 'Registra tu primera aplicación',
       description: 'Declara el proyecto, el entorno autorizado y los dominios y rutas incluidas en el alcance.',
-      cta: 'Registrar aplicación', href: '/projects/new',
+      cta: 'Iniciar onboarding', href: '/onboarding',
     });
   } else {
     const anyWithoutAuthEnv = projects.some(p => p.environments.every(e => !e.authorizationConfirmed));
