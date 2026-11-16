@@ -69,6 +69,7 @@ model User {
   projects       Project[]
   explorations   Exploration[]
   runs           TestRun[]
+  performanceAudits PerformanceAudit[]
   invitesCreated OrganizationInvite[] @relation("InviteAuthor")
   audits         AccessAudit[]
   createdAt      DateTime            @default(now())
@@ -96,6 +97,7 @@ model Project {
   requirements           Requirement[]
   scenarios              TestScenario[]
   runs                   TestRun[]
+  performanceAudits      PerformanceAudit[]
   assessments            QualityAssessment[]
   explorations           Exploration[]
   createdAt              DateTime            @default(now())
@@ -122,6 +124,7 @@ model Environment {
   readOnly               Boolean          @default(true)
   explorations           Exploration[]
   runs                   TestRun[]
+  performanceAudits      PerformanceAudit[]
   createdAt              DateTime         @default(now())
 }
 
@@ -334,6 +337,42 @@ model TestResult {
   durationMs   Int?
   errorMessage String?
   evidenceKey  String?
+}
+
+model PerformanceAudit {
+  id              String       @id @default(uuid())
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environmentId   String?
+  environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  url             String
+  status          RunStatus    @default(QUEUED)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorCode       String?
+  runKey          String?      @unique
+  createdByUserId String?
+  createdBy       User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  // Puntajes 0-100; null hasta que el audit termine.
+  performanceScore   Int?
+  accessibilityScore Int?
+  bestPracticesScore Int?
+  seoScore           Int?
+
+  // Métricas Web Vitals en milisegundos (CLS es adimensional).
+  fcpMs Int?
+  lcpMs Int?
+  tbtMs Int?
+  cls   Float?
+  siMs  Int?
+
+  // Reporte JSON completo subido al ScreenshotStorage.
+  reportKey String?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 model QualityAssessment {

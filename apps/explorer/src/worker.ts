@@ -3,6 +3,7 @@
 // el lock pesimista garantiza que si hay varios workers no se pisan.
 
 import { PrismaClient, type Prisma } from '@prisma/client';
+import { runAudit, type AuditClaim } from './audit-runner';
 import { runExploration } from './explorer';
 import { runTestRun, type ExecutionClaim } from './execution-runner';
 import { createScreenshotStorage } from './screenshot-storage';
@@ -39,6 +40,22 @@ export async function claimNext(prisma: PrismaClient): Promise<ClaimedExploratio
   return rows[0] ?? null;
 }
 
+export async function claimNextAudit(prisma: PrismaClient): Promise<AuditClaim | null> {
+  const rows = await prisma.$queryRaw<AuditClaim[]>`
+    UPDATE "PerformanceAudit"
+    SET status = 'RUNNING', "startedAt" = now()
+    WHERE id = (
+      SELECT id FROM "PerformanceAudit"
+      WHERE status = 'QUEUED'
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    RETURNING id, "projectId", "environmentId", url, "runKey";
+  `;
+  return rows[0] ?? null;
+}
+
 export async function claimNextRun(prisma: PrismaClient): Promise<ExecutionClaim | null> {
   const rows = await prisma.$queryRaw<ExecutionClaim[]>`
     UPDATE "TestRun"
@@ -68,6 +85,14 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     await runTestRun(prisma, runClaim, storage, (level, detail) => {
       // Logs básicos; TestRun no tiene tabla de eventos todavía.
       console.log(`[run ${runClaim.id}] ${level}: ${detail}`);
+    });
+    return true;
+  }
+  const auditClaim = await claimNextAudit(prisma);
+  if (auditClaim) {
+    const storage = createScreenshotStorage();
+    await runAudit(prisma, auditClaim, storage, (level, detail) => {
+      console.log(`[audit ${auditClaim.id}] ${level}: ${detail}`);
     });
     return true;
   }

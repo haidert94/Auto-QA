@@ -53,6 +53,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
       <p>
         <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
         <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
+        <Link href={`/projects/${project.id}/performance`}>Performance →</Link>{' · '}
         <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
       </p>
     </section>
