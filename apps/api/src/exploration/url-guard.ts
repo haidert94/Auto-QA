@@ -35,6 +35,10 @@ export type GuardResult =
   | { ok: true; url: URL; addresses: string[] }
   | { ok: false; issue: GuardIssue; detail?: string };
 
+export type SyncGuardResult =
+  | { ok: true; url: URL }
+  | { ok: false; issue: GuardIssue; detail?: string };
+
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 export function classifyAddress(address: string): 'public' | GuardIssue {
@@ -105,11 +109,7 @@ export const defaultResolver: AddressResolver = async (host) => {
   return results;
 };
 
-export async function validateExplorationUrl(
-  raw: string,
-  scope: GuardScope,
-  resolver: AddressResolver = defaultResolver,
-): Promise<GuardResult> {
+export function validateExplorationUrlSync(raw: string, scope: GuardScope): SyncGuardResult {
   let url: URL;
   try {
     url = new URL(raw);
@@ -144,9 +144,21 @@ export async function validateExplorationUrl(
     return { ok: false, issue: 'path-not-allowed', detail: path };
   }
 
+  return { ok: true, url };
+}
+
+export async function validateExplorationUrl(
+  raw: string,
+  scope: GuardScope,
+  resolver: AddressResolver = defaultResolver,
+): Promise<GuardResult> {
+  const sync = validateExplorationUrlSync(raw, scope);
+  if (!sync.ok) return sync;
+  const { url } = sync;
+
   let addresses: string[];
   try {
-    addresses = await resolver(host);
+    addresses = await resolver(url.hostname);
   } catch (error) {
     return { ok: false, issue: 'dns-failure', detail: error instanceof Error ? error.message : undefined };
   }
