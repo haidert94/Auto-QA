@@ -72,8 +72,16 @@ export type Account = {
 export async function listPlans(): Promise<Plan[]> {
   try {
     const response = await accountFetch('/commerce/plans', {}, { public: true });
-    return response.ok ? await response.json() : [];
-  } catch { return []; }
+    if (!response.ok) {
+      console.error('[listPlans] API respondió', response.status, 'url=' + (process.env.AUTOQA_INTERNAL_API_URL ?? ''));
+      return [];
+    }
+    return await response.json();
+  } catch (e) {
+    console.error('[listPlans] fetch falló url=' + (process.env.AUTOQA_INTERNAL_API_URL ?? ''),
+      e instanceof Error ? e.name + ':' + e.message : String(e));
+    return [];
+  }
 }
 
 export async function requireAccount(): Promise<Account> {
