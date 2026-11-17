@@ -14,17 +14,25 @@ const publicPort = Number(process.env.PORT || 8080);
 const apiPort = 4001;
 
 async function main() {
+  // npx no está disponible en el runtime de Hostinger, solo durante el
+  // build. Resolvemos el entrypoint de prisma por require y lo ejecutamos
+  // con el mismo `node` del proceso actual.
+  let prismaBin;
+  try { prismaBin = require.resolve('prisma/build/index.js'); }
+  catch (e) { console.error('[startup] no se pudo resolver prisma:', e.message); }
   const runPrisma = (args) => {
-    const result = spawnSync('npx', ['prisma', ...args], {
-      shell: process.platform === 'win32',
+    if (!prismaBin) return { status: 1 };
+    const result = spawnSync(process.execPath, [prismaBin, ...args], {
       encoding: 'utf8',
+      env: { ...process.env },
     });
     const tag = '[prisma ' + args.join(' ') + ']';
     const out = (result.stdout || '').trim();
     const err = (result.stderr || '').trim();
     if (out) console.log(tag, out.replace(/\n/g, ' | '));
     if (err) console.warn(tag, 'STDERR:', err.replace(/\n/g, ' | '));
-    console.log(tag, 'exit=' + result.status);
+    if (result.error) console.error(tag, 'spawn-error:', result.error.message);
+    console.log(tag, 'exit=' + result.status + ' signal=' + result.signal);
     return result;
   };
 
