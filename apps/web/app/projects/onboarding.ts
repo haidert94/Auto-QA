@@ -46,12 +46,6 @@ export type Environment = {
   excludedPaths: Route[];
   prohibitedActions: string[];
   readOnly: boolean;
-  testData: {
-    syntheticData?: string;
-    seeds?: string;
-    cleanupStrategy?: string;
-    integrations?: string[];
-  } | null;
 };
 
 export type ProjectSummary = {
@@ -91,10 +85,6 @@ export type EnvironmentForm = {
   allowedPaths: string;
   excludedPaths: string;
   prohibitedActions: string;
-  syntheticData: string;
-  seeds: string;
-  cleanupStrategy: string;
-  integrations: string;
 };
 
 export type RoleForm = {
@@ -122,10 +112,6 @@ export function environmentForm(environment?: Environment): EnvironmentForm {
     allowedPaths: environment?.allowedPaths.map(route => route.host + route.path).join('\n') ?? '',
     excludedPaths: environment?.excludedPaths.map(route => route.host + route.path).join('\n') ?? '',
     prohibitedActions: environment?.prohibitedActions.join('\n') ?? '',
-    syntheticData: environment?.testData?.syntheticData ?? '',
-    seeds: environment?.testData?.seeds ?? '',
-    cleanupStrategy: environment?.testData?.cleanupStrategy ?? '',
-    integrations: environment?.testData?.integrations?.join('\n') ?? '',
   };
 }
 
@@ -175,12 +161,6 @@ export function environmentPayload(environment: EnvironmentForm) {
     allowedPaths: routes(environment.allowedPaths),
     excludedPaths: routes(environment.excludedPaths),
     prohibitedActions: lines(environment.prohibitedActions),
-    testData: {
-      syntheticData: environment.syntheticData.trim() || undefined,
-      seeds: environment.seeds.trim() || undefined,
-      cleanupStrategy: environment.cleanupStrategy.trim() || undefined,
-      integrations: lines(environment.integrations),
-    },
   };
 }
 

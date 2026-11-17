@@ -95,17 +95,6 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
       {value.authorizationConfirmed && value.authorizedAt && <p className="muted">
         Confirmada el <time dateTime={value.authorizedAt}>{value.authorizedAt.slice(0, 19).replace('T', ' ')} UTC</time>
       </p>}
-      <details>
-        <summary>Datos de prueba e integraciones</summary>
-        <TextField label="Datos sintéticos" value={value.syntheticData} maxLength={1000}
-          multiline onChange={next => change('syntheticData', next)} />
-        <TextField label="Semillas" value={value.seeds} maxLength={1000}
-          onChange={next => change('seeds', next)} />
-        <TextField label="Estrategia de limpieza" value={value.cleanupStrategy} maxLength={1000}
-          multiline onChange={next => change('cleanupStrategy', next)} />
-        <TextField label="Integraciones de prueba, una por línea" value={value.integrations}
-          multiline onChange={next => change('integrations', next)} />
-      </details>
       <RemoveButton onClick={onRemove}>Quitar entorno {index + 1}</RemoveButton>
     </fieldset>
   );

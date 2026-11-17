@@ -84,9 +84,6 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
   const declared = docStates.filter(doc => doc.state === 'DECLARED').length;
   const verifiable = findings.filter(finding => isRequirement(finding.kind) && !finding.pendingConfirmation).length;
   const ambiguous = findings.filter(finding => isRequirement(finding.kind) && finding.pendingConfirmation).length;
-  const data = environments.map(env => env.testData && typeof env.testData === 'object' && !Array.isArray(env.testData) ? env.testData : {});
-  const testInputs = hasEnvironments && data.every(item => item.syntheticData || item.seeds);
-  const cleanup = hasEnvironments && data.every(item => item.cleanupStrategy);
 
   // Anclas para trazabilidad: documentos con problemas, requisitos ambiguos,
   // entornos sin alcance definido. No reemplazan los textos available/missing
@@ -148,17 +145,6 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
         ...(references ? [] : ['Identifica las cuentas de prueba mediante referencias externas.']),
       ],
       anchors: accessAnchors,
-      blocking: false,
-    },
-    {
-      criterion: 'Datos y preparación', weight: 20, points: (testInputs ? 10 : 0) + (cleanup ? 10 : 0),
-      available: [...(testInputs ? ['Datos sintéticos o semillas declarados.'] : []), ...(cleanup ? ['Limpieza declarada.'] : [])],
-      missing: [...(testInputs ? [] : ['Declara datos de prueba o semillas por entorno.']),
-        ...(cleanup ? [] : ['Describe la limpieza de los datos de prueba.'])],
-      anchors: environments.filter(env => {
-        const value = env.testData && typeof env.testData === 'object' && !Array.isArray(env.testData) ? env.testData : {};
-        return !(value.syntheticData || value.seeds) || !value.cleanupStrategy;
-      }).map(envAnchor),
       blocking: false,
     },
     {

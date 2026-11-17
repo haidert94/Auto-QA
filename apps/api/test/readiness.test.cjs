@@ -96,14 +96,15 @@ test('readiness: proyecto archivado produce blocker aunque los entornos estén b
 });
 
 test('readiness: hints separa recomendaciones no bloqueantes', () => {
+  // Proyecto con entornos privados sin matriz de permisos ni referencias:
+  // la señal "Accesos y permisos" aporta hints no bloqueantes.
   const project = baseProject({
-    environments: [env({ allowedPaths: [{ host: 'app.example.com', path: '/' }], testData: null })],
+    environments: [env({ accessMode: 'PRIVATE' })],
     roles: [],
   });
   const ipa = readiness(project, [], []);
-  // "Datos y preparación" (no bloqueante) debe aportar hints sin estar en blockers.
-  assert.ok(ipa.hints.some(h => /Datos de prueba|semillas/i.test(h)));
-  assert.ok(!ipa.blockers.some(b => /semillas/i.test(b)));
+  assert.ok(ipa.hints.some(h => /permisos|cuentas de prueba/i.test(h)));
+  assert.ok(!ipa.blockers.some(b => /permisos|cuentas de prueba/i.test(b)));
 });
 
 test('readiness: recomendations conserva compat con la salida anterior', () => {

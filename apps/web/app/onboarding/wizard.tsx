@@ -26,13 +26,12 @@ type Form = {
   accessMode: typeof ACCESS_MODES[number]['value'] | '';
   allowedHosts: string;
   authorizationConfirmed: boolean;
-  readOnly: boolean;
 };
 
 const EMPTY: Form = {
   name: '', description: '', ownerLabel: '',
   envType: 'QA', baseUrl: '', accessMode: '',
-  allowedHosts: '', authorizationConfirmed: false, readOnly: true,
+  allowedHosts: '', authorizationConfirmed: false,
 };
 
 function hostFromUrl(value: string): string {
@@ -56,7 +55,7 @@ export function OnboardingWizard() {
   function canProceed(current: number): boolean {
     if (current === 1) return form.name.trim().length >= 2;
     if (current === 2) return !!form.envType && !!form.baseUrl.trim() && !!form.accessMode && hostFromUrl(form.baseUrl) !== '';
-    if (current === 3) return form.authorizationConfirmed && (hostsText.length > 0) && form.readOnly;
+    if (current === 3) return form.authorizationConfirmed && hostsText.length > 0;
     return true;
   }
 
@@ -97,12 +96,11 @@ export function OnboardingWizard() {
             baseUrl: form.baseUrl.trim(),
             accessMode: form.accessMode,
             authorizationConfirmed: form.authorizationConfirmed,
-            readOnly: form.readOnly,
+            readOnly: true,
             allowedHosts,
             allowedPaths,
             excludedPaths: [],
             prohibitedActions: [],
-            testData: {},
           }],
           roles,
           executionSettings: {},
@@ -207,13 +205,10 @@ export function OnboardingWizard() {
                  onChange={e => update('authorizationConfirmed', e.target.checked)}/>
           <span>Confirmo que soy dueño o estoy expresamente autorizado para probar esta aplicación en el entorno declarado.</span>
         </label>
-        <label className="check">
-          <input type="checkbox" checked={form.readOnly}
-                 onChange={e => update('readOnly', e.target.checked)}/>
-          <span>Las pruebas serán en modo <strong>solo lectura</strong> (no se envían formularios ni se modifica el estado del sistema).</span>
-        </label>
         <p className="muted">
-          AutoQA bloquea direcciones IP privadas, metadatos de nube y hosts fuera de esta lista. Las credenciales nunca se registran en logs ni en traces.
+          AutoQA ejecuta solo pruebas no destructivas: no envía formularios de pago, no crea ni borra registros reales
+          y no modifica el estado del sistema. También bloquea direcciones IP privadas, metadatos de nube y hosts fuera
+          de esta lista. Las credenciales nunca se registran en logs ni en traces.
         </p>
       </fieldset>
     </section>}
