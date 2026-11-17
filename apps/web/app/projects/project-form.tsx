@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DocumentPanel } from './document-panel';
 import { documentRequest, type PendingDocument } from './document-client';
@@ -139,7 +138,6 @@ export function ProjectForm({ initial }: { initial?: Project }) {
 
   return (
     <section className="panel">
-      <p><Link href="/projects">Volver a proyectos</Link></p>
       <h1>{saved?.name ?? 'Registrar aplicación'}</h1>
       {saved && <p className="muted">Estado guardado · {statusLabels[saved.status]}</p>}
       {saved?.missingRequirements.length ? (

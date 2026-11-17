@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
 import { ProjectForm } from '../project-form';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
+import { ProjectTabs } from './project-tabs';
 import { ScenariosPanel } from './scenarios-panel';
 
 export const dynamic = 'force-dynamic';
@@ -42,32 +43,42 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
     .filter(env => env.authorizationConfirmed)
     .map(env => ({ id: env.id, type: env.type, baseUrl: env.baseUrl }));
 
-  return <>
-    <ProjectForm initial={project} />
-    <section className="panel">
-      <h2>Automatización con IA</h2>
-      <p className="muted">
-        Sube documentos y deja que la IA diagnostique la preparación del proyecto y sugiera los casos
-        de prueba que puedes activar según tu plan.
-      </p>
-      <p><Link href={`/projects/${project.id}/automate`} className="button-like primary">Automatizar proyecto</Link></p>
-    </section>
-    <section className="panel">
-      <h2>Calidad</h2>
-      <p className="muted">
-        IPA mide la preparación del proyecto; ICSP mide la salud del producto.
-        El reporte consolida ambos con trazabilidad requisito → escenario → resultado.
-      </p>
-      <p>
-        <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
-        <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
-        <Link href={`/projects/${project.id}/performance`}>Performance →</Link>{' · '}
-        <Link href={`/projects/${project.id}/load`}>Carga (k6) →</Link>{' · '}
-        <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>{' · '}
-        <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
-      </p>
-    </section>
-    <ScenariosPanel projectId={project.id} />
-    {showExploration && <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />}
-  </>;
+  return (
+    <ProjectTabs showExploration={showExploration} backHref="/projects">
+      {{
+        datos: <ProjectForm initial={project} />,
+        ia: (
+          <section className="panel">
+            <h2>Automatización con IA</h2>
+            <p className="muted">
+              Sube documentos y deja que la IA diagnostique la preparación del proyecto y sugiera los casos
+              de prueba que puedes activar según tu plan.
+            </p>
+            <p><Link href={`/projects/${project.id}/automate`} className="button-like primary">Automatizar proyecto</Link></p>
+          </section>
+        ),
+        calidad: (
+          <section className="panel">
+            <h2>Calidad</h2>
+            <p className="muted">
+              IPA mide la preparación del proyecto; ICSP mide la salud del producto.
+              El reporte consolida ambos con trazabilidad requisito → escenario → resultado.
+            </p>
+            <p>
+              <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
+              <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
+              <Link href={`/projects/${project.id}/performance`}>Performance →</Link>{' · '}
+              <Link href={`/projects/${project.id}/load`}>Carga (k6) →</Link>{' · '}
+              <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>{' · '}
+              <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
+            </p>
+          </section>
+        ),
+        escenarios: <ScenariosPanel projectId={project.id} />,
+        exploracion: showExploration
+          ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />
+          : undefined,
+      }}
+    </ProjectTabs>
+  );
 }
