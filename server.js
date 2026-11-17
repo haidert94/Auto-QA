@@ -14,12 +14,22 @@ const publicPort = Number(process.env.PORT || 8080);
 const apiPort = 4001;
 
 async function main() {
-  const migrate = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+  const runPrisma = (args) => spawnSync('npx', ['prisma', ...args], {
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
+
+  let migrate = runPrisma(['migrate', 'deploy']);
   if (migrate.status !== 0) {
-    console.error('[startup] prisma migrate deploy falló; continúo igual');
+    // Despliegues previos pueden haber dejado 20261116000016_seed_plans_v2
+    // en estado FAILED por una constraint que ya se corrigió en el repo.
+    // Se marca como rolled-back para que el próximo deploy la reaplique.
+    console.warn('[startup] migrate deploy falló; intento resolver 20261116000016_seed_plans_v2 como rolled-back');
+    runPrisma(['migrate', 'resolve', '--rolled-back', '20261116000016_seed_plans_v2']);
+    migrate = runPrisma(['migrate', 'deploy']);
+  }
+  if (migrate.status !== 0) {
+    console.error('[startup] prisma migrate deploy falló tras intentar resolver; continúo igual');
   }
 
   process.env.AUTOQA_INTERNAL_API_URL = `http://127.0.0.1:${apiPort}/api`;
