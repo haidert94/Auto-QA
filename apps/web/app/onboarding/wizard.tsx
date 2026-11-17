@@ -69,13 +69,28 @@ export function OnboardingWizard() {
     try {
       const allowedHosts = (form.allowedHosts.trim() || defaultHost)
         .split(/\r?\n|,/).map(h => h.trim()).filter(Boolean);
+      // Defaults sensatos para pasar readiness del backend:
+      // - ownerLabel: usa el nombre del proyecto como propietario si el
+      //   usuario no declaró uno.
+      // - allowedPaths: una ruta comodín '/' por host, que significa
+      //   "toda la raíz del dominio" (readiness exige al menos 1).
+      // - roles: cuando el acceso NO es PÚBLICO, el readiness exige al
+      //   menos un rol con matriz de permisos; declaramos un rol
+      //   "Usuario" con un permiso básico editable después.
+      const ownerLabel = form.ownerLabel.trim() || form.name.trim();
+      const allowedPaths = allowedHosts.map(host => ({ host, path: '/' }));
+      const roles = form.accessMode === 'PUBLIC' ? [] : [{
+        name: 'Usuario',
+        description: 'Rol base creado en el onboarding; edítalo desde el proyecto.',
+        permissions: [{ resource: '*', action: 'read', allowed: true }],
+      }];
       const response = await fetch('/api/projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'READY',
           name: form.name.trim(),
           description: form.description.trim() || undefined,
-          ownerLabel: form.ownerLabel.trim() || undefined,
+          ownerLabel,
           priorityModules: [],
           environments: [{
             type: form.envType,
@@ -84,12 +99,12 @@ export function OnboardingWizard() {
             authorizationConfirmed: form.authorizationConfirmed,
             readOnly: form.readOnly,
             allowedHosts,
-            allowedPaths: [],
+            allowedPaths,
             excludedPaths: [],
             prohibitedActions: [],
             testData: {},
           }],
-          roles: [],
+          roles,
           executionSettings: {},
         }),
       });
