@@ -1,6 +1,7 @@
-import { accountFetch } from '../autoqa-server';
 import Link from 'next/link';
-import { environmentTypes, statusLabels, type ProjectSummary } from './onboarding';
+import { accountFetch } from '../autoqa-server';
+import { type ProjectSummary } from './onboarding';
+import { ProjectCard } from './project-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,28 +15,37 @@ export default async function Projects() {
   } catch {
     error = 'No se pudo consultar la API. Comprueba que NestJS y PostgreSQL estén ejecutándose.';
   }
+
+  const visible = projects.filter(p => p.status !== 'ARCHIVED');
+
   return (
-    <section className="panel">
-      <h1>Proyectos</h1>
-      <p><Link href="/projects/new">Registrar aplicación</Link></p>
+    <section className="panel projects-panel">
+      <header className="projects-panel__head">
+        <div>
+          <h1>Proyectos</h1>
+          <p className="muted">
+            {visible.length === 0 ? 'Aún no has registrado aplicaciones.'
+              : `${visible.length} ${visible.length === 1 ? 'aplicación registrada' : 'aplicaciones registradas'}.`}
+          </p>
+        </div>
+        <Link href="/projects/new" className="button-like">Registrar aplicación</Link>
+      </header>
+
       {error && <p className="error" role="alert">{error}</p>}
-      {!projects.length && !error && <p>Aún no hay proyectos.</p>}
-      {projects.map(project => (
-        <article className="item" key={project.id}>
-          <h2><Link href={`/projects/${project.id}`}>{project.name}</Link></h2>
-          <p className="muted">{statusLabels[project.status]}{project.ownerLabel && ` · ${project.ownerLabel}`}</p>
-          {project.environments.length > 0 && (
-            <ul>
-              {project.environments.map(environment => (
-                <li key={environment.id}>
-                  {environment.type ? environmentTypes[environment.type] : 'Entorno pendiente'}
-                  {environment.baseUrl && ` · ${environment.baseUrl}`}
-                </li>
-              ))}
-            </ul>
-          )}
-        </article>
-      ))}
+
+      {visible.length === 0 && !error && (
+        <div className="projects-empty">
+          <h2>Comienza registrando una aplicación</h2>
+          <p className="muted">Declara el alcance, los dominios permitidos y la autorización para empezar a analizar sus requisitos.</p>
+          <Link href="/projects/new" className="button-like">Registrar aplicación</Link>
+        </div>
+      )}
+
+      {visible.length > 0 && (
+        <div className="projects-grid">
+          {visible.map(project => <ProjectCard key={project.id} project={project}/>)}
+        </div>
+      )}
     </section>
   );
 }

@@ -97,6 +97,18 @@ export class ProjectsService {
     });
   }
 
+  async remove(id: string, workspace: Workspace) {
+    const previous = await this.prisma.project.findUnique({
+      where: { id, ...projectScope(workspace) }, select: { id: true },
+    });
+    if (!previous) throw new NotFoundException('Proyecto no encontrado');
+    // Hard delete: las relaciones de Project usan onDelete: Cascade para
+    // entornos, roles, documentos, escenarios, runs, monitores, auditorías
+    // y jobs de automatización. Nada más hace falta.
+    await this.prisma.project.delete({ where: { id } });
+    return { id, removed: true };
+  }
+
   async update(id: string, dto: UpdateProjectDto, workspace: Workspace) {
     const previous = await this.prisma.project.findUnique({ where: { id, ...projectScope(workspace) }, include: { environments, _count: { select: { roles: true } } } });
     if (!previous) throw new NotFoundException('Proyecto no encontrado');

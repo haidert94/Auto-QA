@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, UseGuards } from '@nestjs/common';
 import { CurrentWorkspace, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
 import { ProjectsService } from './projects.service';
@@ -24,5 +24,10 @@ export class ProjectsController {
   @Put(':id')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProjectDto, @CurrentWorkspace() workspace: Workspace) {
     return this.service.update(id, dto, workspace);
+  }
+
+  @Delete(':id') @HttpCode(200)
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.remove(id, workspace);
   }
 }

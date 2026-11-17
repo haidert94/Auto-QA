@@ -8,3 +8,4 @@ async function forward(request: Request, { params }: { params: Promise<{ project
 
 export const GET = forward;
 export const PUT = forward;
+export const DELETE = forward;
