@@ -82,7 +82,6 @@ export function OnboardingWizard() {
             baseUrl: form.baseUrl.trim(),
             accessMode: form.accessMode,
             authorizationConfirmed: form.authorizationConfirmed,
-            authorizedAt: new Date().toISOString(),
             readOnly: form.readOnly,
             allowedHosts,
             allowedPaths: [],
