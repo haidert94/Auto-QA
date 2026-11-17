@@ -20,7 +20,8 @@ export default async function Dashboard() {
     accountFetch('/commerce/usage').catch(() => null),
     accountFetch('/ai/budget').catch(() => null),
   ]);
-  const projects: ProjectSummary[] = projectsRes?.ok ? await projectsRes.json() : [];
+  const projectsPayload = projectsRes?.ok ? await projectsRes.json().catch(() => []) : [];
+  const projects: ProjectSummary[] = Array.isArray(projectsPayload) ? projectsPayload : [];
   const usage: Usage | null = usageRes?.ok ? await usageRes.json() : null;
   const aiBudget: { aiTokensUsed: number; aiTokensLimit: number; aiCostCop: number; remainingTokens: number } | null =
     aiBudgetRes?.ok ? await aiBudgetRes.json() : null;

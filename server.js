@@ -154,8 +154,14 @@ async function nestInProcessFetch(handler, url, init) {
         // Response reconstruye estos encabezados por sí misma.
         respHeaders.delete('content-length');
         respHeaders.delete('transfer-encoding');
-        resolveFn(new Response(body.length === 0 ? null : body, {
-          status: statusCode, statusText: statusMessage, headers: respHeaders,
+        // Express puede fijar res.statusCode = 4xx directamente sin pasar
+        // por writeHead; leerlo del propio res evita quedarnos en 200.
+        const finalStatus = typeof res.statusCode === 'number' && res.statusCode > 0 ? res.statusCode : statusCode;
+        // Response rechaza bodies no vacíos en 204/304; para esos casos
+        // forzamos null.
+        const emptyBody = finalStatus === 204 || finalStatus === 304 || body.length === 0;
+        resolveFn(new Response(emptyBody ? null : body, {
+          status: finalStatus, statusText: statusMessage, headers: respHeaders,
         }));
       }
       if (typeof cb === 'function') process.nextTick(cb);
