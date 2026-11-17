@@ -369,6 +369,51 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .ai-explanation header .muted { color: #94a3b8; }
 .ai-explanation pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 0.9em; line-height: 1.5; }
 
+/* ---- Wizard de automatización ---- */
+.automate-form { display: grid; gap: 14px; margin-top: 16px; }
+.automate-form label { margin: 0; display: block; }
+.automate-form small { display: block; margin-top: 4px; }
+.doc-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+.doc-list > li { display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: #f5f7fb; border-radius: 6px; font-size: 0.9em; }
+.doc-list > li > span:first-child { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.doc-list > li > button { margin: 0; padding: 4px 10px; font-size: 0.85em; }
+.automate-progress { text-align: center; padding: 40px 20px; }
+.automate-progress .pulse { width: 40px; height: 40px; border: 3px solid #0d6576; border-right-color: transparent; border-radius: 50%; margin: 20px auto; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Diagnóstico IPA tipo tarjeta (estilo nuevo) ---- */
+.ipa-diagnostic { background: #f8faff; border-radius: 16px; padding: 24px; margin-top: 16px; }
+.ipa-diagnostic-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+.ipa-eyebrow { color: #526279; font-size: 0.75em; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; margin: 0 0 4px; }
+.ipa-diagnostic-head h2 { margin: 0; }
+.ipa-level-badge { padding: 6px 14px; border-radius: 99px; font-size: 0.85em; font-weight: 700; }
+.ipa-level-óptimo { background: #d6f5e3; color: #0d6540; }
+.ipa-level-aceptable { background: #e8edf7; color: #4b5a77; }
+.ipa-level-mejorable { background: #fff4d6; color: #7a5a00; }
+.ipa-level-insuficiente { background: #fbe0e0; color: #a72020; }
+.ipa-score-card { display: flex; gap: 24px; align-items: center; background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+.ipa-score-circle { width: 110px; height: 110px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: conic-gradient(#534ab7 0deg 360deg); color: #fff; flex-shrink: 0; }
+.ipa-score-value { font-size: 2.2em; font-weight: 700; line-height: 1; }
+.ipa-score-max { font-size: 0.75em; opacity: 0.85; margin-top: 2px; }
+.ipa-score-headline { font-weight: 600; margin: 0 0 4px; font-size: 1.05em; color: #173a5e; }
+.ipa-category-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.ipa-category-list > li { }
+.ipa-category-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; font-size: 0.95em; }
+.ipa-category-head > strong { color: #534ab7; }
+.ipa-category-bar { height: 8px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+.ipa-category-fill { height: 100%; background: #534ab7; border-radius: 99px; }
+.ipa-stories { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+.ipa-story { padding: 10px 14px; background: #fff; border-radius: 8px; border-left: 4px solid #a7b4c3; }
+.ipa-story-completa { border-left-color: #0d6540; }
+.ipa-story-parcial { border-left-color: #7a5a00; }
+.ipa-story-ambigua { border-left-color: #a72020; }
+.ipa-story-no-cubierta { border-left-color: #4b5a77; }
+.ipa-story strong { font-size: 0.95em; }
+.ipa-story-coverage { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 99px; background: #f5f7fb; font-size: 0.75em; color: #4b5a77; }
+.ipa-warnings { background: #fff4d6; border-radius: 10px; padding: 14px 18px; margin-top: 20px; }
+.ipa-warnings h3 { margin-top: 0; color: #7a5a00; font-size: 1em; }
+.ipa-warnings ul { list-style: disc inside; margin: 6px 0 0; padding: 0; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }

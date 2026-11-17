@@ -4,11 +4,14 @@
 
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { runAudit, type AuditClaim } from './audit-runner';
+import { runAutomation, type AutomationClaim } from './automation-runner';
 import { runExploration } from './explorer';
 import { runTestRun, type ExecutionClaim } from './execution-runner';
 import { runLoadTest, type LoadClaim } from './load-runner';
 import { tickMonitors } from './monitor-runner';
 import { createScreenshotStorage } from './screenshot-storage';
+import { AiRouter } from '../../api/src/ai/ai-router';
+import { BudgetService } from '../../api/src/ai/budget.service';
 
 export type ClaimedExploration = {
   id: string;
@@ -74,6 +77,22 @@ export async function claimNextAudit(prisma: PrismaClient): Promise<AuditClaim |
   return rows[0] ?? null;
 }
 
+export async function claimNextAutomation(prisma: PrismaClient): Promise<AutomationClaim | null> {
+  const rows = await prisma.$queryRaw<AutomationClaim[]>`
+    UPDATE "AutomationJob"
+    SET status = 'RUNNING', "startedAt" = now(), stage = 'claimed'
+    WHERE id = (
+      SELECT id FROM "AutomationJob"
+      WHERE status = 'QUEUED'
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    RETURNING id, "projectId", inputs, "runKey";
+  `;
+  return rows[0] ?? null;
+}
+
 export async function claimNextRun(prisma: PrismaClient): Promise<ExecutionClaim | null> {
   const rows = await prisma.$queryRaw<ExecutionClaim[]>`
     UPDATE "TestRun"
@@ -122,6 +141,15 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     });
     return true;
   }
+  // Automatización: pipeline convertir docs → revisar con IA.
+  const automationClaim = await claimNextAutomation(prisma);
+  if (automationClaim) {
+    const router = buildAiRouter(prisma);
+    await runAutomation(prisma, automationClaim, router, (level, detail) => {
+      console.log(`[automation ${automationClaim.id}] ${level}: ${detail}`);
+    });
+    return true;
+  }
   // Monitores: no son una cola, son chequeos programados. Procesamos un
   // batch si hay alguno vencido. notify stub por ahora — el ticker llama
   // al correo si existe destinatario, pero si Mailpit no está no detiene
@@ -131,6 +159,13 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
   }, async () => { /* noop: el correo se envía desde el API en fases siguientes */ });
   if (checked > 0) return true;
   return false;
+}
+
+// Construye un AiRouter funcional usando la PrismaClient del worker.
+// Reusa las clases del API sin pasar por el DI de NestJS.
+function buildAiRouter(prisma: PrismaClient): AiRouter {
+  const budget = new BudgetService(prisma as never);
+  return new AiRouter(prisma as never, budget);
 }
 
 async function runExplorationClaim(prisma: PrismaClient, claim: ClaimedExploration): Promise<void> {

@@ -72,6 +72,7 @@ model User {
   performanceAudits PerformanceAudit[]
   monitors          Monitor[]
   loadTests         LoadTest[]
+  automationJobs    AutomationJob[]
   invitesCreated OrganizationInvite[] @relation("InviteAuthor")
   audits         AccessAudit[]
   createdAt      DateTime            @default(now())
@@ -102,6 +103,7 @@ model Project {
   performanceAudits      PerformanceAudit[]
   monitors               Monitor[]
   loadTests              LoadTest[]
+  automationJobs         AutomationJob[]
   assessments            QualityAssessment[]
   explorations           Exploration[]
   createdAt              DateTime            @default(now())
@@ -345,6 +347,30 @@ model TestResult {
   durationMs   Int?
   errorMessage String?
   evidenceKey  String?
+}
+
+// Pipeline "Automatizar proyecto": orquesta la cadena de agentes IA
+// (convertir docs → revisar → IPA → selección → generar casos). Cada
+// paso guarda su resultado en el campo `steps` para diagnóstico.
+model AutomationJob {
+  id              String       @id @default(uuid())
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status          RunStatus    @default(QUEUED)
+  stage           String       @default("pending")
+  inputs          Json
+  steps           Json         @default("{}")
+  result          Json?
+  errorCode       String?
+  runKey          String?      @unique
+  createdByUserId String?
+  createdBy       User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([status, createdAt])
 }
 
 model LoadTest {

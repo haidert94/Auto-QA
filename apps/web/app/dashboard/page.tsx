@@ -46,6 +46,22 @@ export default async function Dashboard() {
       </div>
     </section>
 
+    {projects.length > 0 && <section className="panel">
+      <h2>Automatiza un proyecto con IA</h2>
+      <p className="muted">
+        Sube la documentación de uno de tus proyectos y la IA te devuelve el diagnóstico IPA,
+        las historias detectadas y los casos de prueba sugeridos según tu plan.
+      </p>
+      <ul className="dashboard-projects">
+        {projects.slice(0, 3).map(p => <li key={p.id}>
+          <div className="dashboard-project-head">
+            <span className="dashboard-project-title">{p.name}</span>
+            <Link href={`/projects/${p.id}/automate`} className="button-like primary">Automatizar</Link>
+          </div>
+        </li>)}
+      </ul>
+    </section>}
+
     {nextSteps.length > 0 && <section className="panel">
       <h2>Próximos pasos</h2>
       <ol className="dashboard-steps">

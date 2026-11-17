@@ -45,6 +45,14 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
   return <>
     <ProjectForm initial={project} />
     <section className="panel">
+      <h2>Automatización con IA</h2>
+      <p className="muted">
+        Sube documentos y deja que la IA diagnostique la preparación del proyecto y sugiera los casos
+        de prueba que puedes activar según tu plan.
+      </p>
+      <p><Link href={`/projects/${project.id}/automate`} className="button-like primary">Automatizar proyecto</Link></p>
+    </section>
+    <section className="panel">
       <h2>Calidad</h2>
       <p className="muted">
         IPA mide la preparación del proyecto; ICSP mide la salud del producto.

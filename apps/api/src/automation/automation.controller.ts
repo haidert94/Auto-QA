@@ -1,0 +1,36 @@
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { AutomationService } from './automation.service';
+import { CreateAutomationDto } from './dto/create-automation.dto';
+
+@Controller('projects/:projectId/automation')
+@UseGuards(WorkspaceGuard)
+export class AutomationController {
+  constructor(private readonly service: AutomationService) {}
+
+  @Get()
+  @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
+  list(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.list(projectId, workspace);
+  }
+
+  @Get(':id')
+  @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
+  get(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.get(projectId, id, workspace);
+  }
+
+  @Post()
+  @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
+  create(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body() dto: CreateAutomationDto,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.create(projectId, dto, workspace);
+  }
+}
