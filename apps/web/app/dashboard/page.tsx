@@ -34,7 +34,7 @@ export default async function Dashboard() {
   return <>
     <section className="dashboard-hero panel">
       <div>
-        <p className="muted">{account.organization.name}</p>
+        <p className="section-label">{account.organization.name}</p>
         <h1>Hola, {account.name?.split(' ')[0] ?? account.email}</h1>
         <p className="muted">
           Plan actual: <strong>{account.subscription.plan?.name ?? 'sin plan'}</strong>
@@ -42,8 +42,8 @@ export default async function Dashboard() {
         </p>
       </div>
       <div className="dashboard-cta">
-        <Link href="/onboarding" className="button-like primary">Registrar aplicación</Link>
-        <Link href="/projects" className="button-like secondary">Ver proyectos</Link>
+        <Link href="/onboarding" className="button-like">Registrar aplicación</Link>
+        <Link href="/projects" className="button-like outline">Ver proyectos</Link>
       </div>
     </section>
 
@@ -57,7 +57,7 @@ export default async function Dashboard() {
         {projects.slice(0, 3).map(p => <li key={p.id}>
           <div className="dashboard-project-head">
             <span className="dashboard-project-title">{p.name}</span>
-            <Link href={`/projects/${p.id}/automate`} className="button-like primary">Automatizar</Link>
+            <Link href={`/projects/${p.id}/automate`} className="button-like">Automatizar</Link>
           </div>
         </li>)}
       </ul>

@@ -39,22 +39,22 @@ export function AppNav({ account }: { account: NavAccount }) {
 
   return <header className="app-nav">
     <div className="app-nav-inner">
-      <Link href="/dashboard" className="app-nav-logo">AutoQA</Link>
+      <Link href="/dashboard" className="app-nav-logo" aria-label="AutoQA, inicio">Auto<span>QA</span></Link>
       <button type="button" className="app-nav-toggle" aria-label="Menú"
               onClick={() => setMenuOpen(o => !o)}>☰</button>
-      <nav className={menuOpen ? 'app-nav-links open' : 'app-nav-links'}>
+      <nav className={menuOpen ? 'app-nav-links open' : 'app-nav-links'} aria-label="Navegación principal">
         {links.map(link => <Link key={link.href} href={link.href}
           className={isActive(link.href) ? 'active' : ''}
           onClick={() => setMenuOpen(false)}>{link.label}</Link>)}
       </nav>
       <div className="app-nav-account">
-        <span className="app-nav-org muted">{account.organization.name}</span>
+        <span className="app-nav-org">{account.organization.name}</span>
         <details className="app-nav-menu">
           <summary>{account.name || account.email}</summary>
           <div className="app-nav-menu-content">
-            <p className="muted">{account.email}</p>
-            <p className="muted">Suscripción: {account.subscription.status}</p>
-            <button type="button" onClick={logout} disabled={busy}>
+            <p>{account.email}</p>
+            <p>Suscripción: {account.subscription.status}</p>
+            <button type="button" className="outline" onClick={logout} disabled={busy}>
               {busy ? 'Cerrando…' : 'Cerrar sesión'}
             </button>
           </div>
