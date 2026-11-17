@@ -3,25 +3,6 @@ import { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { PrismaClient, type CapabilityCode } from '@prisma/client';
-
-// Prisma directo desde el lado SSR para endpoints públicos que no
-// requieren sesión. Evitamos el loopback HTTP a la API NestJS (Hostinger
-// no permite conexiones TCP a 127.0.0.1 desde el mismo proceso Node).
-const prismaGlobal = globalThis as unknown as { __autoqaPrisma?: PrismaClient };
-const prisma = prismaGlobal.__autoqaPrisma ?? new PrismaClient();
-if (!prismaGlobal.__autoqaPrisma) prismaGlobal.__autoqaPrisma = prisma;
-
-const implementedCapabilities = new Set<CapabilityCode>(['DOCUMENT_ANALYSIS', 'IPA', 'BROWSER_TESTS']);
-function capabilityAvailability(code: CapabilityCode, availability: CapabilityAvailability): CapabilityAvailability {
-  if (availability === 'NOT_INCLUDED') return 'NOT_INCLUDED';
-  return implementedCapabilities.has(code) ? availability : 'UPCOMING';
-}
-function runAvailability(capabilities: Array<{ code: CapabilityCode; availability: CapabilityAvailability }>): CapabilityAvailability {
-  const codes: CapabilityCode[] = ['BROWSER_TESTS', 'API_TESTS', 'PERFORMANCE_TESTS'];
-  const states = capabilities.filter(c => codes.includes(c.code)).map(c => capabilityAvailability(c.code, c.availability));
-  return (['OPERATIONAL', 'BETA', 'UPCOMING'] as const).find(s => states.includes(s)) ?? 'NOT_INCLUDED';
-}
 
 export const sessionCookie = 'autoqa_session';
 const tokenPattern = /^[a-f0-9]{64}$/;
@@ -90,18 +71,14 @@ export type Account = {
 
 export async function listPlans(): Promise<Plan[]> {
   try {
-    const plans = await prisma.plan.findMany({
-      where: { enabled: true }, orderBy: { position: 'asc' },
-      include: { capabilities: { orderBy: { position: 'asc' } } },
-    });
-    return plans.map(plan => {
-      const capabilities = plan.capabilities.map(c => ({
-        ...c, availability: capabilityAvailability(c.code, c.availability as CapabilityAvailability),
-      }));
-      return { ...plan, capabilities, runAvailability: runAvailability(capabilities) } as unknown as Plan;
-    });
+    const response = await accountFetch('/commerce/plans', {}, { public: true });
+    if (!response.ok) {
+      console.error('[listPlans] API respondió', response.status);
+      return [];
+    }
+    return await response.json();
   } catch (e) {
-    console.error('[listPlans] prisma falló:', e instanceof Error ? e.name + ':' + e.message : String(e));
+    console.error('[listPlans] fetch falló:', e instanceof Error ? e.name + ':' + e.message : String(e));
     return [];
   }
 }
