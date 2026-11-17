@@ -90,6 +90,7 @@ export type EnvironmentForm = {
   credentialUser: string;
   credentialPassword: string;
   hasCredentials: boolean;
+  clearCredentials: boolean;
 };
 
 export type RoleForm = {
@@ -120,6 +121,7 @@ export function environmentForm(environment?: Environment): EnvironmentForm {
     credentialUser: environment?.credentialUser ?? '',
     credentialPassword: '',
     hasCredentials: environment?.hasCredentials ?? false,
+    clearCredentials: false,
   };
 }
 
@@ -169,12 +171,10 @@ export function environmentPayload(environment: EnvironmentForm) {
   const hadCredentials = environment.hasCredentials;
   const privateAccess = environment.accessMode === 'PRIVATE' || environment.accessMode === 'SSO';
   let credentials: { user: string; password: string } | null | undefined;
-  if (!privateAccess) {
-    credentials = hadCredentials ? null : undefined;
+  if (environment.clearCredentials || !privateAccess) {
+    credentials = hadCredentials || environment.clearCredentials ? null : undefined;
   } else if (user && password) {
     credentials = { user, password };
-  } else if (!user && !password && hadCredentials) {
-    credentials = null;
   } else {
     credentials = undefined;
   }

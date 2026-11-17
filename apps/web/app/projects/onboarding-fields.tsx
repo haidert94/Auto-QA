@@ -104,6 +104,14 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
               Hay una contraseña guardada. Deja los campos en blanco para mantenerla, o escribe una nueva para reemplazarla.
             </p>
           )}
+          {value.hasCredentials && !value.clearCredentials && (
+            <button type="button" className="secondary" onClick={() => onChange({
+              ...value, credentialUser: '', credentialPassword: '', clearCredentials: true,
+            })}>Borrar credencial guardada</button>
+          )}
+          {value.clearCredentials && (
+            <p className="muted">La credencial guardada se eliminará al guardar los cambios.</p>
+          )}
         </fieldset>
       )}
       <p className="muted">
