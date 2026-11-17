@@ -19,10 +19,16 @@ export class ClaudeProvider implements AiProvider {
     if (!this.isConfigured) {
       throw new Error('AUTOQA_ANTHROPIC_API_KEY no está configurada.');
     }
+    // Prompt caching: el system block se marca como ephemeral para que
+    // Anthropic lo guarde 5 min. Hits de caché cuestan ~10% del precio
+    // input normal. El system suele ser fijo por operación → gran ahorro.
+    const systemBlocks = request.systemPrompt
+      ? [{ type: 'text', text: request.systemPrompt, cache_control: { type: 'ephemeral' } }]
+      : undefined;
     const body = {
       model: this.resolveModelId(),
       max_tokens: Math.min(Math.max(request.maxOutputTokens ?? 2048, 128), 8192),
-      system: request.systemPrompt,
+      system: systemBlocks,
       messages: [{ role: 'user', content: request.prompt }],
     };
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -30,6 +36,8 @@ export class ClaudeProvider implements AiProvider {
       headers: {
         'x-api-key': this.apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
+        // Habilita prompt caching. Soportado desde 2024-08.
+        'anthropic-beta': 'prompt-caching-2024-07-31',
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
@@ -41,17 +49,29 @@ export class ClaudeProvider implements AiProvider {
     }
     const payload = await response.json() as {
       content?: Array<{ type: string; text?: string }>;
-      usage?: { input_tokens?: number; output_tokens?: number };
+      usage?: {
+        input_tokens?: number; output_tokens?: number;
+        cache_creation_input_tokens?: number;
+        cache_read_input_tokens?: number;
+      };
     };
     const text = (payload.content ?? [])
       .filter(block => block.type === 'text' && typeof block.text === 'string')
       .map(block => block.text)
       .join('\n');
-    const inputTokens = payload.usage?.input_tokens ?? 0;
-    const outputTokens = payload.usage?.output_tokens ?? 0;
+    const usage = payload.usage ?? {};
+    // Los tokens cacheados se cobran a ~10% del precio regular. El resto
+    // (input_tokens + cache_creation_input_tokens) se cobra normal.
+    const regularInput = (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+    const cachedInput = usage.cache_read_input_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? 0;
+    // Aproximamos el descuento: 90% ahorro en tokens cacheados.
+    const effectiveInput = regularInput + Math.ceil(cachedInput * 0.1);
     return {
-      text, model: this.model, inputTokens, outputTokens,
-      estimatedCostCop: estimateCost(this.model, inputTokens, outputTokens),
+      text, model: this.model,
+      inputTokens: regularInput + cachedInput,
+      outputTokens,
+      estimatedCostCop: estimateCost(this.model, effectiveInput, outputTokens),
     };
   }
 

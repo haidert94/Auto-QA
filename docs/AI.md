@@ -24,18 +24,64 @@ funcionan; las complementa cuando el plan del cliente la incluye.
 | `gpt-4o` | OpenAI | 2.50 in / 10.00 out | Alternativa premium (opcional) |
 | `rule-based` | — | 0 | Fallback cuando no hay plan IA o API key |
 
+## Modelo por operación (mezcla óptima)
+
+AutoQA **no usa un único modelo para todo**. El router asigna el
+modelo según la complejidad de la operación:
+
+| Operación | Modelo default | Por qué |
+|---|---|---|
+| `document-classification` | `claude-haiku-4-5` | Tarea simple, Haiku acierta al 10% del costo |
+| `failure-explanation` | `claude-haiku-4-5` | 3-5 bullets, no requiere razonamiento |
+| `document-analysis` | `claude-sonnet-4-5` | Requiere entender estructura y matices |
+| `scenario-generation` | `claude-sonnet-4-5` | Creativo + JSON estructurado |
+
+Override por operación vía env var (opcional):
+
+```ini
+AUTOQA_AI_MODEL_CLASSIFY=claude-haiku-4-5
+AUTOQA_AI_MODEL_EXPLAIN=claude-haiku-4-5
+AUTOQA_AI_MODEL_ANALYZE=claude-sonnet-4-5
+AUTOQA_AI_MODEL_SUGGEST=claude-sonnet-4-5
+```
+
+## Fallback en cascada
+
+Si el proveedor primario falla (timeout, 5xx, error de red), el router
+intenta automáticamente el **equivalente del otro proveedor**:
+
+| Primario | Alternativo |
+|---|---|
+| `claude-haiku-4-5` | `gpt-4o-mini` |
+| `claude-sonnet-4-5` | `gpt-4o` |
+| `gpt-4o-mini` | `claude-haiku-4-5` |
+| `gpt-4o` | `claude-sonnet-4-5` |
+
+Si ambos fallan o ninguno está configurado, cae al `RuleBasedProvider`.
+No se cobra consumo por una falla externa.
+
+## Prompt caching (Anthropic)
+
+El `system` block se envía con `cache_control: { type: 'ephemeral' }`.
+Anthropic cachea el bloque por 5 minutos; los hits cuestan ~10 % del
+precio input normal. Como los prompts de sistema de AutoQA son fijos
+por operación, el ahorro real está entre 50 % y 90 % en producción.
+
+El `BudgetService` contabiliza el costo efectivo (ya con descuento),
+no el teórico.
+
 ## Configuración
 
 Variables de entorno (en el API o worker que sirva peticiones de IA):
 
 ```ini
-# Al menos una API key según el modelo elegido:
+# Al menos una API key según el modelo elegido. Si configuras ambas,
+# el router usa el equivalente del otro como fallback automático.
 AUTOQA_ANTHROPIC_API_KEY=sk-ant-...
 AUTOQA_OPENAI_API_KEY=sk-...
 
-# Modelo default para operaciones que no especifiquen uno (fallback a
-# claude-sonnet-4-5 si no se declara). Valores aceptados: claude-haiku-4-5,
-# claude-sonnet-4-5, gpt-4o, gpt-4o-mini.
+# Fallback global cuando una operación no tiene modelo asignado.
+# Valores: claude-haiku-4-5 | claude-sonnet-4-5 | gpt-4o | gpt-4o-mini.
 AUTOQA_AI_DEFAULT_MODEL=claude-sonnet-4-5
 ```
 
