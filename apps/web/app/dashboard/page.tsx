@@ -10,21 +10,20 @@ type Usage = {
   runs: { active: number; simultaneousLimit: number; completed: number; availability: string };
   browser: { secondsUsed: number; minutesLimit: number; availability: string };
   monitors: { active: number; limit: number; availability: string };
+  exploration?: { completed: number; running: number; queued: number; failed: number; pagesFound: number };
 };
 
 export default async function Dashboard() {
   const account = await requireAccount();
 
-  const [projectsRes, usageRes, aiBudgetRes] = await Promise.all([
+  const [projectsRes, usageRes] = await Promise.all([
     accountFetch('/projects').catch(() => null),
     accountFetch('/commerce/usage').catch(() => null),
-    accountFetch('/ai/budget').catch(() => null),
   ]);
   const projectsPayload = projectsRes?.ok ? await projectsRes.json().catch(() => []) : [];
   const projects: ProjectSummary[] = Array.isArray(projectsPayload) ? projectsPayload : [];
   const usage: Usage | null = usageRes?.ok ? await usageRes.json() : null;
-  const aiBudget: { aiTokensUsed: number; aiTokensLimit: number; aiCostCop: number; remainingTokens: number } | null =
-    aiBudgetRes?.ok ? await aiBudgetRes.json() : null;
+  const exploration = usage?.exploration;
 
   const readyProjects = projects.filter(p => p.status === 'READY');
   const draftProjects = projects.filter(p => p.status === 'DRAFT');
@@ -97,16 +96,18 @@ export default async function Dashboard() {
         </dl>
       </article>
 
-      {aiBudget && aiBudget.aiTokensLimit > 0 && <article className="panel">
-        <h2>Créditos IA del mes</h2>
+      {exploration && <article className="panel">
+        <h2>Exploración del mes</h2>
+        <p className="muted"><small>
+          Cuando no tienes documentación suficiente, el agente de Exploración entra al entorno
+          autorizado, recorre sus módulos y registra las URLs y evidencias que encuentra.
+        </small></p>
         <dl className="dashboard-metrics">
-          <div><dt>Tokens usados</dt><dd>{aiBudget.aiTokensUsed.toLocaleString('es-CO')}</dd></div>
-          <div><dt>Límite</dt><dd>{aiBudget.aiTokensLimit.toLocaleString('es-CO')}</dd></div>
-          <div><dt>Costo acumulado</dt><dd>{aiBudget.aiCostCop.toLocaleString('es-CO')} COP</dd></div>
+          <div><dt>Completadas</dt><dd>{exploration.completed.toLocaleString('es-CO')}</dd></div>
+          <div><dt>En curso</dt><dd>{(exploration.running + exploration.queued).toLocaleString('es-CO')}</dd></div>
+          <div><dt>Páginas descubiertas</dt><dd>{exploration.pagesFound.toLocaleString('es-CO')}</dd></div>
+          {exploration.failed > 0 && <div><dt>Con errores</dt><dd>{exploration.failed.toLocaleString('es-CO')}</dd></div>}
         </dl>
-        <div className="signal-bar">
-          <div className="signal-bar-fill" style={{ width: `${Math.min(100, Math.round(100 * aiBudget.aiTokensUsed / aiBudget.aiTokensLimit))}%` }} />
-        </div>
       </article>}
     </section>
 

@@ -69,6 +69,23 @@ export class UsageService {
       const browser = capabilityFor(plan, 'BROWSER_TESTS');
       const monitor = capabilityFor(plan, 'HTTP_MONITORS');
       const performance = capabilityFor(plan, 'PERFORMANCE_TESTS');
+
+      // Resumen de exploración del mes: contadores por estado de los
+      // Exploration creados en el período + páginas descubiertas sumadas.
+      // Se usa como reemplazo del panel "Créditos IA" en el dashboard para
+      // no exponer tokens al cliente (ver commercial-model memory).
+      const projectIds = projects.map(p => p.id);
+      const explorationStats = projectIds.length > 0 ? await tx.exploration.groupBy({
+        by: ['status'],
+        where: { projectId: { in: projectIds }, queuedAt: { gte: month } },
+        _count: { _all: true },
+      }) : [];
+      const explorationCounts = { QUEUED: 0, RUNNING: 0, COMPLETED: 0, FAILED: 0, CANCELED: 0 };
+      for (const row of explorationStats) explorationCounts[row.status] = row._count._all;
+      const explorationPages = projectIds.length > 0 ? await tx.explorationPage.count({
+        where: { exploration: { projectId: { in: projectIds }, queuedAt: { gte: month } } },
+      }) : 0;
+
       return {
         month: month.toISOString().slice(0, 7),
         projects: { used: projects.length, limit: plan.maxProjects },
@@ -81,6 +98,13 @@ export class UsageService {
           availability: monitor ? availability(monitor) : 'NOT_INCLUDED' },
         performance: { used: counters.performanceRuns, previousPending: counters.pendingPerformance, limit: performance?.monthlyLimit ?? 0,
           availability: performance ? availability(performance) : 'NOT_INCLUDED' },
+        exploration: {
+          completed: explorationCounts.COMPLETED,
+          running: explorationCounts.RUNNING,
+          queued: explorationCounts.QUEUED,
+          failed: explorationCounts.FAILED + explorationCounts.CANCELED,
+          pagesFound: explorationPages,
+        },
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
