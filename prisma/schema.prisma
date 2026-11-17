@@ -309,6 +309,7 @@ model TestScenario {
   requirementId  String?
   requirement    Requirement? @relation(fields: [requirementId], references: [id])
   title          String
+  tags           String[]     @default([])
   steps          Json
   expectedResult String?
   results        TestResult[]

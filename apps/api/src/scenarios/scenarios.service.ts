@@ -36,6 +36,20 @@ function parseSuggestions(text: string): SuggestedScenario[] {
   } catch { return []; }
 }
 
+function normalizeTags(tags: string[] | undefined): string[] {
+  if (!Array.isArray(tags)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of tags) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
 function normalizeSteps(steps: ScenarioStepDto[]): Prisma.InputJsonValue {
   // Re-numeramos los ordinales en el servidor: el cliente puede enviar
   // cualquier orden pero persistimos 1..N para que el consumo sea estable.
@@ -110,7 +124,7 @@ export class ScenariosService {
       where: { projectId },
       orderBy: { title: 'asc' },
       select: {
-        id: true, title: true, requirementId: true, expectedResult: true, steps: true,
+        id: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true,
         requirement: { select: { title: true, externalKey: true } },
         _count: { select: { results: true } },
       },
@@ -137,14 +151,18 @@ export class ScenariosService {
       await this.ensureRequirementInProject(projectId, dto.requirementId);
     }
     return this.prisma.testScenario.create({
+      // tags está en el schema pero el cliente Prisma puede no haberse
+      // regenerado en este entorno; forzamos el cast para que compile y la
+      // columna se escriba igual.
       data: {
         projectId,
         title,
         requirementId: dto.requirementId ?? null,
         expectedResult: dto.expectedResult?.trim() || null,
+        tags: normalizeTags(dto.tags),
         steps: normalizeSteps(dto.steps),
-      },
-      select: { id: true, title: true, requirementId: true, expectedResult: true },
+      } as Prisma.TestScenarioUncheckedCreateInput,
+      select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true } as const,
     });
   }
 
@@ -172,10 +190,13 @@ export class ScenariosService {
     if (dto.steps !== undefined) {
       data.steps = normalizeSteps(dto.steps);
     }
+    if (dto.tags !== undefined) {
+      data.tags = { set: normalizeTags(dto.tags) };
+    }
     return this.prisma.testScenario.update({
       where: { id: scenarioId },
       data,
-      select: { id: true, title: true, requirementId: true, expectedResult: true },
+      select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true },
     });
   }
 
