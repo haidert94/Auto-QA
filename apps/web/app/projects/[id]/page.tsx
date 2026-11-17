@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
 import { DataTab } from './data-tab';
+import { ExecutionReport } from './execution-report';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
 import { type IpaSummary } from './ipa-hero';
 import { ProjectTabs } from './project-tabs';
@@ -70,34 +71,21 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
             <p><Link href={`/projects/${project.id}/automate`} className="button-like primary">Automatizar proyecto</Link></p>
           </section>
         ),
-        reporte: (
-          <section className="panel">
-            <h2>Reporte de ejecución</h2>
-            <p className="muted">
-              Resultado consolidado de los escenarios ejecutados: cuántos pasaron, cuántos fallaron,
-              trazabilidad requisito → escenario → resultado, y evidencias (capturas, logs, trazas).
-            </p>
-            <p>
-              <Link href={`/projects/${project.id}/report`} className="button-like primary">Ver reporte consolidado →</Link>
-            </p>
-            <p className="muted"><small>
-              Si todavía no has ejecutado runs, el reporte aparece vacío. Genera escenarios desde
-              la pestaña anterior y lánzalos para que haya datos aquí.
-            </small></p>
-          </section>
-        ),
+        reporte: <ExecutionReport projectId={project.id} />,
         calidad: (
           <section className="panel">
             <h2>Calidad</h2>
             <p className="muted">
-              IPA mide la preparación del proyecto; ICSP mide la salud del producto a partir de los runs.
+              IPA mide la preparación del proyecto; ICSP mide la salud del producto.
+              El reporte consolida ambos con trazabilidad requisito → escenario → resultado.
             </p>
             <p>
               <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
               <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
               <Link href={`/projects/${project.id}/performance`}>Performance →</Link>{' · '}
               <Link href={`/projects/${project.id}/load`}>Carga (k6) →</Link>{' · '}
-              <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>
+              <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>{' · '}
+              <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
             </p>
           </section>
         ),

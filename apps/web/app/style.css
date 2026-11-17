@@ -307,6 +307,19 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .onboarding-wizard > section > h1 { margin-top: 0; }
 .wizard-bullets { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
 .wizard-bullets > li { padding: 12px 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
+/* ---- Reporte de ejecución (Allure-style) ---- */
+.report-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-top: 16px; }
+.report-total { background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; padding: 14px; text-align: center; }
+.report-total__value { display: block; font: 700 28px/1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.report-total__label { display: block; margin-top: 4px; font: 500 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.run-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.run-item { padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.run-item__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.run-item__results { display: flex; gap: 6px; flex-wrap: wrap; }
+.run-item__error { margin-top: 10px; }
+.run-item__error pre { background: var(--danger-bg); color: var(--danger); padding: 10px; border-radius: 4px; overflow-x: auto; margin: 6px 0 0; font-size: 12px; }
+.run-item__evidence { margin: 10px 0 0; }
+
 /* ---- Pestañas del proyecto ---- */
 .project-tabs { margin-bottom: 16px; padding: 10px 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
 .project-tabs ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 4px; flex-wrap: wrap; }
