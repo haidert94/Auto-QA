@@ -31,7 +31,11 @@ const STAGE_LABELS: Record<string, string> = {
   converting: 'Convirtiendo documentos a Markdown',
   reviewing: 'Analizando con IA',
   'review-ready': 'Diagnóstico listo',
+  'selection-done': 'Selección guardada — en cola para generar',
+  generating: 'Generando casos de prueba',
 };
+
+type TestTypeOption = { code: string; label: string; description: string; available: boolean };
 
 function readFile(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -60,6 +64,49 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
   const [error, setError] = useState('');
   const [job, setJob] = useState<Job | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [types, setTypes] = useState<TestTypeOption[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submittingSelection, setSubmittingSelection] = useState(false);
+  const [selectionDone, setSelectionDone] = useState(false);
+
+  async function loadTypes() {
+    if (types) return;
+    try {
+      const response = await fetch(`/api/projects/${projectId}/automation/types`, { cache: 'no-store' });
+      if (!response.ok) return;
+      const data: TestTypeOption[] = await response.json();
+      setTypes(data);
+      // Pre-selecciona los disponibles como opción amable.
+      setSelected(new Set(data.filter(t => t.available).map(t => t.code)));
+    } catch {}
+  }
+
+  function toggleSelected(code: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
+  async function acceptSelection() {
+    if (!job || selected.size === 0) return;
+    setSubmittingSelection(true); setError('');
+    try {
+      const response = await fetch(`/api/projects/${projectId}/automation/${job.id}/select`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ types: Array.from(selected) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.message ?? 'No se pudo guardar la selección.');
+        return;
+      }
+      setSelectionDone(true);
+    } catch { setError('No se pudo guardar la selección.'); }
+    finally { setSubmittingSelection(false); }
+  }
 
   async function onFiles(files: FileList | null) {
     if (!files) return;
@@ -97,6 +144,10 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
     } catch { setError('No se pudo encolar la automatización.'); }
     finally { setBusy(false); }
   }
+
+  useEffect(() => {
+    if (job?.status === 'COMPLETED') void loadTypes();
+  }, [job?.status]);
 
   useEffect(() => {
     if (!job || job.status === 'COMPLETED' || job.status === 'FAILED') return;
@@ -231,12 +282,42 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
       <ul>{review.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
     </section>}
 
-    <div className="actions">
-      <button type="button" disabled>Continuar (selección de pruebas) · próximo commit</button>
-      <button type="button" className="secondary" onClick={() => router.push(`/projects/${projectId}`)}>Volver al proyecto</button>
-    </div>
-    <p className="muted">
-      <small>El paso de selección y los agentes de generación quedan para el siguiente commit.</small>
-    </p>
+    {!selectionDone && <section className="automation-selection">
+      <h3>Selecciona qué tipos de prueba quieres generar</h3>
+      <p className="muted">
+        Marca los tipos a generar. Los bloqueados requieren un plan superior.
+      </p>
+      {types === null
+        ? <p className="muted"><button type="button" onClick={loadTypes}>Cargar opciones</button></p>
+        : <ul className="type-select">
+          {types.map(t => <li key={t.code} className={t.available ? '' : 'locked'}>
+            <label title={t.available ? '' : 'Requiere un plan superior'}>
+              <input type="checkbox" checked={selected.has(t.code)} disabled={!t.available}
+                     onChange={() => toggleSelected(t.code)}/>
+              <span>
+                <strong>{t.label}</strong>
+                <small className="muted">{t.description}</small>
+                {!t.available && <small className="error">Requiere plan superior</small>}
+              </span>
+            </label>
+          </li>)}
+        </ul>}
+      <div className="actions">
+        <button type="button" onClick={acceptSelection} disabled={submittingSelection || selected.size === 0 || types === null}>
+          {submittingSelection ? 'Enviando…' : `Aceptar y generar (${selected.size})`}
+        </button>
+        <button type="button" className="secondary" onClick={() => router.push(`/projects/${projectId}`)}>Cancelar</button>
+      </div>
+    </section>}
+
+    {selectionDone && <section className="success-banner">
+      <p className="success">
+        <strong>Selección guardada.</strong> Los agentes comenzarán la generación en breve
+        (worker en el próximo commit).
+      </p>
+      <button type="button" onClick={() => router.push(`/projects/${projectId}`)}>Volver al proyecto</button>
+    </section>}
+
+    {error && !selectionDone && <p className="error" role="alert">{error}</p>}
   </section>;
 }

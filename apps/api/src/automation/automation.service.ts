@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import type { Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
+import { SelectTestsDto } from './dto/select-tests.dto';
+import { TEST_TYPE_META, type AutomationTestType } from './test-types';
 
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
@@ -82,6 +84,72 @@ export class AutomationService {
       inputs.documents = inputs.documents.map(d => ({ filename: d.filename }));
     }
     return job;
+  }
+
+  // Registra la selección de tipos de prueba y re-encola el job para que
+  // el worker (commit C) lance los agentes de generación. Bloquea tipos
+  // que no estén en el plan del cliente.
+  async select(projectId: string, jobId: string, dto: SelectTestsDto, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const job = await this.prisma.automationJob.findFirst({
+      where: { id: jobId, projectId },
+      select: { id: true, status: true, stage: true, inputs: true },
+    });
+    if (!job) throw new NotFoundException('Automatización no encontrada.');
+    if (job.stage !== 'review-ready') {
+      throw new BadRequestException('La automatización no está en estado "review-ready".');
+    }
+
+    if (workspace.organizationId) {
+      const available = await this.capabilitiesForOrg(workspace.organizationId);
+      const blocked = dto.types.filter(t => !available.has(TEST_TYPE_META[t].capability));
+      if (blocked.length) {
+        throw new ForbiddenException({
+          message: 'Tu plan no incluye uno o más tipos seleccionados.',
+          blocked,
+        });
+      }
+    }
+
+    const inputs = { ...(job.inputs as Record<string, unknown>), selection: dto.types };
+    await this.prisma.automationJob.update({
+      where: { id: jobId },
+      data: {
+        inputs: inputs as unknown as Prisma.InputJsonValue,
+        status: 'QUEUED',
+        stage: 'selection-done',
+        completedAt: null,
+      },
+    });
+    return { message: 'Selección guardada. Los agentes comenzarán la generación.' };
+  }
+
+  // Devuelve los tipos de prueba y si el plan del workspace los incluye.
+  // La UI lo usa para pintar los checkboxes bloqueados.
+  async availableTypes(workspace: Workspace) {
+    if (!workspace.organizationId) {
+      return Object.entries(TEST_TYPE_META).map(([code, meta]) => ({
+        code: code as AutomationTestType, label: meta.label, description: meta.description, available: true,
+      }));
+    }
+    const available = await this.capabilitiesForOrg(workspace.organizationId);
+    return Object.entries(TEST_TYPE_META).map(([code, meta]) => ({
+      code: code as AutomationTestType,
+      label: meta.label,
+      description: meta.description,
+      available: available.has(meta.capability),
+    }));
+  }
+
+  private async capabilitiesForOrg(organizationId: string): Promise<Set<string>> {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { organizationId },
+      include: { plan: { include: { capabilities: true } } },
+    });
+    const caps = subscription?.plan?.capabilities ?? [];
+    return new Set(
+      caps.filter(c => c.availability !== 'NOT_INCLUDED').map(c => c.code as string),
+    );
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {

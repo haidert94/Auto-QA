@@ -73,6 +73,7 @@ model User {
   monitors          Monitor[]
   loadTests         LoadTest[]
   automationJobs    AutomationJob[]
+  uxAudits          UxAudit[]
   invitesCreated OrganizationInvite[] @relation("InviteAuthor")
   audits         AccessAudit[]
   createdAt      DateTime            @default(now())
@@ -104,6 +105,7 @@ model Project {
   monitors               Monitor[]
   loadTests              LoadTest[]
   automationJobs         AutomationJob[]
+  uxAudits               UxAudit[]
   assessments            QualityAssessment[]
   explorations           Exploration[]
   createdAt              DateTime            @default(now())
@@ -133,6 +135,7 @@ model Environment {
   performanceAudits      PerformanceAudit[]
   monitors               Monitor[]
   loadTests              LoadTest[]
+  uxAudits               UxAudit[]
   createdAt              DateTime         @default(now())
 }
 
@@ -409,6 +412,39 @@ model LoadTest {
   @@index([projectId, createdAt])
 }
 
+// UxAudit: auditoría asistida por IA de usabilidad + accesibilidad.
+// Al ejecutarse, el worker abre la URL con Playwright, captura screenshot
+// y árbol a11y, lo pasa al LLM con heurísticas de Nielsen + WCAG básico,
+// y guarda findings categorizados por severidad.
+model UxAudit {
+  id              String       @id @default(uuid())
+  projectId       String
+  project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environmentId   String?
+  environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  url             String
+  status          RunStatus    @default(QUEUED)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  errorCode       String?
+  runKey          String?      @unique
+  createdByUserId String?
+  createdBy       User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  // Agregados para dashboards (null hasta completar).
+  totalFindings Int?
+  criticalCount Int?
+  majorCount    Int?
+  minorCount    Int?
+
+  // Reporte completo JSON subido al ScreenshotStorage.
+  reportKey String?
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}
+
 model Monitor {
   id              String        @id @default(uuid())
   projectId       String
@@ -665,6 +701,7 @@ enum CapabilityCode {
   AI_DOCUMENT_ANALYSIS
   AI_SCENARIO_GENERATION
   AI_FAILURE_EXPLANATION
+  UX_ANALYSIS
 }
 
 enum CapabilityAvailability {

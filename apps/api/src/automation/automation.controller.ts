@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@n
 import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { AutomationService } from './automation.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
+import { SelectTestsDto } from './dto/select-tests.dto';
 
 @Controller('projects/:projectId/automation')
 @UseGuards(WorkspaceGuard)
@@ -32,5 +33,22 @@ export class AutomationController {
     @CurrentWorkspace() workspace: Workspace,
   ) {
     return this.service.create(projectId, dto, workspace);
+  }
+
+  @Get('types/available')
+  @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
+  availableTypes(@Param('projectId', ParseUUIDPipe) _projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.availableTypes(workspace);
+  }
+
+  @Post(':id/select')
+  @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
+  select(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SelectTestsDto,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.select(projectId, id, dto, workspace);
   }
 }
