@@ -93,16 +93,10 @@ export function OnboardingWizard() {
       //   usuario no declaró uno.
       // - allowedPaths: una ruta comodín '/' por host, que significa
       //   "toda la raíz del dominio" (readiness exige al menos 1).
-      // - roles: cuando el acceso NO es PÚBLICO, el readiness exige al
-      //   menos un rol con matriz de permisos; declaramos un rol
-      //   "Usuario" con un permiso básico editable después.
+      // Los roles son opt-in: el wizard express ya no crea un rol fantasma
+      // "Usuario" porque el backend ya no exige roles para acceso privado.
       const ownerLabel = form.ownerLabel.trim() || form.name.trim();
       const allowedPaths = allowedHosts.map(host => ({ host, path: '/' }));
-      const roles = form.accessMode === 'PUBLIC' ? [] : [{
-        name: 'Usuario',
-        description: 'Rol base creado en el onboarding; edítalo desde el proyecto.',
-        permissions: [{ resource: '*', action: 'read', allowed: true }],
-      }];
       const response = await fetch('/api/projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -125,7 +119,6 @@ export function OnboardingWizard() {
               ? { user: form.credentialUser.trim(), password: form.credentialPassword }
               : undefined,
           }],
-          roles,
           executionSettings: {},
         }),
       });

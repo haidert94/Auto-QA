@@ -96,15 +96,29 @@ test('readiness: proyecto archivado produce blocker aunque los entornos estén b
 });
 
 test('readiness: hints separa recomendaciones no bloqueantes', () => {
-  // Proyecto con entornos privados sin matriz de permisos ni referencias:
-  // la señal "Accesos y permisos" aporta hints no bloqueantes.
+  // Opt-in: cuando el usuario DECLARA roles (al menos uno) sin matriz de
+  // permisos, la señal "Accesos y permisos" aporta hints no bloqueantes.
+  // Sin roles declarados, la señal queda con peso 0 y no genera hints.
+  const project = baseProject({
+    environments: [env({ accessMode: 'PRIVATE' })],
+    roles: [{ id: 'r1', name: 'Admin', projectId: 'p1', permissions: [], secretReference: null, description: null }],
+  });
+  const ipa = readiness(project, [], []);
+  assert.ok(ipa.hints.some(h => /permisos|cuentas de prueba/i.test(h)));
+  assert.ok(!ipa.blockers.some(b => /permisos|cuentas de prueba/i.test(b)));
+});
+
+test('readiness: sin roles declarados, "Accesos y permisos" no penaliza', () => {
+  // Proyecto privado SIN roles: la señal queda con peso 0 y el denominador
+  // baja a 80, pero el score se normaliza igual. No aparece el hint.
   const project = baseProject({
     environments: [env({ accessMode: 'PRIVATE' })],
     roles: [],
   });
   const ipa = readiness(project, [], []);
-  assert.ok(ipa.hints.some(h => /permisos|cuentas de prueba/i.test(h)));
-  assert.ok(!ipa.blockers.some(b => /permisos|cuentas de prueba/i.test(b)));
+  const signal = ipa.signals.find(s => s.criterion === 'Accesos y permisos');
+  assert.equal(signal.weight, 0);
+  assert.ok(!ipa.hints.some(h => /permisos|cuentas de prueba/i.test(h)));
 });
 
 test('readiness: recomendations conserva compat con la salida anterior', () => {

@@ -30,7 +30,11 @@ function scopePaths(value: unknown): ScopePath[] {
 export function getMissingRequirements(
   project: { ownerLabel: string | null; ownerId?: string | null },
   environments: EnvironmentState[],
-  roles: { permissions: unknown }[],
+  // El tercer argumento se conserva por compatibilidad con los llamadores:
+  // los roles son opt-in, no se exigen ni para acceso privado ni para SSO.
+  // Cuando el cliente marca "necesito probar roles" en la UI, el front envía
+  // el array; el back lo guarda pero no lo usa como gate del status READY.
+  _roles: { permissions: unknown }[] = [],
 ): string[] {
   const missing: string[] = [];
   if (!project.ownerLabel && !project.ownerId) missing.push('Declara el propietario del proyecto.');
@@ -57,12 +61,6 @@ export function getMissingRequirements(
       }
     }
   });
-
-  if (environments.some(environment => environment.accessMode && environment.accessMode !== 'PUBLIC')) {
-    if (!roles.length || roles.some(role => !Array.isArray(role.permissions) || !role.permissions.length)) {
-      missing.push('El acceso privado o SSO requiere roles con una matriz de permisos.');
-    }
-  }
   return missing;
 }
 

@@ -12,13 +12,17 @@ import {
 } from './onboarding';
 
 function formValues(project?: Project) {
+  const roles = project?.roles.map(roleForm) ?? [];
   return {
     name: project?.name ?? '',
     description: project?.description ?? '',
     ownerLabel: project?.ownerLabel ?? '',
     priorities: project?.priorityModules.join('\n') ?? '',
     environments: project?.environments.map(environmentForm) ?? [],
-    roles: project?.roles.map(roleForm) ?? [],
+    // Opt-in: la sección de roles solo se muestra si el proyecto ya tiene
+    // roles declarados, o si el usuario marca el checkbox para habilitarla.
+    rolesEnabled: roles.length > 0,
+    roles,
     execution: executionForm(project?.executionSettings),
   };
 }
@@ -94,12 +98,14 @@ export function ProjectForm({ initial }: { initial?: Project }) {
           ownerLabel: form.ownerLabel.trim() || undefined,
           priorityModules: lines(form.priorities),
           environments: form.environments.map(environmentPayload),
-          roles: form.roles.map(role => ({
+          // Si el usuario desactiva la sección, enviamos un array vacío para
+          // que el backend borre los roles previamente guardados.
+          roles: form.rolesEnabled ? form.roles.map(role => ({
             ...role,
             name: role.name.trim(),
             description: role.description.trim() || undefined,
             secretReference: role.secretReference.trim() || undefined,
-          })),
+          })) : [],
           executionSettings: {
             ...limits,
             browser: browser || undefined,
@@ -175,14 +181,27 @@ export function ProjectForm({ initial }: { initial?: Project }) {
 
 
           <h2>Roles de la aplicación</h2>
-          <p className="muted">Para acceso privado o SSO, declara los permisos esperados. Usa referencias externas para cuentas de prueba y omite contraseñas o tokens.</p>
-          {form.roles.map((role, index) => (
-            <RoleFields key={index} index={index} value={role}
-              onChange={value => change('roles', form.roles.map((item, n) => n === index ? value : item))}
-              onRemove={() => change('roles', form.roles.filter((_, n) => n !== index))} />
-          ))}
-          <button type="button" className="secondary" disabled={form.roles.length >= 30}
-            onClick={() => change('roles', [...form.roles, roleForm()])}>Agregar rol</button>
+          <label className="check">
+            <input type="checkbox" checked={form.rolesEnabled}
+              onChange={event => change('rolesEnabled', event.target.checked)} />
+            <span>Necesito probar flujos por rol o permisos de usuario (opcional).</span>
+          </label>
+          {form.rolesEnabled && (
+            <>
+              <p className="muted">
+                Declara los roles que existen en la aplicación y qué debería poder o no hacer cada uno. Esta matriz
+                se usará para generar escenarios de permisos cuando el runner lo soporte. Usa referencias de bóveda
+                (<code>vault:…</code>) para cuentas de prueba; no pongas contraseñas aquí (esas van en el entorno).
+              </p>
+              {form.roles.map((role, index) => (
+                <RoleFields key={index} index={index} value={role}
+                  onChange={value => change('roles', form.roles.map((item, n) => n === index ? value : item))}
+                  onRemove={() => change('roles', form.roles.filter((_, n) => n !== index))} />
+              ))}
+              <button type="button" className="secondary" disabled={form.roles.length >= 30}
+                onClick={() => change('roles', [...form.roles, roleForm()])}>Agregar rol</button>
+            </>
+          )}
 
           <ExecutionFields value={form.execution} onChange={value => change('execution', value)} />
           {errors.length > 0 && <div role="alert" className="error status">

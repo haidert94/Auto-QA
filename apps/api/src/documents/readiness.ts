@@ -74,7 +74,11 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
   const scopeReady = hasEnvironments && environments.every(scoped);
   const publicAccess = hasEnvironments && environments.every(env => env.accessMode === 'PUBLIC');
   const accessKnown = hasEnvironments && environments.every(env => env.accessMode);
-  const permissions = project.roles.length > 0 && project.roles.every(role => Array.isArray(role.permissions) && role.permissions.length > 0);
+  // Los roles son opt-in: solo cuando el cliente declara al menos uno, la
+  // señal "Accesos y permisos" se activa y le exige matriz y referencias.
+  // Sin roles declarados la señal queda con peso 0 y no penaliza el score.
+  const rolesDeclared = project.roles.length > 0;
+  const permissions = rolesDeclared && project.roles.every(role => Array.isArray(role.permissions) && role.permissions.length > 0);
   const references = permissions && project.roles.every(role => role.secretReference);
   const docStates = documents.map(metadata);
   const uploaded = docStates.filter(doc => doc.currentVersion?.uploadedAt).length;
@@ -136,11 +140,13 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
       blocking: false,
     },
     {
-      criterion: 'Accesos y permisos', weight: publicAccess ? 0 : 20,
-      points: publicAccess ? 0 : (accessKnown && permissions ? 15 : 0) + (accessKnown && references ? 5 : 0),
+      criterion: 'Accesos y permisos',
+      weight: publicAccess || !rolesDeclared ? 0 : 20,
+      points: publicAccess || !rolesDeclared ? 0 : (accessKnown && permissions ? 15 : 0) + (accessKnown && references ? 5 : 0),
       available: publicAccess ? ['No aplica: todos los entornos son públicos.']
+        : !rolesDeclared ? ['No aplica: no se han declarado roles.']
         : [...(permissions ? ['Matriz de permisos declarada.'] : []), ...(references ? ['Referencias de acceso declaradas.'] : [])],
-      missing: publicAccess ? [] : [
+      missing: publicAccess || !rolesDeclared ? [] : [
         ...(accessKnown && permissions ? [] : ['Completa los modos de acceso y la matriz de permisos.']),
         ...(references ? [] : ['Identifica las cuentas de prueba mediante referencias externas.']),
       ],
