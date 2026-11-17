@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 type Scenario = {
@@ -16,12 +17,26 @@ type GeneratedSpec = {
   error?: string;
 };
 
-export function AutomationPanel({ projectId }: { projectId: string }) {
+type RunState = {
+  status: 'idle' | 'queued' | 'error';
+  runId?: string;
+  error?: string;
+};
+
+export type AuthorizedEnvironment = { id: string; type: string | null; baseUrl: string | null };
+
+export function AutomationPanel({ projectId, environments }: {
+  projectId: string;
+  environments: AuthorizedEnvironment[];
+}) {
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [specs, setSpecs] = useState<GeneratedSpec[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [environmentId, setEnvironmentId] = useState<string>(environments[0]?.id ?? '');
+  const [running, setRunning] = useState(false);
+  const [runStates, setRunStates] = useState<Record<string, RunState>>({});
 
   useEffect(() => {
     let active = true;
@@ -85,6 +100,34 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
     } finally { setBusy(false); }
   }
 
+  async function run() {
+    setError('');
+    if (!environmentId) { setError('Selecciona un entorno autorizado antes de ejecutar.'); return; }
+    const runnable = specs?.filter(s => !s.error) ?? [];
+    if (runnable.length === 0) { setError('No hay specs sin error para ejecutar.'); return; }
+    setRunning(true);
+    try {
+      const nextStates: Record<string, RunState> = {};
+      for (const spec of runnable) {
+        try {
+          const response = await fetch(`/api/projects/${projectId}/scenarios/${spec.scenarioId}/runs`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ environmentId }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            nextStates[spec.scenarioId] = { status: 'error', error: payload.message ?? 'Error al encolar.' };
+          } else {
+            nextStates[spec.scenarioId] = { status: 'queued', runId: payload.id };
+          }
+        } catch {
+          nextStates[spec.scenarioId] = { status: 'error', error: 'Fallo de red.' };
+        }
+      }
+      setRunStates(nextStates);
+    } finally { setRunning(false); }
+  }
+
   if (scenarios === null) {
     return <section className="panel"><p className="muted">Cargando escenarios…</p></section>;
   }
@@ -143,21 +186,54 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
         <section className="panel">
           <h2>Código generado ({specs.length})</h2>
           <p className="muted"><small>
-            Copia estos specs al proyecto de Playwright (<code>tests/*.spec.ts</code>) para ejecutarlos
-            con <code>npx playwright test</code>. Los <code>// TODO</code> marcan pasos que el generador
-            no supo traducir y deben completarse a mano.
+            Estos specs usan los MISMOS escenarios de la pestaña Escenarios (mismo ID). Los puedes
+            copiar a <code>tests/*.spec.ts</code> y correr localmente con <code>npx playwright test</code>,
+            o ejecutarlos en el worker AutoQA con el botón de abajo.
           </small></p>
-          {specs.map(s => (
-            <article key={s.scenarioId} className="spec-output">
-              <header>
-                <strong>{s.title}</strong>
-                <small className="muted"> · <code>{s.scenarioId.slice(0, 8)}</code></small>
-              </header>
-              {s.error
-                ? <p className="error" role="alert">{s.error}</p>
-                : <pre><code>{s.spec}</code></pre>}
-            </article>
-          ))}
+
+          <div className="actions" style={{ alignItems: 'center' }}>
+            {environments.length === 0 ? (
+              <small className="error">Registra un entorno autorizado antes de ejecutar.</small>
+            ) : (
+              <>
+                <label style={{ margin: 0 }}>
+                  <span style={{ marginRight: 8, fontSize: 13 }}>Entorno</span>
+                  <select value={environmentId} onChange={e => setEnvironmentId(e.target.value)}>
+                    {environments.map(env => (
+                      <option key={env.id} value={env.id}>
+                        {env.type ? env.type : 'Entorno'} · {env.baseUrl ?? 'sin URL'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" onClick={run}
+                  disabled={running || specs.every(s => s.error) || !environmentId}>
+                  {running ? 'Encolando ejecuciones…' : `Ejecutar (${specs.filter(s => !s.error).length})`}
+                </button>
+              </>
+            )}
+            {Object.keys(runStates).length > 0 && (
+              <Link href="#reporte" className="button-like outline">Ver reporte →</Link>
+            )}
+          </div>
+
+          {specs.map(s => {
+            const runState = runStates[s.scenarioId];
+            return (
+              <article key={s.scenarioId} className="spec-output">
+                <header>
+                  <strong>{s.title}</strong>
+                  <small className="muted"> · <code>{s.scenarioId.slice(0, 8)}</code></small>
+                  {runState?.status === 'queued' && <span className="badge badge-queued">Encolada</span>}
+                  {runState?.status === 'error' && <span className="badge badge-failed">Error</span>}
+                </header>
+                {s.error
+                  ? <p className="error" role="alert">{s.error}</p>
+                  : <pre><code>{s.spec}</code></pre>}
+                {runState?.error && <p className="error" role="alert"><small>{runState.error}</small></p>}
+              </article>
+            );
+          })}
         </section>
       )}
     </>
