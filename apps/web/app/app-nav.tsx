@@ -48,7 +48,8 @@ export function AppNav({ account }: { account: NavAccount }) {
           onClick={() => setMenuOpen(false)}>{link.label}</Link>)}
       </nav>
       <div className="app-nav-account">
-        <span className="app-nav-org">{account.organization.name}</span>
+        {account.organization.name && account.organization.name !== account.name &&
+          <span className="app-nav-org">{account.organization.name}</span>}
         <details className="app-nav-menu">
           <summary>{account.name || account.email}</summary>
           <div className="app-nav-menu-content">
