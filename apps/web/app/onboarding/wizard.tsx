@@ -85,7 +85,7 @@ export function OnboardingWizard() {
             authorizedAt: new Date().toISOString(),
             readOnly: form.readOnly,
             allowedHosts,
-            allowedPaths: allowedHosts.map(h => ({ host: h, path: '' })),
+            allowedPaths: [],
             excludedPaths: [],
             prohibitedActions: [],
             testData: {},
