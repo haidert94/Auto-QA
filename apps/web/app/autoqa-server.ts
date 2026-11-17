@@ -84,8 +84,14 @@ export async function listPlans(): Promise<Plan[]> {
 }
 
 export async function requireAccount(): Promise<Account> {
-  if (!await sessionToken()) redirect('/login');
+  const token = await sessionToken();
+  if (!token) {
+    console.log('[requireAccount] no-cookie → /login');
+    redirect('/login');
+  }
+  console.log('[requireAccount] cookie-ok prefix=' + token.slice(0, 8));
   const response = await accountFetch('/commerce/me');
+  console.log('[requireAccount] /commerce/me →', response.status);
   if (response.status === 401) redirect('/login');
   if (!response.ok) throw new Error('No se pudo consultar tu cuenta.');
   return response.json();
