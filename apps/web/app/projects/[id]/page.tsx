@@ -2,8 +2,9 @@ import { accountFetch, requireAccount } from '../../autoqa-server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
-import { ProjectForm } from '../project-form';
+import { DataTab } from './data-tab';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
+import { type IpaSummary } from './ipa-hero';
 import { ProjectTabs } from './project-tabs';
 import { ScenariosPanel } from './scenarios-panel';
 
@@ -43,10 +44,21 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
     .filter(env => env.authorizationConfirmed)
     .map(env => ({ id: env.id, type: env.type, baseUrl: env.baseUrl }));
 
+  // IPA estructural: solo se fetchea cuando el proyecto ya está READY, para
+  // mostrarlo en el tab Datos junto al resumen. Si falla, el DataTab muestra
+  // solo el resumen sin dona.
+  let ipa: IpaSummary | null = null;
+  if (project.status === 'READY') {
+    try {
+      const ipaResponse = await accountFetch(`/projects/${project.id}/ipa`);
+      if (ipaResponse.ok) ipa = (await ipaResponse.json()).ipa;
+    } catch {}
+  }
+
   return (
     <ProjectTabs showExploration={showExploration} backHref="/projects">
       {{
-        datos: <ProjectForm initial={project} />,
+        datos: <DataTab project={project} ipa={ipa} />,
         ia: (
           <section className="panel">
             <h2>Automatización con IA</h2>

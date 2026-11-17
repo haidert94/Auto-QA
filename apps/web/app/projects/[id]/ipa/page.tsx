@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountFetch } from '../../../autoqa-server';
+import { IpaHero } from '../ipa-hero';
 
 type Anchor = {
   kind: 'environment' | 'document' | 'version' | 'finding' | 'requirement';
@@ -54,17 +55,6 @@ function anchorHref(projectId: string, anchor: Anchor): string | null {
   }
 }
 
-// Mapeo honesto del score estructural a una etiqueta de nivel. No es una
-// evaluación IA, es solo un rango sobre el readiness que calcula
-// readiness.ts. Las clases CSS (ipa-level-óptimo, etc.) existen ya para el
-// wizard de Automatizar y se reutilizan tal cual.
-function levelFor(score: number, status: Ipa['status']): { label: string; css: string; headline: string } {
-  if (status === 'BLOCKED') return { label: 'Bloqueado', css: 'insuficiente', headline: 'Resuelve los bloqueos antes de automatizar.' };
-  if (score >= 85) return { label: 'Óptimo', css: 'óptimo', headline: 'Preparación óptima para automatizar.' };
-  if (score >= 70) return { label: 'Aceptable', css: 'aceptable', headline: 'Preparación aceptable. Hay recomendaciones por atender.' };
-  if (score >= 50) return { label: 'Mejorable', css: 'mejorable', headline: 'Preparación mejorable. Varias señales pendientes.' };
-  return { label: 'Insuficiente', css: 'insuficiente', headline: 'Preparación insuficiente. Completa la documentación y el alcance.' };
-}
 
 export default async function IpaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -88,64 +78,40 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
 
   const { ipa, generatedAt }: { ipa: Ipa; analysisId: string | null; generatedAt: string } = await current.json();
   const historyRows: HistoryItem[] = history?.ok ? await history.json() : [];
-  const level = levelFor(ipa.score, ipa.status);
 
   return <section className="panel ipa-diagnostic">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
-    <header className="ipa-diagnostic-head">
-      <div>
-        <p className="ipa-eyebrow">Diagnóstico de preparación</p>
-        <h1>Índice de Preparación para Automatización (IPA)</h1>
-      </div>
-      <span className={`ipa-level-badge ipa-level-${level.css}`}>Nivel {level.label}</span>
-    </header>
-
-    <div className="ipa-score-card">
-      <div className="ipa-score-circle">
-        <span className="ipa-score-value">{ipa.score}</span>
-        <span className="ipa-score-max">/ 100</span>
-      </div>
-      <div>
-        <p className="ipa-score-headline">{ipa.score} / 100 — Nivel {level.label} para Automatización</p>
-        <p className="muted">{level.headline}</p>
-        <p className="muted"><small>
-          Calculado {new Date(generatedAt).toLocaleString('es-CO')} · Reglas en <code>readiness.ts</code>.
-        </small></p>
-      </div>
-    </div>
+    <IpaHero ipa={ipa} generatedAt={generatedAt} subtitle="Reglas en readiness.ts." />
 
     {ipa.blockers.length > 0 && <section className="ipa-blockers">
       <h2>Bloqueos</h2>
       <ul>{ipa.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
     </section>}
 
-    <ul className="ipa-category-list">
-      {ipa.signals.filter(signal => signal.weight > 0).map((signal, i) => {
-        const pct = Math.round(100 * signal.points / signal.weight);
-        return <li key={i}>
-          <div className="ipa-category-head">
-            <span>{signal.criterion}{signal.blocking && signal.points < signal.weight && ' · bloqueante'}</span>
-            <strong>{pct}%</strong>
-          </div>
-          <div className="ipa-category-bar"><div className="ipa-category-fill" style={{ width: pct + '%' }}/></div>
-          {signal.missing.length > 0 && <p className="muted"><small>Pendiente: {signal.missing.join(' · ')}</small></p>}
-          {signal.anchors.length > 0 && <details className="signal-anchors">
-            <summary><small>Evidencia ({signal.anchors.length})</small></summary>
-            <ul>
-              {signal.anchors.map(anchor => {
-                const href = anchorHref(id, anchor);
-                const label = <>
-                  <span className="anchor-kind">{anchor.kind}</span>
-                  <span className="anchor-label">{anchor.label}</span>
-                  {anchor.locator && <code className="anchor-locator">{anchor.locator}</code>}
-                </>;
-                return <li key={anchor.id}>{href ? <Link href={href}>{label}</Link> : label}</li>;
-              })}
-            </ul>
-          </details>}
-        </li>;
-      })}
-    </ul>
+    {ipa.signals.some(s => s.anchors.length > 0) && <section className="signal-evidence-list">
+      <h2>Evidencia por señal</h2>
+      <ul className="ipa-category-list">
+        {ipa.signals.filter(s => s.anchors.length > 0).map((signal, i) => (
+          <li key={i}>
+            <strong>{signal.criterion}</strong>
+            <details className="signal-anchors">
+              <summary><small>Evidencia ({signal.anchors.length})</small></summary>
+              <ul>
+                {signal.anchors.map(anchor => {
+                  const href = anchorHref(id, anchor);
+                  const label = <>
+                    <span className="anchor-kind">{anchor.kind}</span>
+                    <span className="anchor-label">{anchor.label}</span>
+                    {anchor.locator && <code className="anchor-locator">{anchor.locator}</code>}
+                  </>;
+                  return <li key={anchor.id}>{href ? <Link href={href}>{label}</Link> : label}</li>;
+                })}
+              </ul>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </section>}
 
     {historyRows.length > 0 && <section>
       <h2>Histórico (últimas {historyRows.length})</h2>

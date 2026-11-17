@@ -26,7 +26,7 @@ function formValues(project?: Project) {
   };
 }
 
-export function ProjectForm({ initial }: { initial?: Project }) {
+export function ProjectForm({ initial, onSaved }: { initial?: Project; onSaved?: (project: Project) => void }) {
   const router = useRouter();
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState(() => formValues(initial));
@@ -129,6 +129,12 @@ export function ProjectForm({ initial }: { initial?: Project }) {
       const uploaded = await uploadPending(project.id);
       if (!uploaded) setNotice('Proyecto guardado. Hay archivos pendientes que puedes reintentar.');
       if (!initial && uploaded) router.replace('/projects/' + project.id);
+      else if (uploaded) {
+        // Para que el server component vuelva a fetchear el IPA y refleje el
+        // nuevo estado; el padre decide si cambiar de modo vista/edición.
+        router.refresh();
+        onSaved?.(project);
+      }
     } catch {
       setErrors(['No se pudo guardar. Comprueba que la API esté ejecutándose.']);
     } finally {
