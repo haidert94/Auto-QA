@@ -16,7 +16,7 @@ type RequirementOption = { id: string; title: string; externalKey: string | null
 type TestType = { code: string; label: string; description: string; available: boolean };
 type AutomationSummary = { id: string; status: string; stage: string | null; createdAt: string };
 
-export function ScenariosPanel({ projectId }: { projectId: string }) {
+export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: string; projectBaseUrl: string | null }) {
   const [items, setItems] = useState<ScenarioListItem[] | null>(null);
   const [requirements, setRequirements] = useState<RequirementOption[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -119,36 +119,84 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
     });
   }
 
+  // Espera a que el job llegue a stage="review-ready". Hace polling cada 3s
+  // con un timeout duro: si el worker no está corriendo, la UI no se queda
+  // girando indefinidamente.
+  async function waitForReview(jobId: string, timeoutMs = 120_000): Promise<AutomationSummary | null> {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/automation/${jobId}`, { cache: 'no-store' });
+        if (response.ok) {
+          const job: AutomationSummary = await response.json();
+          if (job.stage === 'review-ready') return job;
+          if (job.status === 'FAILED' || job.status === 'CANCELED') return null;
+        }
+      } catch {/* sigue reintentando hasta el timeout */}
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    return null;
+  }
+
+  async function selectTypesOnJob(jobId: string) {
+    const response = await fetch(`/api/projects/${projectId}/automation/${jobId}/select`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ types: Array.from(selectedTypes) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message ?? 'No se pudo lanzar la generación.');
+  }
+
   async function generate() {
     setGenerateNotice(''); setError('');
-    if (!latestJob) {
-      setGenerateNotice('Primero ejecuta "Automatizar proyecto" en la pestaña Automatización para producir el análisis de datos.');
-      return;
-    }
-    if (latestJob.stage !== 'review-ready') {
-      setGenerateNotice(`La última automatización está en "${latestJob.stage ?? latestJob.status}". Espera a que el análisis termine o lánzalo de nuevo.`);
-      return;
-    }
     if (selectedTypes.size === 0) {
       setGenerateNotice('Selecciona al menos un tipo de prueba.');
       return;
     }
     setGenerating(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/automation/${latestJob.id}/select`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ types: Array.from(selectedTypes) }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setError(payload.message ?? 'No se pudo lanzar la generación.');
-        return;
+      let job = latestJob;
+
+      // Paso 1: si no hay un job listo para seleccionar tipos, lo creamos
+      // usando la URL del entorno autorizado. El worker correrá el análisis
+      // documental y pondrá el job en "review-ready".
+      if (!job || job.stage !== 'review-ready') {
+        if (!projectBaseUrl) {
+          setGenerateNotice('Primero registra un entorno con URL base para que el agente sepa qué analizar.');
+          return;
+        }
+        setGenerateNotice('Analizando documentos y preparando el proyecto…');
+        const create = await fetch(`/api/projects/${projectId}/automation`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: projectBaseUrl }),
+        });
+        if (!create.ok) {
+          const payload = await create.json().catch(() => ({}));
+          setError(payload.message ?? 'No se pudo iniciar el análisis.');
+          return;
+        }
+        const newJob: AutomationSummary = await create.json();
+        setLatestJob(newJob);
+        job = newJob;
+
+        // Paso 2: esperar a que el worker termine el análisis.
+        const ready = await waitForReview(newJob.id);
+        if (!ready) {
+          setGenerateNotice('El worker no respondió a tiempo. Verifica que el Explorer esté desplegado y vuelve a intentar.');
+          return;
+        }
+        job = ready;
+        setLatestJob(ready);
       }
+
+      // Paso 3: con el job en review-ready, encolamos los tipos marcados.
+      setGenerateNotice('Análisis listo. Encolando agentes de generación…');
+      await selectTypesOnJob(job.id);
       setGenerateNotice('Generación encolada. Los escenarios aparecerán aquí a medida que el worker termine cada agente.');
-      // Refrescamos tras un pequeño delay para capturar los primeros resultados
       setTimeout(() => void load(), 2000);
-    } catch { setError('No se pudo comunicar con la API.'); }
-    finally { setGenerating(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo comunicar con la API.');
+    } finally { setGenerating(false); }
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -202,16 +250,17 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
           </ul>
           <div className="actions">
             <button type="button" onClick={generate} disabled={generating || selectedTypes.size === 0}>
-              {generating ? 'Encolando…' : 'Generar escenarios'}
+              {generating ? 'Trabajando…' : 'Generar escenarios'}
             </button>
-            {!latestJob && <small className="muted">
-              Requiere un análisis previo. Ve a la pestaña Automatización y pulsa "Automatizar proyecto".
-            </small>}
-            {latestJob && latestJob.stage !== 'review-ready' && <small className="muted">
-              Último análisis en estado "{latestJob.stage ?? latestJob.status}". Espera a que esté "review-ready".
+            {!projectBaseUrl && <small className="muted">
+              Registra un entorno con URL base antes de generar.
             </small>}
           </div>
           {generateNotice && <p className="muted" role="status">{generateNotice}</p>}
+          <p className="muted"><small>
+            Al pulsar, AutoQA analiza los documentos del proyecto (si no se ha hecho ya) y luego
+            los agentes generan escenarios para los tipos marcados. Puede tardar unos minutos.
+          </small></p>
         </>}
     </section>
 

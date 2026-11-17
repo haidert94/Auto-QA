@@ -60,7 +60,8 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
     <ProjectTabs showExploration={showExploration}>
       {{
         datos: <DataTab project={project} ipa={ipa} />,
-        escenarios: <ScenariosPanel projectId={project.id} />,
+        escenarios: <ScenariosPanel projectId={project.id}
+          projectBaseUrl={project.environments.find(e => e.authorizationConfirmed)?.baseUrl ?? null} />,
         automatizacion: (
           <section className="panel">
             <h2>Automatización con IA</h2>
