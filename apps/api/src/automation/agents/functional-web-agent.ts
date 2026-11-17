@@ -2,12 +2,14 @@
 // controlado (navigate:, click:, fill:, press:, expect-text:, expect-url:).
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
+import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
 
 type ScenarioPayload = {
   scenarios?: Array<{
     title?: string;
     expectedResult?: string;
+    flow?: 'basico' | 'alterno' | string;
+    tags?: string[];
     steps?: Array<{ action?: string; data?: string; expected?: string }>;
   }>;
 };
@@ -29,8 +31,15 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
     '- expect-text: <texto visible>',
     '- expect-url: <patrón>',
     '',
+    'Para cada escenario marca el flujo:',
+    '- "flow": "basico" cuando sea el camino feliz principal de una historia.',
+    '- "flow": "alterno" para variantes, validaciones, errores o caminos secundarios.',
+    'Mezcla básicos y alternos: un flujo alterno suele acompañar a uno básico de la misma historia.',
+    '',
+    'Opcionalmente añade "tags" extra con prefijo @ y sin espacios (ej: @smoke, @critico, @login).',
+    '',
     'Responde SOLO JSON válido con la estructura:',
-    '{ "scenarios": [ { "title": "...", "expectedResult": "...", "steps": [ { "action": "navigate: /login" }, ... ] } ] }',
+    '{ "scenarios": [ { "title": "...", "expectedResult": "...", "flow": "basico", "tags": ["@login"], "steps": [ { "action": "navigate: /login" }, ... ] } ] }',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -62,14 +71,16 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
         expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
       }));
     if (!normalized.length) { errors.push('scenario-' + index + '-sin-pasos'); continue; }
+    const tags = buildTags('@funcional', s.flow, s.tags);
     try {
       await deps.prisma.testScenario.create({
         data: {
           projectId: ctx.projectId,
           title: title.slice(0, 300),
           expectedResult: typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null,
+          tags,
           steps: normalized as unknown as Prisma.InputJsonValue,
-        },
+        } as Prisma.TestScenarioUncheckedCreateInput,
       });
       created += 1;
     } catch (error) {

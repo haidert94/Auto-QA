@@ -55,3 +55,38 @@ export function storiesContext(review: ReviewResult): string {
     .map(s => `- ${s.title} [${s.coverage}]`)
     .join('\n');
 }
+
+// Formato Allure: @alfanumerico-con-guiones. Normalizamos y rechazamos lo
+// que no case con el patrón del DTO para que el backend no rechace al
+// crear el escenario. La lista final queda deduplicada y acotada a 20.
+const TAG_PATTERN = /^@[A-Za-z0-9_-]{1,60}$/;
+
+export function buildTags(
+  typeTag: string,
+  flow: string | undefined,
+  extras: string[] | undefined,
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  function push(candidate: string) {
+    if (!TAG_PATTERN.test(candidate) || seen.has(candidate)) return;
+    seen.add(candidate);
+    result.push(candidate);
+  }
+  push(typeTag);
+  const normalizedFlow = typeof flow === 'string' ? flow.trim().toLowerCase() : '';
+  if (normalizedFlow === 'basico' || normalizedFlow === 'básico' || normalizedFlow === 'basic') {
+    push('@flujoBasico');
+  } else if (normalizedFlow === 'alterno' || normalizedFlow === 'alternativo' || normalizedFlow === 'alternate') {
+    push('@flujoAlterno');
+  }
+  if (Array.isArray(extras)) {
+    for (const raw of extras) {
+      if (typeof raw !== 'string') continue;
+      const candidate = raw.trim().startsWith('@') ? raw.trim() : '@' + raw.trim();
+      push(candidate);
+      if (result.length >= 20) break;
+    }
+  }
+  return result;
+}

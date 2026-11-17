@@ -3,10 +3,16 @@
 // elegir el dispositivo en el panel de runs.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
+import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
 
 type Payload = {
-  scenarios?: Array<{ title?: string; expectedResult?: string; steps?: Array<{ action?: string; data?: string; expected?: string }> }>;
+  scenarios?: Array<{
+    title?: string;
+    expectedResult?: string;
+    flow?: 'basico' | 'alterno' | string;
+    tags?: string[];
+    steps?: Array<{ action?: string; data?: string; expected?: string }>;
+  }>;
 };
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
@@ -20,7 +26,13 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     '',
     'Enfócate en: menús hamburguesa, formularios, scroll, botones grandes, gestos táctiles.',
     'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: y marca los escenarios con el prefijo [MOBILE] en el título.',
-    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] ...", "expectedResult": "...", "steps": [...] }] }.',
+    '',
+    'Para cada escenario marca el flujo:',
+    '- "flow": "basico" para el camino feliz de la historia en móvil.',
+    '- "flow": "alterno" para errores, validaciones o variantes.',
+    'Opcionalmente añade "tags" extra con prefijo @ (ej: @menu, @formulario).',
+    '',
+    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] ...", "expectedResult": "...", "flow": "basico", "tags": ["@menu"], "steps": [...] }] }.',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -48,14 +60,16 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
         expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
       }));
     if (!steps.length) { errors.push('mobile-' + index + '-sin-pasos'); continue; }
+    const tags = buildTags('@mobile', s.flow, s.tags);
     try {
       await deps.prisma.testScenario.create({
         data: {
           projectId: ctx.projectId,
           title: (title.startsWith('[MOBILE]') ? title : '[MOBILE] ' + title).slice(0, 300),
           expectedResult: typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null,
+          tags,
           steps: steps as unknown as Prisma.InputJsonValue,
-        },
+        } as Prisma.TestScenarioUncheckedCreateInput,
       });
       created += 1;
     } catch (error) {
