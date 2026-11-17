@@ -3,13 +3,31 @@
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 
+type ScenarioStep = { ordinal: number; action: string; data?: string | null; expected?: string | null };
+
 type ScenarioListItem = {
   id: string;
   title: string;
   requirementId: string | null;
   expectedResult: string | null;
+  steps: ScenarioStep[] | null;
+  requirement?: { title: string; externalKey: string | null } | null;
   _count?: { results: number };
 };
+
+// Infiere la keyword Gherkin a partir del contenido del paso. No es una
+// implementación completa: el backend aún no persiste keyword como campo
+// propio (eso requiere migración). Mientras tanto hacemos best-effort para
+// renderizar los steps con "Given/When/Then" visibles.
+function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Dado' | 'Cuando' | 'Entonces' | 'Y' {
+  const action = step.action.toLowerCase();
+  if (step.expected) return 'Entonces';
+  if (/^(goto|navega|abrir|visita|preconditi)/.test(action)) return 'Dado';
+  if (/^(click|fill|type|press|selecciona|ingresa|escribe)/.test(action)) return 'Cuando';
+  if (/^(expect|verifica|debe|verify)/.test(action)) return 'Entonces';
+  if (previous) return 'Y';
+  return 'Dado';
+}
 
 type RequirementOption = { id: string; title: string; externalKey: string | null };
 
@@ -327,14 +345,37 @@ export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: strin
       ? <p className="muted">Cargando…</p>
       : items.length === 0
         ? <p className="muted">Aún no hay escenarios en este proyecto.</p>
-        : <ul className="scenario-list">
-          {items.map(item => <li key={item.id}>
-            <Link href={`/projects/${projectId}/scenarios/${item.id}`}>
-              <span className="scenario-title">{item.title}</span>
-              {item.requirementId && <span className="badge">Con requisito</span>}
-              {item._count && item._count.results > 0 && <span className="muted">{item._count.results} resultado(s)</span>}
-            </Link>
-          </li>)}
+        : <ul className="scenario-cards">
+          {items.map(item => (
+            <li key={item.id} className="scenario-card">
+              <header className="scenario-card__head">
+                <div>
+                  <h3><Link href={`/projects/${projectId}/scenarios/${item.id}`}>{item.title}</Link></h3>
+                  <p className="muted">
+                    <small>ID <code>{item.id.slice(0, 8)}</code></small>
+                    {item.requirement && <> · <small>Requisito{item.requirement.externalKey
+                      ? ` [${item.requirement.externalKey}]`
+                      : ''}: {item.requirement.title}</small></>}
+                    {item._count && item._count.results > 0 && <> · <small>{item._count.results} resultado(s)</small></>}
+                  </p>
+                </div>
+              </header>
+              {item.expectedResult && <p className="scenario-card__expected"><small>
+                <strong>Resultado esperado:</strong> {item.expectedResult}
+              </small></p>}
+              {Array.isArray(item.steps) && item.steps.length > 0 && <ol className="gherkin-steps">
+                {item.steps.map((step, i) => {
+                  const keyword = gherkinKeyword(step, item.steps?.[i - 1]);
+                  return <li key={i}>
+                    <span className="gherkin-keyword">{keyword}</span>{' '}
+                    <span>{step.action}</span>
+                    {step.data && <span className="muted"> · <small>dato: {step.data}</small></span>}
+                    {step.expected && <span className="muted"> · <small>esperado: {step.expected}</small></span>}
+                  </li>;
+                })}
+              </ol>}
+            </li>
+          ))}
         </ul>}
   </section>;
 }

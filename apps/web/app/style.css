@@ -425,6 +425,25 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .automation-selection h3 { margin-top: 0; }
 .generator { border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; margin: 14px 0 18px; background: var(--quiet); }
 .generator h3 { margin-top: 0; }
+.scenario-cards { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 14px; }
+.scenario-card { border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; background: var(--surface); }
+.scenario-card__head h3 { margin: 0 0 4px; font-size: 16px; }
+.scenario-card__head p { margin: 0; }
+.scenario-card__expected { margin: 10px 0; padding: 8px 10px; background: var(--quiet); border-left: 3px solid var(--blue); border-radius: 3px; }
+.gherkin-steps { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 4px; font: 500 13px/1.5 var(--mono); }
+.gherkin-steps > li { padding: 4px 6px; border-left: 2px solid var(--line); padding-left: 10px; }
+.gherkin-keyword { display: inline-block; min-width: 72px; color: var(--blue); font-weight: 700; }
+
+.scenario-pick { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 8px; }
+.scenario-pick > li { border: 1px solid var(--line); border-radius: 5px; padding: 10px 14px; transition: background .12s; }
+.scenario-pick > li:hover { background: var(--quiet); }
+.scenario-pick label { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; margin: 0; font-weight: 400; }
+.scenario-pick label > span { flex: 1; }
+.scenario-pick input[type="checkbox"] { margin: 3px 0 0; width: auto; flex-shrink: 0; }
+.scenario-pick p { margin: 4px 0 0; }
+.spec-output { border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; margin-top: 12px; }
+.spec-output header { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
+.spec-output pre { background: var(--quiet); padding: 12px; border-radius: 4px; overflow-x: auto; margin: 0; font-size: 12px; line-height: 1.5; }
 .type-select { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
 .type-select > li { border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; transition: background .12s; }
 .type-select > li:hover:not(.locked) { background: var(--quiet); }

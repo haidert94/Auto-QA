@@ -2,6 +2,7 @@ import { accountFetch, requireAccount } from '../../autoqa-server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
+import { AutomationPanel } from './automation-panel';
 import { DataTab } from './data-tab';
 import { ExecutionReport } from './execution-report';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
@@ -62,6 +63,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         datos: <DataTab project={project} ipa={ipa} />,
         escenarios: <ScenariosPanel projectId={project.id}
           projectBaseUrl={project.environments.find(e => e.authorizationConfirmed)?.baseUrl ?? null} />,
+        automatizacion: <AutomationPanel projectId={project.id} />,
         reporte: <ExecutionReport projectId={project.id} />,
         calidad: (
           <section className="panel">

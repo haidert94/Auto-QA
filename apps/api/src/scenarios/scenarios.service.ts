@@ -110,7 +110,8 @@ export class ScenariosService {
       where: { projectId },
       orderBy: { title: 'asc' },
       select: {
-        id: true, title: true, requirementId: true, expectedResult: true,
+        id: true, title: true, requirementId: true, expectedResult: true, steps: true,
+        requirement: { select: { title: true, externalKey: true } },
         _count: { select: { results: true } },
       },
     });

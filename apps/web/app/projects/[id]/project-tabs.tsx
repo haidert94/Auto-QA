@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 const TABS = [
   { id: 'datos', label: 'Datos' },
   { id: 'escenarios', label: 'Escenarios' },
+  { id: 'automatizacion', label: 'Automatización' },
   { id: 'reporte', label: 'Reporte' },
   { id: 'calidad', label: 'Calidad' },
   { id: 'exploracion', label: 'Exploración' },
