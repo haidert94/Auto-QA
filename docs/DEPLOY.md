@@ -1,53 +1,83 @@
-# Despliegue en un PaaS (demo privada)
+# Despliegue en Hostinger
 
-Estado: **no probado**. La imagen no se ha construido ni ejecutado todavía.
+Estado actual del despliegue en `yanballilibeth.com`. Las restricciones del runtime y las decisiones del entry file están explicadas en los comentarios de [`server.js`](../server.js).
 
 ## Topología
 
-Un solo servicio (el `Dockerfile` de la raíz) ejecuta `scripts/start-hosted.mjs`:
+Un único proceso Node en Hostinger (Node.js hosting, `app_type: express`) que corre `server.js`. Ese archivo:
 
-1. `prisma migrate deploy` contra `DATABASE_URL`.
-2. La API NestJS escucha en `127.0.0.1:3001` y no se expone.
-3. Next.js escucha en `0.0.0.0:$PORT` y reenvía a la API por loopback.
+1. Monta NestJS (`apps/api/dist/app.js`) como handler Express **sin llamar a `listen`**.
+2. Monta Next.js (`apps/web`) como handler principal en el mismo `http.Server`.
+3. Rutea todo a Next.js. Los route handlers de Next en `apps/web/app/api/*` son los únicos que envuelven la sesión en la cookie `autoqa_session`.
+4. Los route handlers de Next llaman a NestJS vía `accountFetch` → parche de `globalThis.fetch` → handler Express en proceso.
 
-Se usa un solo servicio porque `AUTOQA_INTERNAL_API_URL` solo admite `http` en localhost o `https` en otro host.
+Hay un solo `server.listen()` por restricción de Hostinger (un segundo `listen` se ignora silenciosamente). Las migraciones de Prisma corren en el build, no en runtime, porque Hostinger mata el proceso si tarda más de 3 segundos en llamar a `listen`.
 
-## Recursos necesarios
+## Datos del despliegue
 
-- PostgreSQL gestionado (`DATABASE_URL`).
-- Un volumen persistente montado en `/data` (`AUTOQA_DOCUMENTS_DIR=/data/documents`). Sin volumen se pierden los documentos en cada despliegue.
-- Un proveedor SMTP real (en modo `hosted` Mailpit queda deshabilitado).
-- Un subdominio con HTTPS apuntando al servicio.
+| Dato | Valor |
+| --- | --- |
+| Dominio | `yanballilibeth.com` |
+| Hosting | Hostinger Node.js (compartido) |
+| Entry file | `server.js` |
+| Build script | `npm run build` (incluye `prisma generate && prisma migrate deploy && build api && build web`) |
+| Base de datos | Neon Postgres (`DATABASE_URL` configurada en hPanel) |
+| Auto-deploy | GitHub `haidert94/Auto-QA`, branch `main` |
 
-## Variables de entorno
+Cada push a `main` dispara el build. Cambiar una env var se hace en hPanel → Node.js → Variables de entorno (el endpoint `replace-environment-variables` reemplaza TODO el set).
+
+## Variables de entorno obligatorias
 
 | Variable | Valor |
 | --- | --- |
 | `AUTOQA_DEPLOYMENT` | `hosted` |
-| `DATABASE_URL` | cadena del PostgreSQL gestionado |
-| `WEB_ORIGIN` / `AUTOQA_ACCOUNT_ORIGIN` | `https://<subdominio>` |
-| `AUTOQA_DOCUMENTS_TOKEN` | clave aleatoria generada según `docs/DOCUMENTS.md` |
-| `AUTOQA_DOCUMENTS_DIR` | `/data/documents` |
+| `DATABASE_URL` | cadena de Neon Postgres |
+| `WEB_ORIGIN` / `AUTOQA_ACCOUNT_ORIGIN` | `https://yanballilibeth.com` |
+| `AUTOQA_DOCUMENTS_TOKEN` | clave de 64 hex, generada según [docs/DOCUMENTS.md](DOCUMENTS.md) |
 | `AUTOQA_MAIL_MODE` | `smtp` |
-| `AUTOQA_SMTP_HOST`, `AUTOQA_SMTP_PORT`, `AUTOQA_MAIL_FROM`, `AUTOQA_SMTP_USER`, `AUTOQA_SMTP_PASS` | del proveedor SMTP |
+| `AUTOQA_SMTP_HOST`, `AUTOQA_SMTP_PORT`, `AUTOQA_MAIL_FROM`, `AUTOQA_SMTP_USER`, `AUTOQA_SMTP_PASS` | credenciales Resend (dominio `yanballilibeth.com` verificado) |
+| `AUTOQA_ADMIN_TOKEN` | 64 hex, protege la activación manual (ver abajo) |
 
-No subas `.env` a Git ni a la imagen (está en `.gitignore` y `.dockerignore`). Configura los secretos en el panel del PaaS.
+Opcionales: `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` para activar el `AiRouter`; sin ellas se cae al `RuleBasedProvider` y los agentes de generación de escenarios funcionan con resultados mínimos.
 
 ## Activación manual de suscripciones
 
-Con `AUTOQA_DEPLOYMENT=hosted` los cobros simulados quedan deshabilitados y no existe aún un proveedor de pagos real. Para la demo hay un endpoint de activación manual, protegido por `AUTOQA_ADMIN_TOKEN` (64 hex). Genera el token con:
+En producción no hay pasarela conectada todavía. Las suscripciones quedan `PENDING` tras el registro. Para activarlas:
+
+- **Página web:** [`https://yanballilibeth.com/admin/activar`](../apps/web/app/admin/activar/page.tsx). Pide el token, email, plan y días. El token no se guarda en el navegador.
+- **API directa** (útil desde terminal):
 
 ```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-Cópialo a `AUTOQA_ADMIN_TOKEN` en las variables del PaaS y guárdalo donde solo tú lo veas. Si el valor no está configurado, el endpoint responde `503` y no deja activar nada. Para activar una cuenta registrada y verificada:
-
-```powershell
-curl -X POST "https://<subdominio>/api/commerce/admin/activate" `
+curl -X POST "https://yanballilibeth.com/api/commerce/admin/activate" `
   -H "Content-Type: application/json" `
   -H "X-Admin-Token: <token>" `
-  -d '{"email":"usuaria@ejemplo.com","plan":"starter","days":30}'
+  -d '{"email":"usuaria@ejemplo.com","plan":"professional","days":365}'
 ```
 
-`plan` acepta `starter`, `pro` o `business`. `days` es opcional y por defecto 30 (máximo 365). La respuesta incluye el estado y la fecha de vencimiento. Si el token cambia, las cuentas ya activadas siguen activas; solo se bloquean nuevas activaciones.
+`plan` acepta los códigos habilitados en el catálogo (`essentials`, `professional`, `business`, `enterprise` al 2026-11-17). `days` va de 1 a 365, por defecto 30 en el backend. Si `AUTOQA_ADMIN_TOKEN` no está configurado el endpoint responde 503; si no match, 403.
+
+Para rotar el token: genéralo con `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` y reemplázalo en hPanel. Las suscripciones ya activadas siguen activas; solo se bloquean nuevas activaciones.
+
+## Lo que no está desplegado
+
+- **Worker Explorer** (`apps/explorer`). Necesita Playwright/Chromium, Lighthouse y k6; no cabe en el hosting compartido. Debe correr en una VPS apuntando a la misma `DATABASE_URL`. Sin esto no se ejecutan runs reales. Ver [EXPLORER_DEPLOY.md](EXPLORER_DEPLOY.md).
+- **Almacenamiento persistente de documentos** (`AUTOQA_DOCUMENTS_DIR`). No está confirmado que Hostinger preserve ese directorio entre deploys; evaluar S3 (`@aws-sdk/client-s3` ya está en dependencies) para producción.
+- **Pasarela de pago real.** El botón de contratación solo funciona en modo sandbox local; en producción se activa con `/admin/activar`.
+
+## Operaciones y diagnóstico
+
+- Logs runtime: op MCP `hosting_nodejs_runtime-logs` (`period: 1h` o `1d`), o hPanel.
+- Estado del último build: `hosting_get-deployment` o hPanel.
+- Variables (solo claves, valores enmascarados): `hosting_nodejs_list-environment-variables`.
+- `replace-environment-variables` reemplaza TODO el set: para cambiar una sola variable sin riesgo de borrar las demás, editarla en hPanel.
+
+## Notas antes de agregar algo al runtime
+
+Antes de modificar `server.js` o cualquier cosa que corra en Hostinger, verifica que:
+
+1. No añade un segundo `listen`.
+2. No bloquea más de ~1s antes del bind (Prisma, descargas, hashing de datos grandes → al build).
+3. No asume loopback HTTP TCP a sí mismo (está bloqueado).
+4. Sus dependencias están en `dependencies`, no `devDependencies` (estas últimas se descartan en runtime).
+5. Si expone un nuevo endpoint externo de NestJS, tiene un Next route proxy en `apps/web/app/api/<path>/route.ts`.
+6. Si toca el parche de fetch, sigue drenando streams de `init.body` y leyendo `res.statusCode` del propio objeto.
