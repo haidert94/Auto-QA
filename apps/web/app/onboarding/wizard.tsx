@@ -26,13 +26,20 @@ type Form = {
   accessMode: typeof ACCESS_MODES[number]['value'] | '';
   allowedHosts: string;
   authorizationConfirmed: boolean;
+  credentialUser: string;
+  credentialPassword: string;
 };
 
 const EMPTY: Form = {
   name: '', description: '', ownerLabel: '',
   envType: 'QA', baseUrl: '', accessMode: '',
   allowedHosts: '', authorizationConfirmed: false,
+  credentialUser: '', credentialPassword: '',
 };
+
+// Campos cuyo cambio invalida la autorización declarada por el usuario:
+// cualquier ajuste al alcance exige que se vuelva a marcar la casilla.
+const SCOPE_FIELDS = ['envType', 'baseUrl', 'accessMode', 'allowedHosts'] as const;
 
 function hostFromUrl(value: string): string {
   try { return new URL(value).hostname; } catch { return ''; }
@@ -49,13 +56,25 @@ export function OnboardingWizard() {
   const hostsText = form.allowedHosts.trim() || defaultHost;
 
   function update<K extends keyof Form>(key: K, value: Form[K]) {
-    setForm(prev => ({ ...prev, [key]: value }));
+    setForm(prev => {
+      const next = { ...prev, [key]: value };
+      if ((SCOPE_FIELDS as readonly string[]).includes(key as string) && prev.authorizationConfirmed) {
+        next.authorizationConfirmed = false;
+      }
+      return next;
+    });
   }
 
   function canProceed(current: number): boolean {
     if (current === 1) return form.name.trim().length >= 2;
     if (current === 2) return !!form.envType && !!form.baseUrl.trim() && !!form.accessMode && hostFromUrl(form.baseUrl) !== '';
-    if (current === 3) return form.authorizationConfirmed && hostsText.length > 0;
+    if (current === 3) {
+      if (!form.authorizationConfirmed || !hostsText.length) return false;
+      // Si el acceso no es público, exigimos credenciales completas en el wizard
+      // express (el wizard largo permite dejarlas para después).
+      if (form.accessMode !== 'PUBLIC' && (!form.credentialUser.trim() || !form.credentialPassword)) return false;
+      return true;
+    }
     return true;
   }
 
@@ -101,6 +120,9 @@ export function OnboardingWizard() {
             allowedPaths,
             excludedPaths: [],
             prohibitedActions: [],
+            credentials: form.accessMode !== 'PUBLIC' && form.credentialUser.trim() && form.credentialPassword
+              ? { user: form.credentialUser.trim(), password: form.credentialPassword }
+              : undefined,
           }],
           roles,
           executionSettings: {},
@@ -121,7 +143,7 @@ export function OnboardingWizard() {
 
   const steps = ['Bienvenida', 'Aplicación', 'Entorno', 'Alcance y autorización', 'Confirmar'];
 
-  return <form onSubmit={submit} className="panel onboarding-wizard">
+  return <form onSubmit={submit} className="panel onboarding-wizard" autoComplete="off">
     <ol className="wizard-steps">
       {steps.map((label, i) => <li key={i} className={
         i === step ? 'current' : i < step ? 'done' : 'pending'
@@ -198,6 +220,22 @@ export function OnboardingWizard() {
           Un dominio por línea. Si lo dejas vacío, se usa <code>{defaultHost || '(define primero la URL base)'}</code>.
         </small>
       </label>
+      {form.accessMode !== 'PUBLIC' && <fieldset className="credentials">
+        <legend>Credenciales de la cuenta de prueba</legend>
+        <p className="muted">
+          Usa una cuenta dedicada a QA, nunca credenciales personales ni compartidas. La contraseña se cifra en el
+          servidor antes de guardarse (AES-256-GCM) y no vuelve a aparecer en texto. Puedes cambiarla cuando quieras.
+        </p>
+        <label>Usuario o correo
+          <input value={form.credentialUser} onChange={e => update('credentialUser', e.target.value)}
+                 autoComplete="off" maxLength={320} placeholder="qa@mi-dominio.com"/>
+        </label>
+        <label>Contraseña
+          <input type="password" value={form.credentialPassword}
+                 onChange={e => update('credentialPassword', e.target.value)}
+                 autoComplete="new-password" maxLength={512}/>
+        </label>
+      </fieldset>}
       <fieldset className="wizard-auth">
         <legend>Autorización</legend>
         <label className="check">

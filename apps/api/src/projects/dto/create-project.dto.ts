@@ -24,6 +24,14 @@ class ScopePathDto {
   path!: string;
 }
 
+class EnvironmentCredentialsDto {
+  @text(320)
+  user!: string;
+
+  @text(512)
+  password!: string;
+}
+
 class TestDataDto {
   @optional()
   @text(1000)
@@ -102,6 +110,12 @@ class EnvironmentDto {
   @ValidateNested()
   @Type(() => TestDataDto)
   testData?: TestDataDto;
+
+  @optional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => EnvironmentCredentialsDto)
+  credentials?: EnvironmentCredentialsDto | null;
 }
 
 class PermissionDto {

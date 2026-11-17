@@ -307,6 +307,8 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .onboarding-wizard > section > h1 { margin-top: 0; }
 .wizard-bullets { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
 .wizard-bullets > li { padding: 12px 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
+.credentials { border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; margin-top: 12px; }
+.credentials legend { padding: 0 8px; font-weight: 600; }
 .wizard-auth { background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 6px; padding: 14px 18px; margin-top: 12px; }
 .wizard-auth legend { padding: 0 8px; color: var(--danger); font-weight: 700; }
 .wizard-auth .check { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; }

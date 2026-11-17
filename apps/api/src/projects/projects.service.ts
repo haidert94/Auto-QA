@@ -2,6 +2,7 @@ import {
   BadRequestException, ConflictException, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { SecretCipher } from '../commerce/secret-cipher';
 import { activePlan, projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
@@ -20,23 +21,41 @@ const includeOnboarding = {
 type ProjectRecord = Prisma.ProjectGetPayload<{ include: typeof includeOnboarding }>;
 type EnvironmentData = ReturnType<typeof prepareOnboarding>['environments'][number]['data'];
 
+function redactEnvironment(environment: unknown) {
+  const source = environment as Record<string, unknown> & { credentialCipher?: unknown };
+  const { credentialCipher, ...rest } = source;
+  return { ...rest, hasCredentials: !!credentialCipher };
+}
+
 function describeProject<T extends ProjectRecord>(project: T) {
   return {
     ...project,
+    environments: project.environments.map(redactEnvironment),
     missingRequirements: getMissingRequirements(project, project.environments, project.roles),
   };
 }
 
-function environmentWrite(data: EnvironmentData) {
-  return { ...data, testData: data.testData ?? Prisma.DbNull };
-}
-
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly cipher: SecretCipher) {}
 
-  list(workspace: Workspace) {
-    return this.prisma.project.findMany({ where: projectScope(workspace), include: { environments }, orderBy: { createdAt: 'desc' } });
+  private environmentWrite(data: EnvironmentData) {
+    const { credentials, ...rest } = data;
+    const base = { ...rest, testData: data.testData ?? Prisma.DbNull };
+    if (credentials === undefined) return base;
+    if (credentials === null) return { ...base, credentialUser: null, credentialCipher: null };
+    return {
+      ...base,
+      credentialUser: credentials.user,
+      credentialCipher: this.cipher.encrypt(credentials.password),
+    };
+  }
+
+  async list(workspace: Workspace) {
+    const records = await this.prisma.project.findMany({
+      where: projectScope(workspace), include: { environments }, orderBy: { createdAt: 'desc' },
+    });
+    return records.map(project => ({ ...project, environments: project.environments.map(redactEnvironment) }));
   }
 
   async get(id: string, workspace: Workspace) {
@@ -88,7 +107,7 @@ export class ProjectsService {
           ...(workspace.organizationId && { organization: { connect: { id: workspace.organizationId } } }),
           ...(workspace.userId && { owner: { connect: { id: workspace.userId } } }),
           executionSettings: configuration.executionSettings ?? Prisma.DbNull,
-          environments: { create: configuration.environments.map(({ data }) => environmentWrite(data)) },
+          environments: { create: configuration.environments.map(({ data }) => this.environmentWrite(data)) },
           roles: { create: configuration.roles },
         },
         include: includeOnboarding,
@@ -137,9 +156,9 @@ export class ProjectsService {
           environments: {
             deleteMany: { id: { notIn: keptIds } },
             update: configuration.environments.flatMap(({ id: environmentId, data }) => environmentId
-              ? [{ where: { id: environmentId }, data: environmentWrite(data) }]
+              ? [{ where: { id: environmentId }, data: this.environmentWrite(data) }]
               : []),
-            create: configuration.environments.filter(entry => !entry.id).map(({ data }) => environmentWrite(data)),
+            create: configuration.environments.filter(entry => !entry.id).map(({ data }) => this.environmentWrite(data)),
           },
           roles: {
             deleteMany: { name: { notIn: keptNames } },

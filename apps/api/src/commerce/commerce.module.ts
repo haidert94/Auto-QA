@@ -7,6 +7,7 @@ import { CommerceController } from './commerce.controller';
 import { MembersController } from './members.controller';
 import { MembersService } from './members.service';
 import { BillingService, SandboxPaymentProvider } from './payments';
+import { SecretCipher } from './secret-cipher';
 import { WorkspaceGuard } from './workspace.guard';
 import { UsageService } from './usage.service';
 
@@ -16,9 +17,9 @@ import { UsageService } from './usage.service';
   controllers: [CommerceController, MembersController],
   providers: [
     AccountMail, AccountService, AdminService, BillingService, SandboxPaymentProvider, WorkspaceGuard, UsageService,
-    MembersService,
+    MembersService, SecretCipher,
     { provide: ACCOUNT_MAIL_TRANSPORT, useClass: SmtpAccountMailTransport },
   ],
-  exports: [AccountService, WorkspaceGuard, UsageService, MembersService],
+  exports: [AccountService, WorkspaceGuard, UsageService, MembersService, SecretCipher],
 })
 export class CommerceModule {}

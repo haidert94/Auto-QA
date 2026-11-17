@@ -115,6 +115,11 @@ export function prepareOnboarding(
         cleanupStrategy: entry.testData.cleanupStrategy?.trim(),
         integrations: strings(entry.testData.integrations),
       },
+      credentials: entry.credentials === undefined
+        ? undefined
+        : entry.credentials === null
+          ? null
+          : { user: entry.credentials.user.trim(), password: entry.credentials.password },
     };
     if (data.authorizationConfirmed) {
       data.authorizedAt = old?.authorizationConfirmed && scopeSignature(old) === scopeSignature(data)

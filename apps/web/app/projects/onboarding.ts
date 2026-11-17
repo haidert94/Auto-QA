@@ -46,6 +46,8 @@ export type Environment = {
   excludedPaths: Route[];
   prohibitedActions: string[];
   readOnly: boolean;
+  credentialUser: string | null;
+  hasCredentials: boolean;
 };
 
 export type ProjectSummary = {
@@ -85,6 +87,9 @@ export type EnvironmentForm = {
   allowedPaths: string;
   excludedPaths: string;
   prohibitedActions: string;
+  credentialUser: string;
+  credentialPassword: string;
+  hasCredentials: boolean;
 };
 
 export type RoleForm = {
@@ -112,6 +117,9 @@ export function environmentForm(environment?: Environment): EnvironmentForm {
     allowedPaths: environment?.allowedPaths.map(route => route.host + route.path).join('\n') ?? '',
     excludedPaths: environment?.excludedPaths.map(route => route.host + route.path).join('\n') ?? '',
     prohibitedActions: environment?.prohibitedActions.join('\n') ?? '',
+    credentialUser: environment?.credentialUser ?? '',
+    credentialPassword: '',
+    hasCredentials: environment?.hasCredentials ?? false,
   };
 }
 
@@ -150,6 +158,26 @@ function routes(value: string): Route[] {
 }
 
 export function environmentPayload(environment: EnvironmentForm) {
+  // credentials:
+  //  - undefined   => el backend conserva lo que haya guardado.
+  //  - null        => el usuario pidió borrar la credencial.
+  //  - { user, password } => se cifra y se guarda.
+  // El password NUNCA viaja desde el server al cliente, así que en edit
+  // solo se envía cuando el usuario escribió uno nuevo.
+  const user = environment.credentialUser.trim();
+  const password = environment.credentialPassword;
+  const hadCredentials = environment.hasCredentials;
+  const privateAccess = environment.accessMode === 'PRIVATE' || environment.accessMode === 'SSO';
+  let credentials: { user: string; password: string } | null | undefined;
+  if (!privateAccess) {
+    credentials = hadCredentials ? null : undefined;
+  } else if (user && password) {
+    credentials = { user, password };
+  } else if (!user && !password && hadCredentials) {
+    credentials = null;
+  } else {
+    credentials = undefined;
+  }
   return {
     id: environment.id,
     type: environment.type || undefined,
@@ -161,6 +189,7 @@ export function environmentPayload(environment: EnvironmentForm) {
     allowedPaths: routes(environment.allowedPaths),
     excludedPaths: routes(environment.excludedPaths),
     prohibitedActions: lines(environment.prohibitedActions),
+    credentials,
   };
 }
 

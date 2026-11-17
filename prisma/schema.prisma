@@ -130,6 +130,8 @@ model Environment {
   prohibitedActions      String[]         @default([])
   testData               Json?
   readOnly               Boolean          @default(true)
+  credentialUser         String?
+  credentialCipher       String?
   explorations           Exploration[]
   runs                   TestRun[]
   performanceAudits      PerformanceAudit[]

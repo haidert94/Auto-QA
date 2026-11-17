@@ -82,6 +82,30 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
       <p className="muted">Escribe cada ruta como dominio/ruta. Un prefijo incluye sus subrutas y las exclusiones tienen prioridad.</p>
       <TextField label="Acciones prohibidas, una por línea" value={value.prohibitedActions}
         multiline onChange={next => change('prohibitedActions', next, true)} />
+      {(value.accessMode === 'PRIVATE' || value.accessMode === 'SSO') && (
+        <fieldset className="credentials">
+          <legend>Credenciales de la cuenta de prueba</legend>
+          <p className="muted">
+            Usa una cuenta dedicada a QA, nunca credenciales personales ni compartidas.
+            La contraseña se cifra en el servidor antes de guardarse y nunca vuelve a mostrarse en texto.
+          </p>
+          <div className="form-grid">
+            <TextField label="Usuario o correo" value={value.credentialUser} maxLength={320}
+              onChange={next => change('credentialUser', next)} />
+            <label>Contraseña
+              <input type="password" value={value.credentialPassword} maxLength={512}
+                autoComplete="new-password"
+                placeholder={value.hasCredentials ? '· · · · · · (guardada, escribe para reemplazar)' : ''}
+                onChange={event => change('credentialPassword', event.target.value)} />
+            </label>
+          </div>
+          {value.hasCredentials && !value.credentialPassword && (
+            <p className="muted">
+              Hay una contraseña guardada. Deja los campos en blanco para mantenerla, o escribe una nueva para reemplazarla.
+            </p>
+          )}
+        </fieldset>
+      )}
       <p className="muted">
         AutoQA ejecuta solo pruebas no destructivas. No envía formularios de pago, no crea ni borra registros
         reales, ni modifica estado del sitio. Para habilitar flujos de escritura se requiere una autorización
