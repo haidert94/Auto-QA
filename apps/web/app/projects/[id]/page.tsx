@@ -56,10 +56,11 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <ProjectTabs showExploration={showExploration} backHref="/projects">
+    <ProjectTabs showExploration={showExploration}>
       {{
         datos: <DataTab project={project} ipa={ipa} />,
-        ia: (
+        escenarios: <ScenariosPanel projectId={project.id} />,
+        automatizacion: (
           <section className="panel">
             <h2>Automatización con IA</h2>
             <p className="muted">
@@ -69,24 +70,37 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
             <p><Link href={`/projects/${project.id}/automate`} className="button-like primary">Automatizar proyecto</Link></p>
           </section>
         ),
+        reporte: (
+          <section className="panel">
+            <h2>Reporte de ejecución</h2>
+            <p className="muted">
+              Resultado consolidado de los escenarios ejecutados: cuántos pasaron, cuántos fallaron,
+              trazabilidad requisito → escenario → resultado, y evidencias (capturas, logs, trazas).
+            </p>
+            <p>
+              <Link href={`/projects/${project.id}/report`} className="button-like primary">Ver reporte consolidado →</Link>
+            </p>
+            <p className="muted"><small>
+              Si todavía no has ejecutado runs, el reporte aparece vacío. Genera escenarios desde
+              la pestaña anterior y lánzalos para que haya datos aquí.
+            </small></p>
+          </section>
+        ),
         calidad: (
           <section className="panel">
             <h2>Calidad</h2>
             <p className="muted">
-              IPA mide la preparación del proyecto; ICSP mide la salud del producto.
-              El reporte consolida ambos con trazabilidad requisito → escenario → resultado.
+              IPA mide la preparación del proyecto; ICSP mide la salud del producto a partir de los runs.
             </p>
             <p>
               <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
               <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
               <Link href={`/projects/${project.id}/performance`}>Performance →</Link>{' · '}
               <Link href={`/projects/${project.id}/load`}>Carga (k6) →</Link>{' · '}
-              <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>{' · '}
-              <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
+              <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>
             </p>
           </section>
         ),
-        escenarios: <ScenariosPanel projectId={project.id} />,
         exploracion: showExploration
           ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />
           : undefined,

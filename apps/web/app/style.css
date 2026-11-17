@@ -308,9 +308,7 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .wizard-bullets { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
 .wizard-bullets > li { padding: 12px 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
 /* ---- Pestañas del proyecto ---- */
-.project-tabs { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
-.project-tabs__back { font: 500 13px/1.4 var(--sans, inherit); text-decoration: none; color: var(--muted); padding-right: 12px; border-right: 1px solid var(--line); }
-.project-tabs__back:hover { color: var(--ink); }
+.project-tabs { margin-bottom: 16px; padding: 10px 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
 .project-tabs ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 4px; flex-wrap: wrap; }
 .project-tabs button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 6px 12px; border-radius: 5px; font: 500 13px/1.4 inherit; cursor: pointer; }
 .project-tabs button:hover { color: var(--ink); background: #fff; }

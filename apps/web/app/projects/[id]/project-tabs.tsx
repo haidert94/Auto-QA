@@ -1,17 +1,17 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
-  { id: 'ia', label: 'Automatización IA' },
-  { id: 'calidad', label: 'Calidad' },
   { id: 'escenarios', label: 'Escenarios' },
+  { id: 'automatizacion', label: 'Automatización' },
+  { id: 'reporte', label: 'Reporte' },
+  { id: 'calidad', label: 'Calidad' },
   { id: 'exploracion', label: 'Exploración' },
 ] as const;
 
-type TabId = typeof TABS[number]['id'];
+export type TabId = typeof TABS[number]['id'];
 
 // Mantiene la pestaña activa en el hash de la URL para que el back del
 // navegador funcione y el link sea compartible. Si el hash no coincide con
@@ -25,11 +25,9 @@ function readHashTab(available: TabId[]): TabId {
 
 export function ProjectTabs({
   showExploration,
-  backHref,
   children,
 }: {
   showExploration: boolean;
-  backHref: string;
   children: Partial<Record<TabId, ReactNode>>;
 }) {
   const visible: TabId[] = TABS.map(t => t.id).filter(id => id !== 'exploracion' || showExploration);
@@ -52,7 +50,6 @@ export function ProjectTabs({
   return (
     <>
       <nav className="project-tabs" aria-label="Secciones del proyecto">
-        <Link href={backHref} className="project-tabs__back">← Proyectos</Link>
         <ul role="tablist">
           {TABS.filter(t => t.id !== 'exploracion' || showExploration).map(tab => (
             <li key={tab.id}>
