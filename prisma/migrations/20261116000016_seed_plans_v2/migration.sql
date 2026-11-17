@@ -46,7 +46,7 @@ INSERT INTO "PlanCapability" ("planCode", code, availability, label, detail, pos
   ('essentials', 'ADVANCED_REPORTS',       'OPERATIONAL', 'Reportes exportables',   'JSON + PDF via navegador', 7, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL),
   ('essentials', 'LIGHTHOUSE_AUDITS',      'NOT_INCLUDED','Performance frontend',   'Upgrade a Professional', 8, ARRAY[]::TEXT[], 0, NULL, NULL, NULL, NULL),
   ('essentials', 'CROSS_BROWSER',          'NOT_INCLUDED','Firefox + WebKit',       'Upgrade a Professional', 9, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL),
-  ('essentials', 'LOAD_TESTS',             'NOT_INCLUDED','Pruebas de carga',       'Upgrade a Business', 10, ARRAY[]::TEXT[], 0, NULL, NULL, 0, 0),
+  ('essentials', 'LOAD_TESTS',             'NOT_INCLUDED','Pruebas de carga',       'Upgrade a Business', 10, ARRAY[]::TEXT[], 0, NULL, NULL, NULL, NULL),
   ('essentials', 'DEVICE_CLOUD',           'NOT_INCLUDED','Dispositivos reales',    'Upgrade a Business', 11, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL),
   ('essentials', 'AI_DOCUMENT_ANALYSIS',   'NOT_INCLUDED','Análisis IA de docs',    'Upgrade a Professional', 12, ARRAY[]::TEXT[], 0, NULL, NULL, NULL, NULL),
   ('essentials', 'AI_SCENARIO_GENERATION', 'NOT_INCLUDED','Generación IA',          'Upgrade a Professional', 13, ARRAY[]::TEXT[], 0, NULL, NULL, NULL, NULL),
@@ -67,7 +67,7 @@ INSERT INTO "PlanCapability" ("planCode", code, availability, label, detail, pos
   ('professional', 'ICSP',                   'OPERATIONAL', 'ICSP',                    'Salud del producto',           11, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL),
   ('professional', 'TRACEABILITY',           'OPERATIONAL', 'Trazabilidad full',       'Reqs → escenarios → runs',     12, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL),
   ('professional', 'ADVANCED_REPORTS',       'OPERATIONAL', 'Reportes exportables',    'JSON + PDF + historial 90d',   13, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL),
-  ('professional', 'LOAD_TESTS',             'NOT_INCLUDED','Pruebas de carga',        'Upgrade a Business',           14, ARRAY[]::TEXT[], 0, NULL, NULL, 0, 0),
+  ('professional', 'LOAD_TESTS',             'NOT_INCLUDED','Pruebas de carga',        'Upgrade a Business',           14, ARRAY[]::TEXT[], 0, NULL, NULL, NULL, NULL),
   ('professional', 'DEVICE_CLOUD',           'NOT_INCLUDED','Dispositivos reales',     'Upgrade a Business',           15, ARRAY[]::TEXT[], NULL, NULL, NULL, NULL, NULL);
 
 -- BUSINESS
