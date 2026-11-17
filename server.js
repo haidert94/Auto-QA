@@ -71,21 +71,21 @@ function installLoopbackFetch(nestHandler) {
 
 // Invoca el handler Express de NestJS en el mismo proceso usando un par
 // req/res sintéticos. No abre socket TCP alguno.
-function nestInProcessFetch(handler, url, init) {
+async function nestInProcessFetch(handler, url, init) {
+  const method = (init.method || 'GET').toUpperCase();
+  const headers = Object.create(null);
+  if (init.headers) {
+    const h = new Headers(init.headers);
+    for (const [k, v] of h.entries()) headers[k.toLowerCase()] = v;
+  }
+  headers.host = url.host;
+
+  const bodyBuffer = await toBuffer(init.body);
+  if (bodyBuffer && !headers['content-length']) {
+    headers['content-length'] = String(bodyBuffer.length);
+  }
+
   return new Promise((resolveFn, rejectFn) => {
-    const method = (init.method || 'GET').toUpperCase();
-    const headers = Object.create(null);
-    if (init.headers) {
-      const h = new Headers(init.headers);
-      for (const [k, v] of h.entries()) headers[k.toLowerCase()] = v;
-    }
-    headers.host = url.host;
-
-    const bodyBuffer = toBuffer(init.body);
-    if (bodyBuffer && !headers['content-length']) {
-      headers['content-length'] = String(bodyBuffer.length);
-    }
-
     const req = bodyBuffer ? Readable.from([bodyBuffer]) : Readable.from([]);
     req.method = method;
     req.url = url.pathname + url.search;
@@ -170,15 +170,51 @@ function nestInProcessFetch(handler, url, init) {
   });
 }
 
-function toBuffer(body) {
+async function toBuffer(body) {
   if (body == null) return null;
   if (typeof body === 'string') return Buffer.from(body, 'utf8');
   if (Buffer.isBuffer(body)) return body;
   if (body instanceof ArrayBuffer) return Buffer.from(body);
   if (ArrayBuffer.isView(body)) return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
-  // URLSearchParams, Blob, streams: no soportados aquí (poco frecuente en SSR).
+  if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) {
+    return Buffer.from(body.toString(), 'utf8');
+  }
+  // Web ReadableStream (lo que usa Next 15 para request.body en rutas API)
+  if (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream) {
+    return await drainWebStream(body);
+  }
+  // Node Readable (por si llega uno)
+  if (body && typeof body.pipe === 'function' && typeof body.on === 'function') {
+    return await drainNodeStream(body);
+  }
+  // Blob/File tienen arrayBuffer()
+  if (body && typeof body.arrayBuffer === 'function') {
+    try { return Buffer.from(await body.arrayBuffer()); } catch {}
+  }
   try { return Buffer.from(String(body), 'utf8'); }
   catch { return null; }
+}
+
+async function drainWebStream(stream) {
+  const reader = stream.getReader();
+  const chunks = [];
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value));
+    }
+  } finally { try { reader.releaseLock(); } catch {} }
+  return Buffer.concat(chunks);
+}
+
+function drainNodeStream(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', c => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
 }
 
 main().catch((err) => {
