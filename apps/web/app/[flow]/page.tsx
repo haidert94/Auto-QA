@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AccountForm, BillingForm, Logout } from '../account-forms';
+import { AppShell } from '../app-shell';
 import { accountFetch, activeStatuses, listPlans, requireAccount } from '../autoqa-server';
 import { CommercialShell } from '../commercial';
 import { UsageSummary } from '../usage-summary';
@@ -52,16 +53,21 @@ export default async function Page({ params, searchParams }: {
   }
   if (['dashboard', 'billing', 'settings'].includes(flow)) {
     const account = await requireAccount();
-    if (flow === 'dashboard' && !activeStatuses.includes(account.subscription.status)) redirect('/billing');
-    return <Shell>
-      {flow === 'billing' ? <><h1>Facturación</h1><p>{account.organization.name}</p><BillingForm account={account} plans={await listPlans()}/><UsageSummary/></> :
-        flow === 'settings' ? <><h1>Mi cuenta</h1><p>{account.name} · {account.email}</p><p>Organización · {account.organization.name}</p></> :
-          <><h1>Dashboard</h1><p>{account.organization.name} · Plan {account.subscription.plan?.name}</p>
-            <p>Registra y administra tus proyectos, entornos y documentación.</p>
-            <div className="actions"><Link className="button primary" href="/projects">Ver proyectos</Link>
-              <Link className="button outline" href="/projects/new">Registrar aplicación</Link></div></>}
-      <p><Link href="/billing">Facturación</Link> · <Link href="/settings">Mi cuenta</Link></p><Logout/>
-    </Shell>;
+    if (flow === 'dashboard') redirect(activeStatuses.includes(account.subscription.status) ? '/dashboard' : '/billing');
+    return <AppShell>
+      <main>
+        {flow === 'billing'
+          ? <section className="panel"><h1>Facturación</h1><p className="muted">{account.organization.name}</p>
+              <BillingForm account={account} plans={await listPlans()}/><UsageSummary/></section>
+          : <section className="panel"><h1>Mi cuenta</h1>
+              <p>{account.name} · {account.email}</p>
+              <p className="muted">Organización · {account.organization.name}</p></section>}
+        <section className="panel">
+          <p><Link href="/billing">Facturación</Link> · <Link href="/settings">Mi cuenta</Link></p>
+          <Logout/>
+        </section>
+      </main>
+    </AppShell>;
   }
   notFound();
 }
