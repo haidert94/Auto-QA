@@ -60,10 +60,13 @@ export class AccountService {
       user = await this.db.user.create({
         data: {
           email, name: input.name.trim(), passwordHash: hash, consentVersion: CONSENT_VERSION, consentAt: new Date(),
-          membership: { create: { organization: { create: {
-            name: input.company?.trim() || input.name.trim(),
-            subscription: { create: { planCode: plan.code } },
-          } } } },
+          membership: { create: {
+            role: 'OWNER',
+            organization: { create: {
+              name: input.company?.trim() || input.name.trim(),
+              subscription: { create: { planCode: plan.code } },
+            } },
+          } },
         }, select: { id: true },
       });
     } catch (error) {
