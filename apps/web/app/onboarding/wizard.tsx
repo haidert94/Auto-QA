@@ -67,14 +67,15 @@ export function OnboardingWizard() {
 
   function canProceed(current: number): boolean {
     if (current === 1) return form.name.trim().length >= 2;
-    if (current === 2) return !!form.envType && !!form.baseUrl.trim() && !!form.accessMode && hostFromUrl(form.baseUrl) !== '';
-    if (current === 3) {
-      if (!form.authorizationConfirmed || !hostsText.length) return false;
+    if (current === 2) {
+      if (!form.envType || !form.baseUrl.trim() || !form.accessMode || hostFromUrl(form.baseUrl) === '') return false;
       // Si el acceso no es público, exigimos credenciales completas en el wizard
-      // express (el wizard largo permite dejarlas para después).
+      // express (el wizard largo permite dejarlas para después). Así el paso 4
+      // (autorización) queda enfocado solo en alcance y consentimiento.
       if (form.accessMode !== 'PUBLIC' && (!form.credentialUser.trim() || !form.credentialPassword)) return false;
       return true;
     }
+    if (current === 3) return form.authorizationConfirmed && hostsText.length > 0;
     return true;
   }
 
@@ -205,22 +206,7 @@ export function OnboardingWizard() {
           {ACCESS_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
       </label>
-    </section>}
-
-    {step === 3 && <section>
-      <h1>Alcance y autorización</h1>
-      <p className="muted">
-        AutoQA solo visitará dominios que estén en esta lista. Puedes ajustar rutas y exclusiones después.
-      </p>
-      <label>Dominios permitidos
-        <textarea value={form.allowedHosts} onChange={e => update('allowedHosts', e.target.value)}
-                  placeholder={defaultHost ? `${defaultHost}\napi.${defaultHost}` : 'app.mi-dominio.com'}
-                  rows={3}/>
-        <small className="muted">
-          Un dominio por línea. Si lo dejas vacío, se usa <code>{defaultHost || '(define primero la URL base)'}</code>.
-        </small>
-      </label>
-      {form.accessMode !== 'PUBLIC' && <fieldset className="credentials">
+      {form.accessMode && form.accessMode !== 'PUBLIC' && <fieldset className="credentials">
         <legend>Credenciales de la cuenta de prueba</legend>
         <p className="muted">
           Usa una cuenta dedicada a QA, nunca credenciales personales ni compartidas. La contraseña se cifra en el
@@ -236,6 +222,21 @@ export function OnboardingWizard() {
                  autoComplete="new-password" maxLength={512}/>
         </label>
       </fieldset>}
+    </section>}
+
+    {step === 3 && <section>
+      <h1>Alcance y autorización</h1>
+      <p className="muted">
+        AutoQA solo visitará dominios que estén en esta lista. Puedes ajustar rutas y exclusiones después.
+      </p>
+      <label>Dominios permitidos
+        <textarea value={form.allowedHosts} onChange={e => update('allowedHosts', e.target.value)}
+                  placeholder={defaultHost ? `${defaultHost}\napi.${defaultHost}` : 'app.mi-dominio.com'}
+                  rows={3}/>
+        <small className="muted">
+          Un dominio por línea. Si lo dejas vacío, se usa <code>{defaultHost || '(define primero la URL base)'}</code>.
+        </small>
+      </label>
       <fieldset className="wizard-auth">
         <legend>Autorización</legend>
         <label className="check">
