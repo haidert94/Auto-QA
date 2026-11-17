@@ -85,7 +85,8 @@ export class ProjectsService {
       const project = await tx.project.create({
         data: {
           ...configuration.project,
-          ...workspace,
+          ...(workspace.organizationId && { organization: { connect: { id: workspace.organizationId } } }),
+          ...(workspace.userId && { owner: { connect: { id: workspace.userId } } }),
           executionSettings: configuration.executionSettings ?? Prisma.DbNull,
           environments: { create: configuration.environments.map(({ data }) => environmentWrite(data)) },
           roles: { create: configuration.roles },
