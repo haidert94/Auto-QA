@@ -87,7 +87,6 @@ export type EnvironmentForm = {
   accessMode: AccessMode | '';
   authorizationConfirmed: boolean;
   authorizedAt?: string | null;
-  readOnly: boolean;
   allowedHosts: string;
   allowedPaths: string;
   excludedPaths: string;
@@ -119,7 +118,6 @@ export function environmentForm(environment?: Environment): EnvironmentForm {
     accessMode: environment?.accessMode ?? '',
     authorizedAt: environment?.authorizedAt,
     authorizationConfirmed: environment?.authorizationConfirmed ?? false,
-    readOnly: environment?.readOnly ?? true,
     allowedHosts: environment?.allowedHosts.join('\n') ?? '',
     allowedPaths: environment?.allowedPaths.map(route => route.host + route.path).join('\n') ?? '',
     excludedPaths: environment?.excludedPaths.map(route => route.host + route.path).join('\n') ?? '',
@@ -172,7 +170,7 @@ export function environmentPayload(environment: EnvironmentForm) {
     baseUrl: environment.baseUrl.trim() || undefined,
     accessMode: environment.accessMode || undefined,
     authorizationConfirmed: environment.authorizationConfirmed,
-    readOnly: environment.readOnly,
+    readOnly: true,
     allowedHosts: lines(environment.allowedHosts),
     allowedPaths: routes(environment.allowedPaths),
     excludedPaths: routes(environment.excludedPaths),

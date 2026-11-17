@@ -82,11 +82,11 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
       <p className="muted">Escribe cada ruta como dominio/ruta. Un prefijo incluye sus subrutas y las exclusiones tienen prioridad.</p>
       <TextField label="Acciones prohibidas, una por línea" value={value.prohibitedActions}
         multiline onChange={next => change('prohibitedActions', next, true)} />
-      <label className="check">
-        <input type="checkbox" checked={value.readOnly}
-          onChange={event => change('readOnly', event.target.checked, true)} />
-        Solo lectura
-      </label>
+      <p className="muted">
+        AutoQA ejecuta solo pruebas no destructivas. No envía formularios de pago, no crea ni borra registros
+        reales, ni modifica estado del sitio. Para habilitar flujos de escritura se requiere una autorización
+        granular por acción que aún no está implementada.
+      </p>
       <label className="check">
         <input type="checkbox" checked={value.authorizationConfirmed} disabled={!value.baseUrl.trim()}
           onChange={event => change('authorizationConfirmed', event.target.checked)} />
