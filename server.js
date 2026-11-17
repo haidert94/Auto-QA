@@ -14,18 +14,33 @@ const publicPort = Number(process.env.PORT || 8080);
 const apiPort = 4001;
 
 async function main() {
-  const runPrisma = (args) => spawnSync('npx', ['prisma', ...args], {
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-  });
+  const runPrisma = (args) => {
+    const result = spawnSync('npx', ['prisma', ...args], {
+      shell: process.platform === 'win32',
+      encoding: 'utf8',
+    });
+    const tag = '[prisma ' + args.join(' ') + ']';
+    const out = (result.stdout || '').trim();
+    const err = (result.stderr || '').trim();
+    if (out) console.log(tag, out.replace(/\n/g, ' | '));
+    if (err) console.warn(tag, 'STDERR:', err.replace(/\n/g, ' | '));
+    console.log(tag, 'exit=' + result.status);
+    return result;
+  };
 
   let migrate = runPrisma(['migrate', 'deploy']);
   if (migrate.status !== 0) {
-    // Despliegues previos pueden haber dejado 20261116000016_seed_plans_v2
-    // en estado FAILED por una constraint que ya se corrigió en el repo.
-    // Se marca como rolled-back para que el próximo deploy la reaplique.
-    console.warn('[startup] migrate deploy falló; intento resolver 20261116000016_seed_plans_v2 como rolled-back');
-    runPrisma(['migrate', 'resolve', '--rolled-back', '20261116000016_seed_plans_v2']);
+    // Despliegues previos pueden haber dejado migraciones FAILED por
+    // errores ya corregidos en el repo. Las marcamos rolled-back y
+    // reintentamos deploy para que se reapliquen con el código actual.
+    for (const name of [
+      '20261116000016_seed_plans_v2',
+      '20261116000017_automation_jobs',
+      '20261116000018_ux_audits_and_seed',
+      '20261116000019_seed_ux_capabilities',
+    ]) {
+      runPrisma(['migrate', 'resolve', '--rolled-back', name]);
+    }
     migrate = runPrisma(['migrate', 'deploy']);
   }
   if (migrate.status !== 0) {
