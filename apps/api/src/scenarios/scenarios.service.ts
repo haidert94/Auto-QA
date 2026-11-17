@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { AiRouter } from '../ai/ai-router';
 import { PrismaService } from '../prisma.service';
-import type { Workspace } from '../commerce/workspace.guard';
+import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { generateSpec, suggestedFilename, type GeneratorStep } from './playwright-generator';
 
@@ -218,7 +218,7 @@ export class ScenariosService {
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...workspace }, select: { id: true } });
+    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
 

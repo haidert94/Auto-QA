@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Workspace } from '../commerce/workspace.guard';
+import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DocumentsService } from '../documents/documents.service';
 import { PrismaService } from '../prisma.service';
 
@@ -42,7 +42,7 @@ export class IpaService {
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...workspace }, select: { id: true } });
+    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
 }

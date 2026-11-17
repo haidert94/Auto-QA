@@ -21,6 +21,12 @@ export function hasRole(actual: OrgRole, required: OrgRole[]): boolean {
 }
 
 export type Workspace = { organizationId: string | null; userId?: string | null; role?: OrgRole | null };
+
+// Filtro Prisma para scoping multi-tenant. Project solo conoce
+// organizationId y ownerId; userId y role del Workspace no son columnas.
+export function projectScope(workspace: Workspace) {
+  return { organizationId: workspace.organizationId };
+}
 type Request = { headers: { authorization?: string }; params: { projectId?: string }; workspace: Workspace };
 
 export const CurrentWorkspace = createParamDecorator((_: unknown, ctx: ExecutionContext) =>
@@ -69,7 +75,7 @@ export class WorkspaceGuard implements CanActivate {
       request.workspace = { organizationId: organization.id, userId: identity.userId, role: identity.role };
     }
     if (projectId) {
-      const found = await this.db.project.findFirst({ where: { id: projectId, ...request.workspace }, select: { id: true } });
+      const found = await this.db.project.findFirst({ where: { id: projectId, ...projectScope(request.workspace) }, select: { id: true } });
       if (!found) throw new NotFoundException('Proyecto no encontrado.');
     }
     return true;

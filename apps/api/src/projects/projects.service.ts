@@ -2,7 +2,7 @@ import {
   BadRequestException, ConflictException, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { activePlan, type Workspace } from '../commerce/workspace.guard';
+import { activePlan, projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
 import { getMissingRequirements, prepareOnboarding } from './onboarding';
@@ -36,12 +36,12 @@ export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
   list(workspace: Workspace) {
-    return this.prisma.project.findMany({ where: workspace, include: { environments }, orderBy: { createdAt: 'desc' } });
+    return this.prisma.project.findMany({ where: projectScope(workspace), include: { environments }, orderBy: { createdAt: 'desc' } });
   }
 
   async get(id: string, workspace: Workspace) {
     const project = await this.prisma.project.findUnique({
-      where: { id, ...workspace },
+      where: { id, ...projectScope(workspace) },
       include: includeOnboarding,
     });
     if (!project) throw new NotFoundException('Proyecto no encontrado');
@@ -98,7 +98,7 @@ export class ProjectsService {
   }
 
   async update(id: string, dto: UpdateProjectDto, workspace: Workspace) {
-    const previous = await this.prisma.project.findUnique({ where: { id, ...workspace }, include: { environments, _count: { select: { roles: true } } } });
+    const previous = await this.prisma.project.findUnique({ where: { id, ...projectScope(workspace) }, include: { environments, _count: { select: { roles: true } } } });
     if (!previous) throw new NotFoundException('Proyecto no encontrado');
     if (previous.status === 'ARCHIVED') throw new ConflictException('El proyecto está archivado');
     if (previous.revision !== dto.revision) {
@@ -117,7 +117,7 @@ export class ProjectsService {
 
     try {
       const project = await this.prisma.project.update({
-        where: { id, ...workspace, revision: dto.revision },
+        where: { id, ...projectScope(workspace), revision: dto.revision },
         data: {
           ...configuration.project,
           revision: { increment: 1 },

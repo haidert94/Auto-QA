@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from '@nes
 import { randomUUID } from 'node:crypto';
 import { AiRouter } from '../ai/ai-router';
 import { UsageService } from '../commerce/usage.service';
-import type { Workspace } from '../commerce/workspace.guard';
+import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
@@ -207,7 +207,7 @@ export class RunsService {
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...workspace }, select: { id: true } });
+    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
 }

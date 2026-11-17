@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { UsageService } from '../commerce/usage.service';
-import type { Workspace } from '../commerce/workspace.guard';
+import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { diffExplorations } from '../common/diffs';
 import { PrismaService } from '../prisma.service';
 import { CreateExplorationDto, ExplorationLimitsDto } from './dto/create-exploration.dto';
@@ -184,7 +184,7 @@ export class ExplorationsService {
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...workspace }, select: { id: true } });
+    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
 }

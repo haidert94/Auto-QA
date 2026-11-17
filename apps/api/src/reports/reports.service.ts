@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type { Workspace } from '../commerce/workspace.guard';
+import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DocumentsService } from '../documents/documents.service';
 import { IcspService } from '../icsp/icsp.service';
 import { computeIcsp } from '../icsp/icsp-calculator';
@@ -15,7 +15,7 @@ export class ReportsService {
 
   async export(projectId: string, workspace: Workspace) {
     const project = await this.prisma.project.findFirst({
-      where: { id: projectId, ...workspace },
+      where: { id: projectId, ...projectScope(workspace) },
       select: {
         id: true, name: true, description: true, status: true,
         createdAt: true, updatedAt: true, organizationId: true,

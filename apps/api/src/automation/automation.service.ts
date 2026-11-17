@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import type { Workspace } from '../commerce/workspace.guard';
+import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
@@ -153,7 +153,7 @@ export class AutomationService {
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...workspace }, select: { id: true } });
+    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
 }
