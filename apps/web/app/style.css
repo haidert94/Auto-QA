@@ -423,6 +423,8 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 
 .automation-selection { margin-top: 24px; background: var(--surface); border-radius: 6px; padding: 20px; border: 1px solid var(--line); }
 .automation-selection h3 { margin-top: 0; }
+.generator { border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; margin: 14px 0 18px; background: var(--quiet); }
+.generator h3 { margin-top: 0; }
 .type-select { list-style: none; padding: 0; margin: 14px 0; display: grid; gap: 10px; }
 .type-select > li { border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; transition: background .12s; }
 .type-select > li:hover:not(.locked) { background: var(--quiet); }

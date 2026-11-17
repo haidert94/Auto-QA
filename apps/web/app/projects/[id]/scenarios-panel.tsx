@@ -13,6 +13,9 @@ type ScenarioListItem = {
 
 type RequirementOption = { id: string; title: string; externalKey: string | null };
 
+type TestType = { code: string; label: string; description: string; available: boolean };
+type AutomationSummary = { id: string; status: string; stage: string | null; createdAt: string };
+
 export function ScenariosPanel({ projectId }: { projectId: string }) {
   const [items, setItems] = useState<ScenarioListItem[] | null>(null);
   const [requirements, setRequirements] = useState<RequirementOption[]>([]);
@@ -26,6 +29,11 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
   const [suggesting, setSuggesting] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }> | null>(null);
   const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
+  const [types, setTypes] = useState<TestType[] | null>(null);
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
+  const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateNotice, setGenerateNotice] = useState('');
 
   async function suggest() {
     if (!requirementId) { setError('Selecciona primero un requisito para sugerir escenarios.'); return; }
@@ -77,6 +85,72 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
 
   useEffect(() => { void load(); }, [projectId]);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [typesRes, jobsRes] = await Promise.all([
+          fetch(`/api/projects/${projectId}/automation/types`, { cache: 'no-store' }),
+          fetch(`/api/projects/${projectId}/automation`, { cache: 'no-store' }),
+        ]);
+        if (!active) return;
+        if (typesRes.ok) {
+          const list: TestType[] = await typesRes.json();
+          setTypes(list);
+          // Preseleccionamos todos los disponibles para que el botón funcione
+          // al primer intento sin obligar al usuario a marcar uno por uno.
+          setSelectedTypes(new Set(list.filter(t => t.available).map(t => t.code)));
+        }
+        if (jobsRes.ok) {
+          const jobs: AutomationSummary[] = await jobsRes.json();
+          setLatestJob(jobs[0] ?? null);
+        }
+      } catch {/* UI muestra "cargando opciones" si falta */}
+    })();
+    return () => { active = false; };
+  }, [projectId]);
+
+  function toggleType(code: string) {
+    setSelectedTypes(previous => {
+      const next = new Set(previous);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
+  async function generate() {
+    setGenerateNotice(''); setError('');
+    if (!latestJob) {
+      setGenerateNotice('Primero ejecuta "Automatizar proyecto" en la pestaña Automatización para producir el análisis de datos.');
+      return;
+    }
+    if (latestJob.stage !== 'review-ready') {
+      setGenerateNotice(`La última automatización está en "${latestJob.stage ?? latestJob.status}". Espera a que el análisis termine o lánzalo de nuevo.`);
+      return;
+    }
+    if (selectedTypes.size === 0) {
+      setGenerateNotice('Selecciona al menos un tipo de prueba.');
+      return;
+    }
+    setGenerating(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/automation/${latestJob.id}/select`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ types: Array.from(selectedTypes) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.message ?? 'No se pudo lanzar la generación.');
+        return;
+      }
+      setGenerateNotice('Generación encolada. Los escenarios aparecerán aquí a medida que el worker termine cada agente.');
+      // Refrescamos tras un pequeño delay para capturar los primeros resultados
+      setTimeout(() => void load(), 2000);
+    } catch { setError('No se pudo comunicar con la API.'); }
+    finally { setGenerating(false); }
+  }
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true); setError('');
@@ -102,15 +176,51 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
   return <section className="exploration-panel">
     <h2>Escenarios</h2>
     <p className="muted">
-      Define los escenarios de prueba manualmente. La generación a Playwright y la ejecución llegan en las fases siguientes.
+      Selecciona los tipos de prueba que incluye tu plan y genera escenarios a partir del análisis
+      de los documentos. También puedes crear escenarios manualmente.
     </p>
 
+    <section className="generator">
+      <h3>Generar escenarios con IA</h3>
+      {types === null
+        ? <p className="muted">Cargando tipos disponibles…</p>
+        : <>
+          <ul className="type-select">
+            {types.map(t => <li key={t.code} className={t.available ? '' : 'locked'}>
+              <label title={t.available ? t.description : 'Requiere un plan superior'}>
+                <input type="checkbox" disabled={!t.available}
+                  checked={selectedTypes.has(t.code)}
+                  onChange={() => toggleType(t.code)} />
+                <span>
+                  <strong>{t.label}</strong>
+                  {!t.available && <span className="badge badge-canceled" style={{ marginLeft: 6 }}>Requiere plan superior</span>}
+                  <br/>
+                  <small className="muted">{t.description}</small>
+                </span>
+              </label>
+            </li>)}
+          </ul>
+          <div className="actions">
+            <button type="button" onClick={generate} disabled={generating || selectedTypes.size === 0}>
+              {generating ? 'Encolando…' : 'Generar escenarios'}
+            </button>
+            {!latestJob && <small className="muted">
+              Requiere un análisis previo. Ve a la pestaña Automatización y pulsa "Automatizar proyecto".
+            </small>}
+            {latestJob && latestJob.stage !== 'review-ready' && <small className="muted">
+              Último análisis en estado "{latestJob.stage ?? latestJob.status}". Espera a que esté "review-ready".
+            </small>}
+          </div>
+          {generateNotice && <p className="muted" role="status">{generateNotice}</p>}
+        </>}
+    </section>
+
     <div className="actions">
-      <button type="button" onClick={() => setShowForm(s => !s)}>
-        {showForm ? 'Cancelar' : 'Nuevo escenario'}
+      <button type="button" className="secondary" onClick={() => setShowForm(s => !s)}>
+        {showForm ? 'Cancelar' : 'Nuevo escenario manual'}
       </button>
       <button type="button" className="secondary" onClick={suggest} disabled={suggesting || !requirementId}>
-        {suggesting ? 'Pensando…' : 'Sugerir con IA'}
+        {suggesting ? 'Pensando…' : 'Sugerir desde requisito'}
       </button>
     </div>
 
