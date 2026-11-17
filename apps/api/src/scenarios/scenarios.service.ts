@@ -1,9 +1,40 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AiRouter } from '../ai/ai-router';
 import { PrismaService } from '../prisma.service';
 import type { Workspace } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { generateSpec, suggestedFilename, type GeneratorStep } from './playwright-generator';
+
+type SuggestedScenario = { title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> };
+
+function parseSuggestions(text: string): SuggestedScenario[] {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return [];
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as { scenarios?: unknown };
+    if (!Array.isArray(parsed.scenarios)) return [];
+    return parsed.scenarios
+      .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+      .slice(0, 10)
+      .map(s => ({
+        title: typeof s.title === 'string' ? s.title.slice(0, 300) : 'Escenario sin título',
+        expectedResult: typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : undefined,
+        steps: Array.isArray(s.steps)
+          ? s.steps
+            .filter((step): step is Record<string, unknown> => !!step && typeof step === 'object')
+            .slice(0, 50)
+            .map(step => ({
+              action: typeof step.action === 'string' ? step.action.slice(0, 1000) : '',
+              data: typeof step.data === 'string' ? step.data.slice(0, 1000) : undefined,
+              expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
+            }))
+            .filter(step => step.action.length > 0)
+          : [],
+      }))
+      .filter(s => s.steps.length > 0);
+  } catch { return []; }
+}
 
 function normalizeSteps(steps: ScenarioStepDto[]): Prisma.InputJsonValue {
   // Re-numeramos los ordinales en el servidor: el cliente puede enviar
@@ -21,7 +52,57 @@ function normalizeSteps(steps: ScenarioStepDto[]): Prisma.InputJsonValue {
 
 @Injectable()
 export class ScenariosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly ai: AiRouter) {}
+
+  // Sugiere escenarios con IA a partir de un requisito. Devuelve propuestas
+  // que el cliente revisa y guarda manualmente; no persiste nada automático.
+  async suggest(projectId: string, requirementId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const requirement = await this.prisma.requirement.findFirst({
+      where: { id: requirementId, projectId },
+      select: { title: true, description: true, acceptanceCriteria: true, externalKey: true },
+    });
+    if (!requirement) throw new NotFoundException('Requisito no encontrado.');
+
+    const acceptance = Array.isArray(requirement.acceptanceCriteria)
+      ? requirement.acceptanceCriteria.filter((c): c is string => typeof c === 'string').join('\n- ')
+      : '';
+    const prompt = [
+      'Genera entre 2 y 4 escenarios de prueba manuales para el siguiente requisito.',
+      requirement.externalKey ? `Clave: ${requirement.externalKey}` : '',
+      `Título: ${requirement.title}`,
+      requirement.description ? `Descripción: ${requirement.description}` : '',
+      acceptance ? `Criterios de aceptación:\n- ${acceptance}` : '',
+      '',
+      'Devuelve SOLO JSON válido con esta estructura, nada más:',
+      '{"scenarios":[{"title":"...","expectedResult":"...","steps":[{"action":"navigate: /ruta"}, ...]}]}',
+      '',
+      'Vocabulario de acciones permitido (prefijos reconocidos por el worker):',
+      '- navigate: <url relativa o absoluta>',
+      '- click: <selector css>',
+      '- fill: <selector css>   (con "data" en el mismo paso para el valor)',
+      '- press: <tecla>',
+      '- expect-text: <texto visible>',
+      '- expect-url: <patrón>',
+    ].filter(Boolean).join('\n');
+
+    const response = await this.ai.dispatch({
+      operation: 'scenario-generation',
+      organizationId: workspace.organizationId ?? null,
+      projectId,
+      runKey: null,
+      prompt,
+      systemPrompt: 'Eres un ingeniero de QA. Responde solo JSON válido con los escenarios propuestos.',
+      maxOutputTokens: 2048,
+    });
+
+    const scenarios = parseSuggestions(response.text);
+    return {
+      usedFallback: response.usedFallback ?? false,
+      model: response.model,
+      scenarios,
+    };
+  }
 
   async list(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);

@@ -15,12 +15,15 @@ type Usage = {
 export default async function Dashboard() {
   const account = await requireAccount();
 
-  const [projectsRes, usageRes] = await Promise.all([
+  const [projectsRes, usageRes, aiBudgetRes] = await Promise.all([
     accountFetch('/projects').catch(() => null),
     accountFetch('/commerce/usage').catch(() => null),
+    accountFetch('/ai/budget').catch(() => null),
   ]);
   const projects: ProjectSummary[] = projectsRes?.ok ? await projectsRes.json() : [];
   const usage: Usage | null = usageRes?.ok ? await usageRes.json() : null;
+  const aiBudget: { aiTokensUsed: number; aiTokensLimit: number; aiCostCop: number; remainingTokens: number } | null =
+    aiBudgetRes?.ok ? await aiBudgetRes.json() : null;
 
   const readyProjects = projects.filter(p => p.status === 'READY');
   const draftProjects = projects.filter(p => p.status === 'DRAFT');
@@ -76,6 +79,18 @@ export default async function Dashboard() {
           <div><dt>En borrador</dt><dd>{draftProjects.length}</dd></div>
         </dl>
       </article>
+
+      {aiBudget && aiBudget.aiTokensLimit > 0 && <article className="panel">
+        <h2>Créditos IA del mes</h2>
+        <dl className="dashboard-metrics">
+          <div><dt>Tokens usados</dt><dd>{aiBudget.aiTokensUsed.toLocaleString('es-CO')}</dd></div>
+          <div><dt>Límite</dt><dd>{aiBudget.aiTokensLimit.toLocaleString('es-CO')}</dd></div>
+          <div><dt>Costo acumulado</dt><dd>{aiBudget.aiCostCop.toLocaleString('es-CO')} COP</dd></div>
+        </dl>
+        <div className="signal-bar">
+          <div className="signal-bar-fill" style={{ width: `${Math.min(100, Math.round(100 * aiBudget.aiTokensUsed / aiBudget.aiTokensLimit))}%` }} />
+        </div>
+      </article>}
     </section>
 
     <section className="panel">

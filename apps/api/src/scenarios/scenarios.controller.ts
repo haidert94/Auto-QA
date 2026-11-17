@@ -1,7 +1,12 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { IsUUID } from 'class-validator';
+import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateScenarioDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { ScenariosService } from './scenarios.service';
+
+class SuggestScenariosDto {
+  @IsUUID() requirementId!: string;
+}
 
 @Controller('projects/:projectId/scenarios')
 @UseGuards(WorkspaceGuard)
@@ -35,6 +40,16 @@ export class ScenariosController {
     @CurrentWorkspace() workspace: Workspace,
   ) {
     return this.service.create(projectId, dto, workspace);
+  }
+
+  @Post('suggest')
+  @RequiresPlanCapability('AI_SCENARIO_GENERATION')
+  suggest(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body() dto: SuggestScenariosDto,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.suggest(projectId, dto.requirementId, workspace);
   }
 
   @Get(':id/playwright')

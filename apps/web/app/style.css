@@ -353,6 +353,22 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .audit-metrics { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.9em; color: #526279; margin: 10px 0; }
 .audit-metrics b { color: #173a5e; margin-right: 4px; }
 
+.ai-suggestions { margin-top: 18px; padding: 14px; background: #f5f7fb; border-radius: 10px; border: 1px solid #c8d3e2; }
+.ai-suggestions header { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.ai-suggestions header strong { flex: 1; }
+.ai-suggestions-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.ai-suggestions-list > li { padding: 12px; background: #fff; border-radius: 8px; border: 1px solid #e5e7eb; }
+.suggestion-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.suggestion-steps { list-style: decimal inside; padding: 0; margin: 8px 0 0; font-size: 0.9em; }
+.suggestion-steps > li { padding: 2px 0; }
+.suggestion-steps code { background: #f5f7fb; padding: 1px 6px; border-radius: 4px; }
+
+.ai-explanation { margin-top: 10px; padding: 12px; background: #0f172a; color: #e2e8f0; border-radius: 8px; }
+.ai-explanation header { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.ai-explanation header strong { color: #fff; flex: 1; }
+.ai-explanation header .muted { color: #94a3b8; }
+.ai-explanation pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 0.9em; line-height: 1.5; }
+
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }
   .exploration-list li a { grid-template-columns: 1fr; }

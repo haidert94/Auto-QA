@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { AiRouter } from '../ai/ai-router';
 import { UsageService } from '../commerce/usage.service';
 import type { Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
@@ -12,8 +13,57 @@ export class RunsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usage: UsageService,
+    private readonly ai: AiRouter,
     @Inject(SCREENSHOT_READER) private readonly evidence: ScreenshotReader,
   ) {}
+
+  // Pide a la IA una explicación del fallo basándose en el mensaje de
+  // error del TestResult y los pasos del spec. No se guarda en BD; el
+  // cliente puede repetir la petición si quiere.
+  async explain(projectId: string, runId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const run = await this.prisma.testRun.findFirst({
+      where: { id: runId, projectId },
+      select: {
+        status: true, errorCode: true, specText: true,
+        scenario: { select: { title: true } },
+        results: { select: { status: true, errorMessage: true, durationMs: true } },
+      },
+    });
+    if (!run) throw new NotFoundException('Ejecución no encontrada.');
+    const failed = run.results.find(r => r.status === 'FAILED' || r.status === 'BLOCKED');
+    if (!failed && run.status !== 'FAILED') {
+      return { usedFallback: true, model: 'rule-based', text: 'Esta ejecución no tiene fallos que explicar.' };
+    }
+
+    const prompt = [
+      'Un escenario de pruebas Playwright falló. Explica en 3-5 bullets qué pasó, cuál es la causa probable y qué revisar.',
+      run.scenario?.title ? `Escenario: ${run.scenario.title}` : '',
+      run.errorCode ? `Código: ${run.errorCode}` : '',
+      failed?.errorMessage ? `Error:\n${failed.errorMessage.slice(0, 1500)}` : '',
+      '',
+      'Spec ejecutado (resumen):',
+      (run.specText ?? '').slice(0, 4000),
+      '',
+      'Responde en español, con lenguaje claro para un QA no técnico. No inventes causas que no estén en los datos.',
+    ].filter(Boolean).join('\n');
+
+    const response = await this.ai.dispatch({
+      operation: 'failure-explanation',
+      organizationId: workspace.organizationId ?? null,
+      projectId,
+      runKey: null,
+      prompt,
+      systemPrompt: 'Eres un ingeniero de QA explicando fallos de pruebas automatizadas.',
+      maxOutputTokens: 1024,
+    });
+
+    return {
+      usedFallback: response.usedFallback ?? false,
+      model: response.model,
+      text: response.text,
+    };
+  }
 
   async list(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);

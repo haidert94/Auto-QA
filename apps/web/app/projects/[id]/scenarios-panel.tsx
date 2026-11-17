@@ -23,6 +23,45 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
   const [firstAction, setFirstAction] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestions, setSuggestions] = useState<Array<{ title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }> | null>(null);
+  const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
+
+  async function suggest() {
+    if (!requirementId) { setError('Selecciona primero un requisito para sugerir escenarios.'); return; }
+    setSuggesting(true); setError(''); setSuggestions(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/scenarios/suggest`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirementId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) { setError(payload.message ?? 'No se pudo generar sugerencias.'); return; }
+      setSuggestions(Array.isArray(payload.scenarios) ? payload.scenarios : []);
+      setSuggestionMeta({ model: payload.model ?? 'rule-based', usedFallback: !!payload.usedFallback });
+    } catch { setError('No se pudo generar sugerencias.'); }
+    finally { setSuggesting(false); }
+  }
+
+  async function createFromSuggestion(suggestion: { title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }) {
+    setBusy(true); setError('');
+    try {
+      const response = await fetch(`/api/projects/${projectId}/scenarios`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: suggestion.title.trim(),
+          requirementId: requirementId || undefined,
+          expectedResult: suggestion.expectedResult?.trim() || undefined,
+          steps: suggestion.steps.map((s, i) => ({ ordinal: i + 1, action: s.action, data: s.data, expected: s.expected })),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) { setError(payload.message ?? 'No se pudo crear el escenario sugerido.'); return; }
+      setSuggestions(prev => prev?.filter(s => s !== suggestion) ?? null);
+      await load();
+    } catch { setError('No se pudo crear el escenario sugerido.'); }
+    finally { setBusy(false); }
+  }
 
   async function load() {
     try {
@@ -70,7 +109,35 @@ export function ScenariosPanel({ projectId }: { projectId: string }) {
       <button type="button" onClick={() => setShowForm(s => !s)}>
         {showForm ? 'Cancelar' : 'Nuevo escenario'}
       </button>
+      <button type="button" className="secondary" onClick={suggest} disabled={suggesting || !requirementId}>
+        {suggesting ? 'Pensando…' : 'Sugerir con IA'}
+      </button>
     </div>
+
+    {suggestions && <section className="ai-suggestions">
+      <header>
+        <strong>Propuesta IA ({suggestions.length})</strong>
+        <span className="muted">{suggestionMeta?.model}{suggestionMeta?.usedFallback ? ' · fallback (plan sin IA)' : ''}</span>
+        <button type="button" className="secondary" onClick={() => setSuggestions(null)}>Descartar todas</button>
+      </header>
+      {suggestions.length === 0
+        ? <p className="muted">La IA no devolvió sugerencias utilizables para este requisito.</p>
+        : <ul className="ai-suggestions-list">
+          {suggestions.map((s, i) => <li key={i}>
+            <div className="suggestion-head">
+              <strong>{s.title}</strong>
+              <button type="button" onClick={() => createFromSuggestion(s)} disabled={busy}>Crear este</button>
+            </div>
+            {s.expectedResult && <p className="muted">Esperado: {s.expectedResult}</p>}
+            <ol className="suggestion-steps">
+              {s.steps.map((step, j) => <li key={j}>
+                <code>{step.action}</code>
+                {step.data && <span className="muted"> · dato: {step.data}</span>}
+              </li>)}
+            </ol>
+          </li>)}
+        </ul>}
+    </section>}
 
     {showForm && <form onSubmit={create} className="scenario-form">
       <label>Título

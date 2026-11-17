@@ -47,6 +47,16 @@ export class RunsController {
     return this.service.create(projectId, scenarioId, dto, workspace);
   }
 
+  @Post('projects/:projectId/runs/:runId/explain')
+  @RequiresPlanCapability('AI_FAILURE_EXPLANATION')
+  explain(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.explain(projectId, runId, workspace);
+  }
+
   @Get('projects/:projectId/runs/:runId/diff')
   @RequiresPlanCapability('BROWSER_TESTS')
   diff(

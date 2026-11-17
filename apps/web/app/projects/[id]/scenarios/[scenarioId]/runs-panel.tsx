@@ -88,6 +88,19 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [diff, setDiff] = useState<DiffPayload | null>(null);
+  const [explanation, setExplanation] = useState<{ runId: string; text: string; model: string; usedFallback: boolean } | null>(null);
+  const [explaining, setExplaining] = useState<string | null>(null);
+
+  async function explainRun(runId: string) {
+    setExplaining(runId); setExplanation(null); setError('');
+    try {
+      const response = await fetch(`/api/projects/${projectId}/runs/${runId}/explain`, { method: 'POST' });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload) { setError(payload?.message ?? 'No se pudo generar la explicación.'); return; }
+      setExplanation({ runId, text: payload.text ?? '', model: payload.model ?? '', usedFallback: !!payload.usedFallback });
+    } catch { setError('No se pudo generar la explicación.'); }
+    finally { setExplaining(null); }
+  }
 
   async function loadDiff(runId: string) {
     setDiff(null); setError('');
@@ -184,7 +197,19 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
               {run.errorCode && <span className="muted">· {run.errorCode}</span>}
               {(run.status === 'COMPLETED' || run.status === 'FAILED') && <button type="button" className="secondary"
                 onClick={() => loadDiff(run.id)}>Comparar con anterior</button>}
+              {run.status === 'FAILED' && <button type="button" className="secondary"
+                onClick={() => explainRun(run.id)} disabled={explaining === run.id}>
+                {explaining === run.id ? 'Explicando…' : '¿Por qué falló? (IA)'}
+              </button>}
             </div>
+            {explanation?.runId === run.id && <div className="ai-explanation">
+              <header>
+                <strong>Explicación IA</strong>
+                <span className="muted">{explanation.model}{explanation.usedFallback ? ' · fallback' : ''}</span>
+                <button type="button" className="secondary" onClick={() => setExplanation(null)}>Cerrar</button>
+              </header>
+              <pre>{explanation.text}</pre>
+            </div>}
             {run.results.length > 0 && <ul className="results-list">
               {run.results.map(result => <li key={result.id}>
                 <span className={`badge badge-result-${result.status.toLowerCase()}`}>{resultLabel[result.status]}</span>
