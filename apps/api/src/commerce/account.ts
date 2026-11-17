@@ -160,17 +160,12 @@ export class AccountService {
         digest: digest(token), userId: user.id, expiresAt: new Date(Date.now() + SESSION_SECONDS * 1000),
       } });
     });
-    console.log('[login] 200 user=' + email + ' tokenPrefix=' + token.slice(0, 8) + ' maxAge=' + SESSION_SECONDS);
     return { token, maxAge: SESSION_SECONDS };
   }
 
   async identity(authorization?: string) {
     const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
-    const tokenPrefix = token ? token.slice(0, 8) : '(vacío)';
-    if (!tokenPattern.test(token)) {
-      console.log('[identity] 401 token-invalido prefix=' + tokenPrefix + ' len=' + token.length + ' authHeader=' + (authorization ? 'sí' : 'no'));
-      throw new UnauthorizedException('Inicia sesión.');
-    }
+    if (!tokenPattern.test(token)) throw new UnauthorizedException('Inicia sesión.');
     const session = await this.db.accountSession.findUnique({
       where: { digest: digest(token) },
       include: { user: { select: { id: true, name: true, email: true, verifiedAt: true, membership: {
@@ -180,12 +175,8 @@ export class AccountService {
     const membership = session?.user.membership;
     const organization = membership?.organization;
     if (!session || session.expiresAt <= new Date() || !session.user.verifiedAt || !organization) {
-      console.log('[identity] 401 reject prefix=' + tokenPrefix + ' session=' + !!session +
-        ' expired=' + (session ? session.expiresAt <= new Date() : 'n/a') +
-        ' verified=' + !!session?.user.verifiedAt + ' org=' + !!organization);
       throw new UnauthorizedException('Inicia sesión.');
     }
-    console.log('[identity] 200 ok prefix=' + tokenPrefix + ' user=' + session.user.email);
     return {
       digest: session.digest, userId: session.user.id,
       name: session.user.name, email: session.user.email,

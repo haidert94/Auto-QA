@@ -39,13 +39,11 @@ async function main() {
   const nextHandle = webApp.getRequestHandler();
   await webApp.prepare();
 
-  const server = http.createServer((req, res) => {
-    if (req.url && (req.url === '/api' || req.url.startsWith('/api/') || req.url.startsWith('/api?'))) {
-      nestHandler(req, res);
-    } else {
-      nextHandle(req, res);
-    }
-  });
+  // Todo (incluido /api/*) va a Next.js. Sus route handlers son los
+  // únicos que envuelven el token en la cookie `autoqa_session` y
+  // propagan sesión/CSRF; internamente proxean a NestJS vía accountFetch
+  // → loopback patch → nestHandler en proceso.
+  const server = http.createServer((req, res) => nextHandle(req, res));
 
   server.listen(publicPort, '0.0.0.0', () => {
     console.log('[startup] server escuchando en 0.0.0.0:' + publicPort);
