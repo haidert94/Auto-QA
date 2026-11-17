@@ -17,12 +17,15 @@ type Review = {
   recommendation: string;
 };
 
+type Outcome = { type: string; created: number; usedFallback: boolean; model: string; errorCount: number };
+type Generation = { selection: string[]; outcomes: Outcome[]; totalCreated: number };
+
 type Job = {
   id: string;
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
   stage: string;
   errorCode: string | null;
-  result: { review: Review; aiModel: string; usedFallback: boolean } | null;
+  result: { review: Review; aiModel: string; usedFallback: boolean; generation?: Generation } | null;
 };
 
 const STAGE_LABELS: Record<string, string> = {
@@ -33,6 +36,16 @@ const STAGE_LABELS: Record<string, string> = {
   'review-ready': 'Diagnóstico listo',
   'selection-done': 'Selección guardada — en cola para generar',
   generating: 'Generando casos de prueba',
+  generated: 'Casos generados',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  functional_web: 'Funcional web',
+  mobile_emulated: 'Mobile emulado',
+  compatibility: 'Compatibilidad',
+  availability: 'Disponibilidad',
+  performance: 'Performance',
+  ux: 'UX',
 };
 
 type TestTypeOption = { code: string; label: string; description: string; available: boolean };
@@ -104,6 +117,15 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
         return;
       }
       setSelectionDone(true);
+      // Forzamos un refetch inmediato para re-armar el polling con el
+      // nuevo stage='selection-done' (status=QUEUED otra vez).
+      try {
+        const check = await fetch(`/api/projects/${projectId}/automation/${job.id}`, { cache: 'no-store' });
+        if (check.ok) {
+          const data = await check.json();
+          setJob({ id: data.id, status: data.status, stage: data.stage, errorCode: data.errorCode, result: data.result ?? null });
+        }
+      } catch {}
     } catch { setError('No se pudo guardar la selección.'); }
     finally { setSubmittingSelection(false); }
   }
@@ -146,25 +168,30 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
   }
 
   useEffect(() => {
-    if (job?.status === 'COMPLETED') void loadTypes();
-  }, [job?.status]);
+    if (job?.status === 'COMPLETED' && job.stage === 'review-ready') void loadTypes();
+  }, [job?.status, job?.stage]);
 
+  // Polling: corre mientras el job esté QUEUED o RUNNING. Se detiene al
+  // llegar a COMPLETED/FAILED, pero vuelve a armarse si acceptSelection
+  // re-encola el job (status=QUEUED stage='selection-done').
   useEffect(() => {
-    if (!job || job.status === 'COMPLETED' || job.status === 'FAILED') return;
+    if (!job) return;
+    if (job.status !== 'QUEUED' && job.status !== 'RUNNING') return;
     pollRef.current = setInterval(async () => {
       try {
         const response = await fetch(`/api/projects/${projectId}/automation/${job.id}`, { cache: 'no-store' });
         if (!response.ok) return;
         const data = await response.json();
         setJob({ id: data.id, status: data.status, stage: data.stage, errorCode: data.errorCode, result: data.result ?? null });
-        if (data.status === 'COMPLETED' || data.status === 'FAILED') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setStep(2);
+        if ((data.status === 'COMPLETED' || data.status === 'FAILED') && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
         }
+        if (data.status === 'COMPLETED' || data.status === 'FAILED') setStep(2);
       } catch {}
     }, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [job?.id, job?.status]);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [job?.id, job?.status, projectId]);
 
   if (step === 0) {
     return <form onSubmit={submit} className="automate-form">
@@ -220,7 +247,12 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
     </form>;
   }
 
-  if (step === 1 || !job?.result) {
+  // Mientras no haya review-ready, muestra pantalla de progreso. Pero si
+  // ya tenemos review-ready y el usuario está generando, mantenemos la
+  // IPA visible con un banner inferior.
+  const generating = job?.stage === 'selection-done' || job?.stage === 'generating';
+  const generated = job?.stage === 'generated';
+  if ((step === 1 || !job?.result) && !generating && !generated) {
     const stageLabel = STAGE_LABELS[job?.stage ?? 'pending'] ?? job?.stage ?? 'Procesando…';
     const done = job?.status === 'FAILED';
     return <section className="automate-progress">
@@ -232,7 +264,11 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
     </section>;
   }
 
-  // step === 2: mostrar IPA
+  // step === 2: mostrar IPA. Si job.result es null pese al gate anterior,
+  // volvemos al progreso para no romper la render.
+  if (!job?.result) {
+    return <section className="automate-progress"><p className="muted">Cargando resultado…</p></section>;
+  }
   const review = job.result.review;
   return <section className="ipa-diagnostic">
     <header className="ipa-diagnostic-head">
@@ -282,7 +318,7 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
       <ul>{review.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
     </section>}
 
-    {!selectionDone && <section className="automation-selection">
+    {!selectionDone && !generating && !generated && <section className="automation-selection">
       <h3>Selecciona qué tipos de prueba quieres generar</h3>
       <p className="muted">
         Marca los tipos a generar. Los bloqueados requieren un plan superior.
@@ -310,12 +346,35 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
       </div>
     </section>}
 
-    {selectionDone && <section className="success-banner">
+    {generating && <section className="success-banner">
       <p className="success">
-        <strong>Selección guardada.</strong> Los agentes comenzarán la generación en breve
-        (worker en el próximo commit).
+        <strong>Generando casos con {selected.size || review.categories.length} agentes paralelos.</strong>
+        {' '}Etapa: {STAGE_LABELS[job.stage] ?? job.stage}.
       </p>
-      <button type="button" onClick={() => router.push(`/projects/${projectId}`)}>Volver al proyecto</button>
+      <div className="pulse" aria-hidden="true"/>
+    </section>}
+
+    {generated && job.result.generation && <section className="generation-result">
+      <h3>Generación completa</h3>
+      <p className="muted">
+        Se crearon <strong>{job.result.generation.totalCreated}</strong> artefactos en total.
+        Puedes revisarlos y lanzarlos desde las pestañas del proyecto.
+      </p>
+      <ul className="generation-counters">
+        {job.result.generation.outcomes.map(o => <li key={o.type}>
+          <div className="counter-head">
+            <span>{TYPE_LABELS[o.type] ?? o.type}</span>
+            <strong>{o.created}</strong>
+          </div>
+          <small className="muted">
+            Modelo: {o.model}{o.usedFallback ? ' · fallback' : ''}
+            {o.errorCount > 0 ? ` · ${o.errorCount} errores no bloqueantes` : ''}
+          </small>
+        </li>)}
+      </ul>
+      <div className="actions">
+        <button type="button" onClick={() => router.push(`/projects/${projectId}`)}>Ir al proyecto</button>
+      </div>
     </section>}
 
     {error && !selectionDone && <p className="error" role="alert">{error}</p>}

@@ -20,6 +20,7 @@ const CAPABILITY_FOR_OPERATION: Record<AiOperation, CapabilityCode | null> = {
   'document-classification': 'AI_DOCUMENT_ANALYSIS',
   'scenario-generation': 'AI_SCENARIO_GENERATION',
   'failure-explanation': 'AI_FAILURE_EXPLANATION',
+  'ux-analysis': 'UX_ANALYSIS',
 };
 
 // Modelo por operación. Justificación en docs/AI.md:
@@ -30,6 +31,7 @@ const MODEL_BY_OPERATION: Record<AiOperation, AiModel> = {
   'failure-explanation': 'claude-haiku-4-5',
   'document-analysis': 'claude-sonnet-4-5',
   'scenario-generation': 'claude-sonnet-4-5',
+  'ux-analysis': 'claude-sonnet-4-5',
 };
 
 // Env var opcional por operación para experimentar sin recompilar.
@@ -38,6 +40,7 @@ const ENV_OVERRIDE: Record<AiOperation, string> = {
   'failure-explanation': 'AUTOQA_AI_MODEL_EXPLAIN',
   'document-analysis': 'AUTOQA_AI_MODEL_ANALYZE',
   'scenario-generation': 'AUTOQA_AI_MODEL_SUGGEST',
+  'ux-analysis': 'AUTOQA_AI_MODEL_UX',
 };
 
 // Equivalencias para fallback entre proveedores. Si Anthropic cae, el

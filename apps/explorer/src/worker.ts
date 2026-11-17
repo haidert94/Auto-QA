@@ -9,6 +9,7 @@ import { runExploration } from './explorer';
 import { runTestRun, type ExecutionClaim } from './execution-runner';
 import { runLoadTest, type LoadClaim } from './load-runner';
 import { tickMonitors } from './monitor-runner';
+import { runUxAudit, type UxAuditClaim } from './ux-runner';
 import { createScreenshotStorage } from './screenshot-storage';
 import { AiRouter } from '../../api/src/ai/ai-router';
 import { BudgetService } from '../../api/src/ai/budget.service';
@@ -78,17 +79,38 @@ export async function claimNextAudit(prisma: PrismaClient): Promise<AuditClaim |
 }
 
 export async function claimNextAutomation(prisma: PrismaClient): Promise<AutomationClaim | null> {
+  // Preserva el stage previo en priorStage para que el runner decida
+  // entre fase A (review) y fase C (generación). stage se actualiza a
+  // 'claimed' solo si venía de 'pending' (primera vuelta).
   const rows = await prisma.$queryRaw<AutomationClaim[]>`
-    UPDATE "AutomationJob"
-    SET status = 'RUNNING', "startedAt" = now(), stage = 'claimed'
+    UPDATE "AutomationJob" j
+    SET status = 'RUNNING', "startedAt" = now(),
+        stage = CASE WHEN j.stage = 'pending' THEN 'claimed' ELSE j.stage END
+    FROM (
+      SELECT id, stage AS "priorStage" FROM "AutomationJob"
+      WHERE status = 'QUEUED'
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    ) picked
+    WHERE j.id = picked.id
+    RETURNING j.id, j."projectId", j.inputs, j."runKey", picked."priorStage";
+  `;
+  return rows[0] ?? null;
+}
+
+export async function claimNextUxAudit(prisma: PrismaClient): Promise<UxAuditClaim | null> {
+  const rows = await prisma.$queryRaw<UxAuditClaim[]>`
+    UPDATE "UxAudit"
+    SET status = 'RUNNING', "startedAt" = now()
     WHERE id = (
-      SELECT id FROM "AutomationJob"
+      SELECT id FROM "UxAudit"
       WHERE status = 'QUEUED'
       ORDER BY "createdAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
-    RETURNING id, "projectId", inputs, "runKey";
+    RETURNING id, "projectId", "environmentId", url, "runKey";
   `;
   return rows[0] ?? null;
 }
@@ -141,12 +163,23 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
     });
     return true;
   }
-  // Automatización: pipeline convertir docs → revisar con IA.
+  // Automatización: pipeline convertir docs → revisar con IA, o fase de
+  // generación según el priorStage.
   const automationClaim = await claimNextAutomation(prisma);
   if (automationClaim) {
     const router = buildAiRouter(prisma);
     await runAutomation(prisma, automationClaim, router, (level, detail) => {
       console.log(`[automation ${automationClaim.id}] ${level}: ${detail}`);
+    });
+    return true;
+  }
+  // Auditorías UX: creadas por el agente UX, procesadas aquí.
+  const uxClaim = await claimNextUxAudit(prisma);
+  if (uxClaim) {
+    const storage = createScreenshotStorage();
+    const router = buildAiRouter(prisma);
+    await runUxAudit(prisma, uxClaim, storage, router, (level, detail) => {
+      console.log(`[ux ${uxClaim.id}] ${level}: ${detail}`);
     });
     return true;
   }

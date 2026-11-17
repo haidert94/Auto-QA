@@ -430,6 +430,15 @@ summary { cursor: pointer; color: #173a5e; font-weight: 600; }
 .success-banner { margin-top: 20px; padding: 16px 20px; background: #d6f5e3; border-radius: 10px; border-left: 4px solid #0d6540; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .success-banner .success { margin: 0; color: #0d6540; }
 .success-banner button { margin: 0; }
+.success-banner .pulse { width: 100%; height: 4px; background: linear-gradient(90deg, transparent, #0d6540, transparent); background-size: 50% 100%; background-repeat: no-repeat; animation: slide 1.5s linear infinite; border-radius: 2px; }
+@keyframes slide { 0% { background-position: -50% 0; } 100% { background-position: 150% 0; } }
+
+.generation-result { margin-top: 24px; background: #fff; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; }
+.generation-result h3 { margin-top: 0; }
+.generation-counters { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.generation-counters li { padding: 12px 14px; background: #f8fafc; border-radius: 10px; border: 1px solid #e5e7eb; display: flex; flex-direction: column; gap: 4px; }
+.generation-counters .counter-head { display: flex; justify-content: space-between; align-items: baseline; }
+.generation-counters .counter-head strong { font-size: 24px; color: #0d6540; }
 
 @media (max-width: 640px) {
   .exploration-form { grid-template-columns: 1fr; }

@@ -10,6 +10,7 @@ const RESPONSES: Record<string, string> = {
   'scenario-generation': 'No se generaron escenarios automáticamente. La generación con IA requiere plan Professional o superior.',
   'failure-explanation': 'El trace está disponible para descargar. La explicación automática requiere plan Professional o superior.',
   'document-classification': 'Clasificación por reglas aplicada. La clasificación asistida con IA requiere plan Professional o superior.',
+  'ux-analysis': 'El análisis UX asistido requiere plan Professional o superior. Revisa manualmente la usabilidad y accesibilidad.',
 };
 
 export class RuleBasedProvider implements AiProvider {

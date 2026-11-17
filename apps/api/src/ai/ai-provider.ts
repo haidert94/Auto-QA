@@ -7,7 +7,8 @@ export type AiOperation =
   | 'document-analysis'
   | 'scenario-generation'
   | 'failure-explanation'
-  | 'document-classification';
+  | 'document-classification'
+  | 'ux-analysis';
 
 export type AiModel =
   | 'claude-haiku-4-5'
