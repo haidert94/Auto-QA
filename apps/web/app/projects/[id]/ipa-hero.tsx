@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 // Componente visual reutilizado tanto por /projects/[id]/ipa (vista
 // dedicada con bloqueos, histórico y anclas) como por el tab "Datos"
 // del detalle del proyecto (resumen al completar el registro).
@@ -43,7 +45,7 @@ export function IpaHero({ ipa, generatedAt, subtitle }: {
       </header>
 
       <div className="ipa-score-card">
-        <div className="ipa-score-circle">
+        <div className="ipa-score-circle" style={{ '--ipa-progress': `${Math.max(0, Math.min(100, ipa.score)) * 3.6}deg` } as CSSProperties}>
           <span className="ipa-score-value">{ipa.score}</span>
           <span className="ipa-score-max">/ 100</span>
         </div>

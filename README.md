@@ -31,6 +31,20 @@ Abre dos terminales PowerShell en la raíz:
 
 Abre [AutoQA](http://localhost:3000). La API escucha en `127.0.0.1:3001` y la interfaz en `127.0.0.1:3000`. Si cambias el puerto de la API, ajusta `PORT` en el `.env` de la raíz y ajusta `AUTOQA_INTERNAL_API_URL=http://127.0.0.1:<puerto>/api` en ese mismo archivo. Si cambias el origen de la web, ajusta `WEB_ORIGIN` en el `.env` de la raíz. Reinicia ambos servicios después de cambiar sus variables.
 
+## Diseño del detalle de proyecto
+
+Abre **Proyectos**, selecciona una aplicación con registro completo y entra en **Datos**. La vista usa dos columnas: entornos y alcance, documentos y roles a la izquierda; IPA y diagnóstico del registro a la derecha. En móvil las tarjetas se apilan. Los borradores conservan el formulario de registro.
+
+**Modificar**, **Adjuntar nuevo documento o especificación** y **Editar roles y permisos** abren las secciones del formulario existente. El selector permite consultar cada entorno sin cambiar su autorización. **Automatizar con IA** abre la pestaña de automatización y requiere las acciones y controles existentes para generar o ejecutar pruebas. **Exportar especificación** descarga un resumen JSON de alcance y permisos; excluye credenciales, identidades de acceso y referencias de bóveda. No incluye los archivos adjuntos.
+
+Para comprobar la interfaz en Windows, con Node.js y Google Chrome instalados:
+
+```powershell
+npm.cmd run test:project-detail
+```
+
+Esta prueba compila solamente la web, inicia servidores temporales en loopback con una API simulada y verifica escritorio/móvil, teclado, exportación, documentos, edición y estados de error. No necesita PostgreSQL ni ejecuta migraciones. No comprueba persistencia ni motores IA. Guarda capturas en `%TEMP%\autoqa-project-detail-preview`; configura `AUTOQA_UI_SCREENSHOT_DIR` para elegir otra carpeta. Consulta [el alcance técnico de la vista](docs/PROJECT_DETAIL_UI.md).
+
 ## Página comercial, cuentas y suscripciones
 
 La portada presenta un ejemplo de análisis documental con su fuente, los pasos de preparación y una comparativa de planes. La evaluación local permite verificar correo mediante Mailpit o un proveedor SMTP, activar una suscripción simulada y abrir proyectos de una organización. Para activar el flujo, repetir sus pruebas o consultar los requisitos de producción, usa [la guía comercial](docs/COMMERCIAL.md).

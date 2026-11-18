@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -25,13 +25,16 @@ function readHashTab(available: TabId[]): TabId {
 
 export function ProjectTabs({
   showExploration,
+  context,
   children,
 }: {
   showExploration: boolean;
+  context?: ReactNode;
   children: Partial<Record<TabId, ReactNode>>;
 }) {
   const visible: TabId[] = TABS.map(t => t.id).filter(id => id !== 'exploracion' || showExploration);
   const [active, setActive] = useState<TabId>('datos');
+  const tabGroup = useId();
 
   useEffect(() => {
     setActive(readHashTab(visible));
@@ -54,6 +57,18 @@ export function ProjectTabs({
           {TABS.filter(t => t.id !== 'exploracion' || showExploration).map(tab => (
             <li key={tab.id}>
               <button type="button" role="tab" aria-selected={active === tab.id}
+                id={`${tabGroup}-${tab.id}-tab`} aria-controls={`${tabGroup}-${tab.id}-panel`}
+                tabIndex={active === tab.id ? 0 : -1}
+                onKeyDown={event => {
+                  const index = visible.indexOf(tab.id);
+                  const next = event.key === 'ArrowRight' ? visible[(index + 1) % visible.length]
+                    : event.key === 'ArrowLeft' ? visible[(index - 1 + visible.length) % visible.length]
+                    : event.key === 'Home' ? visible[0] : event.key === 'End' ? visible[visible.length - 1] : null;
+                  if (!next) return;
+                  event.preventDefault();
+                  select(next);
+                  document.getElementById(`${tabGroup}-${next}-tab`)?.focus();
+                }}
                 className={active === tab.id ? 'current' : ''}
                 onClick={() => select(tab.id)}>
                 {tab.label}
@@ -61,9 +76,10 @@ export function ProjectTabs({
             </li>
           ))}
         </ul>
+        {context}
       </nav>
       {visible.map(id => (
-        <div key={id} role="tabpanel" hidden={active !== id}>
+        <div key={id} role="tabpanel" id={`${tabGroup}-${id}-panel`} aria-labelledby={`${tabGroup}-${id}-tab`} hidden={active !== id}>
           {children[id]}
         </div>
       ))}

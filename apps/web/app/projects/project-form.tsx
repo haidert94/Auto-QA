@@ -164,7 +164,7 @@ export function ProjectForm({ initial, onSaved }: { initial?: Project; onSaved?:
             onChange={value => change('description', value)} />
           <TextField label="Módulos prioritarios, uno por línea" value={form.priorities} multiline
             onChange={value => change('priorities', value)} />
-          <h2>Entornos y alcance</h2>
+          <h2 id="environment-heading">Entornos y alcance</h2>
           {form.environments.map((env, index) => (
             <EnvironmentFields key={env.id ?? `new-${index}`} index={index} value={env}
               onChange={value => change('environments', form.environments.map((item, n) => n === index ? value : item))}
@@ -184,7 +184,7 @@ export function ProjectForm({ initial, onSaved }: { initial?: Project; onSaved?:
           />
 
 
-          <h2>Roles de la aplicación</h2>
+          <h2 id="role-heading">Roles de la aplicación</h2>
           <label className="check">
             <input type="checkbox" checked={form.rolesEnabled}
               onChange={event => change('rolesEnabled', event.target.checked)} />

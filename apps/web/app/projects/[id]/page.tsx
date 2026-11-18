@@ -8,6 +8,7 @@ import { ExecutionReport } from './execution-report';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
 import { type IpaSummary } from './ipa-hero';
 import { ProjectTabs } from './project-tabs';
+import { ProjectHeading } from './project-heading';
 import { ScenariosPanel } from './scenarios-panel';
 
 export const dynamic = 'force-dynamic';
@@ -47,8 +48,8 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
     .map(env => ({ id: env.id, type: env.type, baseUrl: env.baseUrl }));
 
   // IPA estructural: solo se fetchea cuando el proyecto ya está READY, para
-  // mostrarlo en el tab Datos junto al resumen. Si falla, el DataTab muestra
-  // solo el resumen sin dona.
+  // mostrarlo junto al resumen. Si falla, DataTab indica la indisponibilidad
+  // sin atribuir una puntuación al proyecto.
   let ipa: IpaSummary | null = null;
   if (project.status === 'READY') {
     try {
@@ -58,7 +59,11 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <ProjectTabs showExploration={showExploration}>
+    <div className="project-detail">
+    <ProjectHeading project={project} />
+    <ProjectTabs showExploration={showExploration} context={
+      <span className="project-environment-context"><i aria-hidden="true" />{project.environments.length} {project.environments.length === 1 ? 'entorno' : 'entornos'} registrados</span>
+    }>
       {{
         datos: <DataTab project={project} ipa={ipa} />,
         escenarios: <ScenariosPanel projectId={project.id}
@@ -89,5 +94,6 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
           : undefined,
       }}
     </ProjectTabs>
+    </div>
   );
 }
