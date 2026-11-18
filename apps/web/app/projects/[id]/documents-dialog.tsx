@@ -193,13 +193,18 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
             </li>
           ))}
         </ol>}
-        {modules.length > 0 && <div className="modules-panel__actions">
-          <button type="button" onClick={() => void uploadModules()}
-            disabled={uploading || !modules.some(m => m.name.trim() && m.file)}>
-            {uploading ? 'Subiendo módulos…' : 'Subir módulos'}
-          </button>
-          {moduleError && <p className="error" role="alert">{moduleError}</p>}
-        </div>}
+        {modules.length > 0 && <>
+          <p className="modules-panel__formats muted">
+            PDF, DOCX, XLSX, CSV, TXT, MD, JSON, YAML o YML. Hasta 5 MiB por archivo.
+          </p>
+          <div className="modules-panel__actions">
+            <button type="button" onClick={() => void uploadModules()}
+              disabled={uploading || !modules.some(m => m.name.trim() && m.file)}>
+              {uploading ? 'Subiendo módulos…' : 'Subir módulos'}
+            </button>
+            {moduleError && <p className="error" role="alert">{moduleError}</p>}
+          </div>
+        </>}
       </section>
       <DocumentPanel
         projectId={projectId}
