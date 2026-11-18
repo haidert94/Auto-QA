@@ -11,8 +11,8 @@ export type AiOperation =
   | 'ux-analysis';
 
 export type AiModel =
-  | 'claude-haiku-4-5'
-  | 'claude-sonnet-4-5'
+  | 'claude-haiku-5-5'
+  | 'claude-sonnet-5-5'
   | 'gpt-4o-mini'
   | 'gpt-4o'
   | 'rule-based';
@@ -49,8 +49,8 @@ export interface AiProvider {
 // TRM ~4100. Son aproximados; el proveedor emite factura real. Usamos esto
 // solo para enforcement de cuota y mostrar al usuario lo que lleva gastado.
 export const PRICING_COP_PER_MTOK: Record<AiModel, { input: number; output: number }> = {
-  'claude-haiku-4-5':  { input: 3_280,  output: 16_400 },   // ~USD 0.80/4.00
-  'claude-sonnet-4-5': { input: 12_300, output: 61_500 },   // ~USD 3.00/15.00
+  'claude-haiku-5-5':  { input: 3_280,  output: 16_400 },   // ~USD 0.80/4.00
+  'claude-sonnet-5-5': { input: 12_300, output: 61_500 },   // ~USD 3.00/15.00
   'gpt-4o-mini':       { input: 615,    output: 2_460 },    // ~USD 0.15/0.60
   'gpt-4o':            { input: 10_250, output: 41_000 },   // ~USD 2.50/10.00
   'rule-based':        { input: 0,      output: 0 },

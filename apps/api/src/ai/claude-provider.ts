@@ -10,7 +10,7 @@ export class ClaudeProvider implements AiProvider {
   readonly model: AiModel;
   readonly isConfigured: boolean;
 
-  constructor(model: AiModel = 'claude-sonnet-4-5', private readonly apiKey: string = process.env.AUTOQA_ANTHROPIC_API_KEY ?? '') {
+  constructor(model: AiModel = 'claude-sonnet-5-5', private readonly apiKey: string = process.env.AUTOQA_ANTHROPIC_API_KEY ?? '') {
     this.model = model;
     this.isConfigured = this.apiKey.length > 0;
   }
@@ -76,10 +76,13 @@ export class ClaudeProvider implements AiProvider {
   }
 
   private resolveModelId(): string {
-    // Mapeo de los nombres cortos al identificador oficial de Anthropic.
+    // Usamos el alias sin fecha. Anthropic lo redirige a la última versión
+    // estable del modelo, lo que evita 404 cuando una fecha específica
+    // sale de catálogo. Si en el futuro necesitamos reproducibilidad
+    // exacta, se vuelve al sufijo con fecha vigente.
     switch (this.model) {
-      case 'claude-haiku-4-5': return 'claude-haiku-4-5-20250929';
-      case 'claude-sonnet-4-5': return 'claude-sonnet-4-5-20250929';
+      case 'claude-haiku-5-5': return 'claude-haiku-5-5';
+      case 'claude-sonnet-5-5': return 'claude-sonnet-5-5';
       default: throw new Error('Modelo no soportado por ClaudeProvider: ' + this.model);
     }
   }

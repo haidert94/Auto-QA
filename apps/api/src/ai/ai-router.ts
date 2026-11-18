@@ -26,15 +26,15 @@ const CAPABILITY_FOR_OPERATION: Record<AiOperation, CapabilityCode | null> = {
 // Modelo por operación. Justificación en docs/AI.md:
 // - Clasificación y explicación de fallos: Haiku (cost-eficiente).
 // - Análisis documental y generación de escenarios: Sonnet (razonamiento).
-// TEMPORAL — fase de pruebas: todas las operaciones van a Haiku 4.5 para
+// TEMPORAL — fase de pruebas: todas las operaciones van a Haiku 5.5 para
 // estirar el crédito. Al cerrar la validación de flujo, revertir las tres
-// últimas líneas a 'claude-sonnet-4-5'.
+// últimas líneas a 'claude-sonnet-5-5'.
 const MODEL_BY_OPERATION: Record<AiOperation, AiModel> = {
-  'document-classification': 'claude-haiku-4-5',
-  'failure-explanation': 'claude-haiku-4-5',
-  'document-analysis': 'claude-haiku-4-5',
-  'scenario-generation': 'claude-haiku-4-5',
-  'ux-analysis': 'claude-haiku-4-5',
+  'document-classification': 'claude-haiku-5-5',
+  'failure-explanation': 'claude-haiku-5-5',
+  'document-analysis': 'claude-haiku-5-5',
+  'scenario-generation': 'claude-haiku-5-5',
+  'ux-analysis': 'claude-haiku-5-5',
 };
 
 // Env var opcional por operación para experimentar sin recompilar.
@@ -50,15 +50,15 @@ const ENV_OVERRIDE: Record<AiOperation, string> = {
 // router intenta con el equivalente de OpenAI y viceversa. Mantiene el
 // mismo rango de calidad (Haiku ↔ mini, Sonnet ↔ gpt-4o).
 const ALTERNATIVE_MODEL: Record<AiModel, AiModel | null> = {
-  'claude-haiku-4-5':  'gpt-4o-mini',
-  'claude-sonnet-4-5': 'gpt-4o',
-  'gpt-4o-mini':       'claude-haiku-4-5',
-  'gpt-4o':            'claude-sonnet-4-5',
+  'claude-haiku-5-5':  'gpt-4o-mini',
+  'claude-sonnet-5-5': 'gpt-4o',
+  'gpt-4o-mini':       'claude-haiku-5-5',
+  'gpt-4o':            'claude-sonnet-5-5',
   'rule-based':        null,
 };
 
 const VALID_MODELS: AiModel[] = [
-  'claude-haiku-4-5', 'claude-sonnet-4-5', 'gpt-4o', 'gpt-4o-mini',
+  'claude-haiku-5-5', 'claude-sonnet-5-5', 'gpt-4o', 'gpt-4o-mini',
 ];
 
 function isValidModel(value: string | undefined): value is AiModel {
@@ -67,7 +67,7 @@ function isValidModel(value: string | undefined): value is AiModel {
 
 function defaultModel(): AiModel {
   const env = process.env.AUTOQA_AI_DEFAULT_MODEL;
-  return isValidModel(env) ? env : 'claude-sonnet-4-5';
+  return isValidModel(env) ? env : 'claude-sonnet-5-5';
 }
 
 export function modelForOperation(operation: AiOperation): AiModel {
@@ -142,8 +142,8 @@ export class AiRouter {
 
   private providerFor(model: AiModel): AiProvider {
     switch (model) {
-      case 'claude-haiku-4-5':
-      case 'claude-sonnet-4-5':
+      case 'claude-haiku-5-5':
+      case 'claude-sonnet-5-5':
         return new ClaudeProvider(model);
       case 'gpt-4o':
       case 'gpt-4o-mini':
