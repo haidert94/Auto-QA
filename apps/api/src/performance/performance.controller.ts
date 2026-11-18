@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateAuditDto } from './dto/create-audit.dto';
 import { PerformanceService } from './performance.service';
 
@@ -27,6 +27,7 @@ export class PerformanceController {
   }
 
   @Post()
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('BROWSER_TESTS')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,

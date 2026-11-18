@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateMonitorDto, UpdateMonitorDto } from './dto/create-monitor.dto';
 import { MonitorsService } from './monitors.service';
 
@@ -25,6 +25,7 @@ export class MonitorsController {
   }
 
   @Post()
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('BROWSER_TESTS')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
@@ -35,6 +36,7 @@ export class MonitorsController {
   }
 
   @Patch(':id')
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('BROWSER_TESTS')
   update(
     @Param('projectId', ParseUUIDPipe) projectId: string,
@@ -46,6 +48,7 @@ export class MonitorsController {
   }
 
   @Delete(':id')
+  @RequiresRole('ADMIN')
   @RequiresPlanCapability('BROWSER_TESTS')
   @HttpCode(200)
   remove(

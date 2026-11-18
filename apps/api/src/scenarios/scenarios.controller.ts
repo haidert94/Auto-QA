@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsUUID } from 'class-validator';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateScenarioDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { ScenariosService } from './scenarios.service';
 
@@ -34,6 +34,7 @@ export class ScenariosController {
   }
 
   @Post()
+  @RequiresRole('EDITOR')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body() dto: CreateScenarioDto,
@@ -43,6 +44,7 @@ export class ScenariosController {
   }
 
   @Post('suggest')
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('AI_SCENARIO_GENERATION')
   suggest(
     @Param('projectId', ParseUUIDPipe) projectId: string,
@@ -62,6 +64,7 @@ export class ScenariosController {
   }
 
   @Patch(':id')
+  @RequiresRole('EDITOR')
   update(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Param('id', ParseUUIDPipe) id: string,
@@ -73,6 +76,7 @@ export class ScenariosController {
 
   @Delete(':id')
   @HttpCode(204)
+  @RequiresRole('EDITOR')
   remove(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Param('id', ParseUUIDPipe) id: string,

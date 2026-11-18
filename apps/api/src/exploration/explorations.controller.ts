@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 
 type HttpResponse = { setHeader(name: string, value: string): unknown };
 import { CreateExplorationDto } from './dto/create-exploration.dto';
@@ -27,6 +27,7 @@ export class ExplorationsController {
   }
 
   @Post()
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('BROWSER_TESTS')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,

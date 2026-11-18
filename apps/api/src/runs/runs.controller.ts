@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateRunDto } from './dto/create-run.dto';
 import { RunsService } from './runs.service';
 
@@ -37,6 +37,7 @@ export class RunsController {
   }
 
   @Post('projects/:projectId/scenarios/:scenarioId/runs')
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('BROWSER_TESTS')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
@@ -48,6 +49,7 @@ export class RunsController {
   }
 
   @Post('projects/:projectId/runs/:runId/explain')
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('AI_FAILURE_EXPLANATION')
   explain(
     @Param('projectId', ParseUUIDPipe) projectId: string,

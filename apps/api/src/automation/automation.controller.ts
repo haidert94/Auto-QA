@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { AutomationService } from './automation.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
@@ -26,6 +26,7 @@ export class AutomationController {
   }
 
   @Post()
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
@@ -42,6 +43,7 @@ export class AutomationController {
   }
 
   @Post(':id/select')
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
   select(
     @Param('projectId', ParseUUIDPipe) projectId: string,

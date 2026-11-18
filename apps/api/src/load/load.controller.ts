@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, RequiresPlanCapability, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateLoadTestDto } from './dto/create-load-test.dto';
 import { LoadService } from './load.service';
 
@@ -27,6 +27,7 @@ export class LoadController {
   }
 
   @Post()
+  @RequiresRole('ADMIN')
   @RequiresPlanCapability('BROWSER_TESTS')
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,

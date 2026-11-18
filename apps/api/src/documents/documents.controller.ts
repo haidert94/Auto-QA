@@ -6,7 +6,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { DocumentType } from '@prisma/client';
 import { IsBoolean, IsIn, IsUUID, ValidateIf } from 'class-validator';
 import { DocumentErrorsFilter } from './document-errors.filter';
-import { RequiresPlanCapability, WorkspaceGuard } from '../commerce/workspace.guard';
+import { RequiresPlanCapability, RequiresRole, WorkspaceGuard } from '../commerce/workspace.guard';
 import { MAX_FILES_PER_UPLOAD, MAX_FILE_BYTES } from './document-files';
 import { DocumentsService, type UploadedDocument } from './documents.service';
 
@@ -31,6 +31,7 @@ export class DocumentsController {
   constructor(private readonly documents: DocumentsService) {}
 
   @Post()
+  @RequiresRole('EDITOR')
   @UseInterceptors(FilesInterceptor('files', MAX_FILES_PER_UPLOAD, {
     preservePath: true,
     limits: { files: MAX_FILES_PER_UPLOAD, fileSize: MAX_FILE_BYTES, fields: 1, fieldSize: 64, parts: MAX_FILES_PER_UPLOAD + 2 },
@@ -54,6 +55,7 @@ export class DocumentsController {
     return this.documents.report(projectId);
   }
 
+  @RequiresRole('EDITOR')
   @RequiresPlanCapability('DOCUMENT_ANALYSIS')
   @Post('analyze')
   @HttpCode(200)
@@ -67,6 +69,7 @@ export class DocumentsController {
   }
 
   @Patch(':documentId/validation')
+  @RequiresRole('ADMIN')
   review(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Param('documentId', ParseUUIDPipe) documentId: string,
@@ -77,6 +80,7 @@ export class DocumentsController {
 
   @Delete(':documentId')
   @HttpCode(204)
+  @RequiresRole('ADMIN')
   remove(@Param('projectId', ParseUUIDPipe) projectId: string, @Param('documentId', ParseUUIDPipe) documentId: string) {
     return this.documents.remove(projectId, documentId);
   }

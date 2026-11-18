@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, Ip, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Headers, HttpCode, Ip, Post } from '@nestjs/common';
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 import { AccountService } from './account';
 import { AdminService } from './admin';
@@ -110,7 +110,8 @@ export class CommerceController {
 
   @Post('checkout') @HttpCode(200)
   async checkout(@Headers('authorization') auth: string | undefined, @Body() body: CheckoutDto) {
-    const { organization } = await this.accounts.identity(auth);
+    const { organization, role } = await this.accounts.identity(auth);
+    if (role !== 'OWNER') throw new ForbiddenException('Solo el OWNER puede contratar o cambiar la suscripción.');
     this.accounts.limit('checkout', organization.id, 15);
     await this.billing.checkout(organization.id, body.plan);
     return { message: 'Contratación de prueba preparada.' };
@@ -118,14 +119,16 @@ export class CommerceController {
 
   @Post('simulate') @HttpCode(200)
   async simulate(@Headers('authorization') auth: string | undefined, @Body() body: SimulateDto) {
-    const { organization } = await this.accounts.identity(auth);
+    const { organization, role } = await this.accounts.identity(auth);
+    if (role !== 'OWNER') throw new ForbiddenException('Solo el OWNER puede simular pagos.');
     this.accounts.limit('simulate', organization.id, 15);
     return this.billing.simulate(organization.id, body.outcome);
   }
 
   @Post('cancel') @HttpCode(200)
   async cancel(@Headers('authorization') auth: string | undefined) {
-    const { organization } = await this.accounts.identity(auth);
+    const { organization, role } = await this.accounts.identity(auth);
+    if (role !== 'OWNER') throw new ForbiddenException('Solo el OWNER puede cancelar la suscripción.');
     return this.billing.cancel(organization.id);
   }
 

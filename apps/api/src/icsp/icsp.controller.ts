@@ -1,5 +1,5 @@
 import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
-import { CurrentWorkspace, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { IcspService } from './icsp.service';
 
 @Controller('projects/:projectId/icsp')
@@ -22,6 +22,7 @@ export class IcspController {
   // cada TestRun) podría llamar al servicio en vez de este endpoint.
   @Post('snapshot')
   @HttpCode(201)
+  @RequiresRole('ADMIN')
   snapshot(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
     return this.service.snapshot(projectId, workspace);
   }
