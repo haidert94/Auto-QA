@@ -13,10 +13,18 @@ export type Finding = {
 };
 export type Evidence = { versionId: string; blocks: SourceBlock[] };
 
+// Contexto que el router de IA necesita para enforcement de budget y
+// gating por plan. El analizador rule-based lo ignora.
+export type AnalyzeContext = {
+  organizationId: string | null;
+  projectId: string | null;
+  runKey: string | null;
+};
+
 // A provider proposes candidates against supplied evidence. A future adapter must validate
 // every proposed excerpt and locator against that evidence before returning findings.
 export interface DocumentAnalysisProvider {
-  extract(evidence: Evidence): Promise<Finding[]>;
+  extract(evidence: Evidence, context: AnalyzeContext): Promise<Finding[]>;
 }
 
 export function isRequirement(kind: FindingKind) {
@@ -79,7 +87,10 @@ function fieldMap(fields: Record<string, string> = {}) {
 }
 
 export class RuleBasedDocumentAnalyzer implements DocumentAnalysisProvider {
-  async extract(evidence: Evidence): Promise<Finding[]> {
+  // El contexto se ignora acá: el analizador por reglas no consume budget ni
+  // pasa por el router. Se recibe para cumplir la interfaz.
+  async extract(evidence: Evidence, _context?: AnalyzeContext): Promise<Finding[]> {
+    void _context;
     const findings: Finding[] = [];
     const api = openApi(evidence.blocks);
     let inCodeBlock = false;

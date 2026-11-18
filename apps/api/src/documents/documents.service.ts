@@ -235,9 +235,13 @@ export class DocumentsService {
   }
 
   async analyze(projectId: string) {
-    await this.project(projectId, true);
+    const project = await this.project(projectId, true);
     if (this.analyzing.has(projectId)) throw new ConflictException('El proyecto ya tiene un análisis en curso.');
     this.analyzing.add(projectId);
+    // runKey une todas las llamadas de IA de este análisis para la auditoría
+    // y el reporte de consumo por operación.
+    const runKey = `doc-analysis:${randomBytes(8).toString('hex')}`;
+    const context = { organizationId: project.organizationId, projectId, runKey };
     try {
       const snapshot = await this.snapshot(projectId);
       const signature = this.signature(snapshot);
@@ -264,7 +268,7 @@ export class DocumentsService {
           });
           if (digest(content) !== file.version.sha256) throw new UnprocessableEntityException('Una versión no coincide con su huella.');
           const blocks = await parseDocument(file.format, content);
-          const findings = await this.analyzer.extract({ versionId: file.version.id, blocks }).catch(() => {
+          const findings = await this.analyzer.extract({ versionId: file.version.id, blocks }, context).catch(() => {
             throw new UnprocessableEntityException('Un documento supera el límite de elementos para el análisis.');
           });
           facts.push(...findings);
