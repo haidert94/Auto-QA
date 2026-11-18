@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { Check, Copy, FileCode2, FileText, KeyRound, Pencil, PlusCircle, ShieldCheck, Terminal } from 'lucide-react';
+import { Check, Copy, FileCode2, FileText, KeyRound, Pencil, PlusCircle, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { accessModes, environmentTypes, type Project } from '../onboarding';
-import { categoryLabels, documentRequest, fileSize, type SavedDocument } from '../document-client';
+import { categoryLabels, documentRequest, fileSize, type Report, type SavedDocument } from '../document-client';
+import { AnalysisCard } from './analysis-card';
 import { ProjectForm } from '../project-form';
 import { IpaHero, type IpaSummary } from './ipa-hero';
 import { EnvironmentsDialog } from './environments-dialog';
@@ -33,6 +34,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   const [documents, setDocuments] = useState<SavedDocument[] | null>(null);
   const [documentError, setDocumentError] = useState('');
   const [reload, setReload] = useState(0);
+  const [report, setReport] = useState<Report | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
@@ -61,11 +63,18 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
     const controller = new AbortController();
     setDocuments(null);
     setDocumentError('');
+    setReport(null);
     documentRequest<SavedDocument[]>(project.id, '', { signal: controller.signal })
       .then(list => { if (!controller.signal.aborted) setDocuments(list); })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setDocumentError(error instanceof Error ? error.message : 'No se pudieron cargar los documentos.');
       });
+    // El reporte solo existe una vez que /analyze corrió; si falla (404
+    // cuando aún no hay análisis guardado), dejamos el card con el
+    // placeholder de "aún no hay análisis".
+    documentRequest<Report>(project.id, '/analysis', { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setReport(data); })
+      .catch(() => {});
     return () => controller.abort();
   }, [project.id, project.revision, editing, reload]);
 
@@ -171,15 +180,14 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
             <div className="detail-card__body"><p className="muted">No se pudo consultar la evaluación. No hay una puntuación disponible.</p>
               <Link href={`/projects/${project.id}/ipa`}>Consultar IPA →</Link></div></>}
       </section>
-      <section className="detail-diagnostics" aria-labelledby="diagnostic-heading">
-        <header><h2 id="diagnostic-heading"><Terminal size={13} /> Diagnóstico del proyecto</h2><span>REGISTRO</span></header>
-        <ul>
-          <li><span>01 [ALCANCE]</span> {project.environments.filter(env => env.authorizationConfirmed).length} de {project.environments.length} entornos con autorización confirmada.</li>
-          <li><span>02 [DOCUMENTOS]</span> {documents ? `${documents.filter(doc => doc.state === 'PROCESSED' || doc.state === 'VALIDATED').length} de ${documents.length} procesados o validados.` : documentError ? 'Consulta no disponible.' : 'Consultando archivos.'}</li>
-          <li><span>03 [IPA]</span> {ipa ? (ipa.status === 'BLOCKED' ? 'Hay bloqueos que requieren atención.' : `Preparación estructural: ${ipa.score}/100.`) : 'Evaluación no disponible.'}</li>
-        </ul>
-        <p>Estado del registro. No representa una ejecución de pruebas.</p>
-      </section>
+      <AnalysisCard report={report}
+        pending={documentError
+          ? 'No se pudo consultar el análisis documental.'
+          : documents === null
+            ? 'Consultando documentación…'
+            : documents.length === 0
+              ? 'Aún no hay documentos cargados. Sube al menos uno desde el card de documentos para que el agente lo procese.'
+              : 'El análisis se dispara automáticamente al subir un módulo. Si no aparece aquí en unos segundos, reintenta la carga.'} />
     </aside>
     {envDialogOpen && <EnvironmentsDialog project={project} onClose={() => setEnvDialogOpen(false)}
       onSaved={saved => { setProject(saved); setEnvDialogOpen(false); }} />}
