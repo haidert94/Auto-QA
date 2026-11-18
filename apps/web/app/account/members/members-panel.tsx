@@ -29,6 +29,7 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
   const [data, setData] = useState(initial);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('VIEWER');
   const [inviteProjectIds, setInviteProjectIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -76,14 +77,15 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
       role: inviteRole,
       projectIds,
     };
-    const name = inviteName.trim();
-    if (name) payload.name = name;
+    const fullName = [inviteName.trim(), inviteLastName.trim()].filter(Boolean).join(' ');
+    if (fullName) payload.name = fullName;
     await run(() => fetch('/api/commerce/members/invite', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }), 'Invitación enviada.');
     setInviteEmail('');
     setInviteName('');
+    setInviteLastName('');
     setInviteProjectIds(new Set());
   }
 
@@ -114,54 +116,60 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
   return <>
     {canInvite && <section className="members-section">
       <h2>Invitar</h2>
-      <form onSubmit={invite} className="members-invite">
-        <label>Nombre
-          <input type="text" value={inviteName} onChange={e => setInviteName(e.target.value)}
-            maxLength={100} placeholder="Ej. Sara Monroy"/>
-        </label>
-        <label>Correo
-          <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required maxLength={254}/>
-        </label>
-        <label>Rol
-          <select value={inviteRole} onChange={e => setInviteRole(e.target.value as OrgRole)}>
-            <option value="VIEWER">VIEWER — lectura</option>
-            <option value="EDITOR">EDITOR — edición</option>
-            <option value="ADMIN">ADMIN — gestión</option>
-          </select>
-        </label>
-        <button type="submit" disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</button>
-      </form>
-      {needsInviteProjects && data.orgProjects.length > 0 && <fieldset className="members-invite-projects">
-        <legend>Proyectos asignados al aceptar ({inviteProjectIds.size} de {data.orgProjects.length})</legend>
-        <p className="muted"><small>
-          El invitado solo verá estos proyectos al entrar. Puedes dejarlos sin seleccionar y asignarlos
-          después desde la tabla de miembros.
-        </small></p>
-        <div className="members-project-toggle">
-          <button type="button" className="secondary" disabled={busy}
-            onClick={() => setInviteProjectIds(
-              inviteProjectIds.size === data.orgProjects.length
-                ? new Set()
-                : new Set(data.orgProjects.map(p => p.id))
-            )}>
-            {inviteProjectIds.size === data.orgProjects.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
-          </button>
+      <form onSubmit={invite} className="members-invite-form">
+        <div className="members-invite-fields">
+          <label>Nombre
+            <input type="text" value={inviteName} onChange={e => setInviteName(e.target.value)}
+              maxLength={60} placeholder="Ej. Sara" autoComplete="given-name"/>
+          </label>
+          <label>Apellido
+            <input type="text" value={inviteLastName} onChange={e => setInviteLastName(e.target.value)}
+              maxLength={60} placeholder="Ej. Monroy" autoComplete="family-name"/>
+          </label>
+          <label>Correo
+            <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required maxLength={254}/>
+          </label>
+          <label>Rol
+            <select value={inviteRole} onChange={e => setInviteRole(e.target.value as OrgRole)}>
+              <option value="VIEWER">VIEWER — lectura</option>
+              <option value="EDITOR">EDITOR — edición</option>
+              <option value="ADMIN">ADMIN — gestión</option>
+            </select>
+          </label>
         </div>
-        <ul className="members-project-list">
-          {data.orgProjects.map(project => (
-            <li key={project.id}>
-              <label>
-                <input type="checkbox" checked={inviteProjectIds.has(project.id)}
-                  onChange={() => toggleInviteProject(project.id)} disabled={busy}/>
-                <span>{project.name}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      </fieldset>}
-      {needsInviteProjects && data.orgProjects.length === 0 && <p className="muted"><small>
-        Aún no hay proyectos en la organización. El invitado podrá aceptar y lo asignas después.
-      </small></p>}
+        {needsInviteProjects && data.orgProjects.length > 0 && <fieldset className="members-invite-projects">
+          <legend>Proyectos asignados al aceptar ({inviteProjectIds.size} de {data.orgProjects.length})</legend>
+          <p className="muted"><small>
+            El invitado solo verá estos proyectos al entrar. Puedes dejarlos sin seleccionar y asignarlos
+            después desde la tabla de miembros.
+          </small></p>
+          <div className="members-project-toggle">
+            <button type="button" className="secondary" disabled={busy}
+              onClick={() => setInviteProjectIds(
+                inviteProjectIds.size === data.orgProjects.length
+                  ? new Set()
+                  : new Set(data.orgProjects.map(p => p.id))
+              )}>
+              {inviteProjectIds.size === data.orgProjects.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+            </button>
+          </div>
+          <ul className="members-project-list">
+            {data.orgProjects.map(project => (
+              <li key={project.id}>
+                <label>
+                  <input type="checkbox" checked={inviteProjectIds.has(project.id)}
+                    onChange={() => toggleInviteProject(project.id)} disabled={busy}/>
+                  <span>{project.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>}
+        {needsInviteProjects && data.orgProjects.length === 0 && <p className="muted"><small>
+          Aún no hay proyectos en la organización. El invitado podrá aceptar y lo asignas después.
+        </small></p>}
+        <button type="submit" disabled={busy} className="members-invite-submit">{busy ? 'Enviando…' : 'Enviar invitación'}</button>
+      </form>
       {notice && <p className="success" role="status">{notice}</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </section>}

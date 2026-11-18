@@ -299,9 +299,10 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 /* ---- Miembros ---- */
 .members-panel { max-width: 1120px; }
 .members-section { margin-top: 20px; }
-.members-invite { display: grid; grid-template-columns: 2fr 1fr auto; gap: 12px; align-items: end; }
-.members-invite label { margin: 0; }
-.members-invite button { margin: 0; }
+.members-invite-form { display: grid; gap: 14px; }
+.members-invite-fields { display: grid; grid-template-columns: 1fr 1fr 1.6fr 1fr; gap: 12px; align-items: end; }
+.members-invite-fields label { margin: 0; }
+.members-invite-submit { margin: 0; justify-self: stretch; }
 .members-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
 .members-table th, .members-table td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; font-size: 13px; }
 .members-table th { background: var(--quiet); color: var(--ink); font: 600 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .05em; }
@@ -315,7 +316,7 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .members-project-toggle button { padding: 4px 10px; font-size: 12px; }
 .members-table button { margin: 0; padding: 6px 12px; min-height: 32px; }
 @media (max-width: 640px) {
-  .members-invite { grid-template-columns: 1fr; }
+  .members-invite-fields { grid-template-columns: 1fr; }
 }
 .invite-panel { max-width: 640px; }
 .invite-cta { margin-top: 18px; padding: 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
