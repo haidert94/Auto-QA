@@ -35,6 +35,8 @@ Abre [AutoQA](http://localhost:3000). La API escucha en `127.0.0.1:3001` y la in
 
 Abre **Proyectos**, selecciona una aplicación con registro completo y entra en **Datos**. La vista usa dos columnas: entornos y alcance, documentos y roles a la izquierda; IPA y diagnóstico del registro a la derecha. En móvil las tarjetas se apilan. Los borradores conservan el formulario de registro.
 
+La barra superior de la zona autenticada ocupa todo el ancho: logo a la izquierda, navegación central, organización y plan asignado a la derecha, y menú de cuenta con icono azul. El nombre y correo están dentro del menú. La organización se mantiene visible aunque coincida con el nombre del usuario; si no hay plan, no se muestra una insignia inventada. En móvil la navegación se abre con **Menú**.
+
 **Modificar**, **Adjuntar nuevo documento o especificación** y **Editar roles y permisos** abren las secciones del formulario existente. El selector permite consultar cada entorno sin cambiar su autorización. **Automatizar con IA** abre la pestaña de automatización y requiere las acciones y controles existentes para generar o ejecutar pruebas. **Exportar especificación** descarga un resumen JSON de alcance y permisos; excluye credenciales, identidades de acceso y referencias de bóveda. No incluye los archivos adjuntos.
 
 Para comprobar la interfaz en Windows, con Node.js y Google Chrome instalados:

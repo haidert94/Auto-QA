@@ -13,7 +13,7 @@ const projectId = '10000000-0000-4000-8000-000000000001';
 const session = 'a'.repeat(64);
 const account = {
   name: 'Equipo demo', email: 'qa@example.test', organization: { id: 'demo', name: 'AutoQA Demo' },
-  subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { capabilities: [{ code: 'BROWSER_TESTS', availability: 'BETA' }] } },
+  subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { name: 'Pro', capabilities: [{ code: 'BROWSER_TESTS', availability: 'BETA' }] } },
 };
 const environment = {
   id: '10000000-0000-4000-8000-000000000002', type: 'STAGING', baseUrl: 'https://staging.example.test/checkout',
@@ -44,6 +44,7 @@ const ipa = { score: 82, status: 'ASSESSED', signals: [
 let docsFail = false;
 let ipaFail = false;
 let saveCount = 0;
+let logoutCalled = false;
 
 async function listen(server) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -55,6 +56,7 @@ const api = createServer(async (request, response) => {
   if (request.headers.authorization !== `Bearer ${session}`) return send({ message: 'Sesión requerida' }, 401);
   const path = new URL(request.url, 'http://localhost').pathname;
   if (path === '/api/commerce/me') return send(account);
+  if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
   if (path === base && request.method === 'PUT') {
     const chunks = [];
@@ -104,6 +106,27 @@ async function run() {
     await page.goto(`${website}/projects/${projectId}`);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
+    const header = await page.locator('.app-nav').boundingBox();
+    assert.equal(header.x, 0, 'La cabecera ocupa todo el ancho, sin margen lateral heredado.');
+    assert.equal(header.y, 0, 'La cabecera empieza en el borde superior.');
+    assert.equal(header.width, 1440);
+    await page.locator('.app-nav-org').getByText('AutoQA Demo', { exact: true }).waitFor();
+    await page.locator('.app-nav-plan').getByText('Pro', { exact: true }).waitFor();
+    const userMenu = page.getByLabel('Menú de la cuenta', { exact: true });
+    await userMenu.click();
+    await page.locator('.app-nav-menu-content').getByText('Equipo demo', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.app-nav-menu').getAttribute('open'), null);
+    await userMenu.press('Enter');
+    await page.locator('.app-nav-menu-content').getByText('qa@example.test', { exact: true }).waitFor();
+    await page.getByRole('heading', { name: project.name, exact: true }).click();
+    assert.equal(await page.locator('.app-nav-menu').getAttribute('open'), null, 'Cierra al pulsar fuera.');
+    account.organization.name = account.name;
+    await page.reload();
+    await page.locator('.app-nav-org-name').getByText('Equipo demo', { exact: true }).waitFor();
+    account.organization.name = 'AutoQA Demo';
+    await page.reload();
+    await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     assert.deepEqual((await page.locator('.detail-document-state').allTextContents()).sort(), ['Cargado', 'Declarado', 'Procesado', 'Validado']);
     const main = await page.locator('.project-overview__main').boundingBox();
     const aside = await page.locator('.project-overview__aside').boundingBox();
@@ -126,18 +149,35 @@ async function run() {
     for (const privateValue of ['secretReference', 'credentialUser', 'synthetic-private', 'hasCredentials']) assert.ok(!exportedText.includes(privateValue));
     const screenshots = process.env.AUTOQA_UI_SCREENSHOT_DIR || join(tmpdir(), 'autoqa-project-detail-preview');
     await mkdir(screenshots, { recursive: true });
+    await page.locator('.app-nav').screenshot({ path: join(screenshots, 'app-navigation-desktop.png') });
+    await page.setViewportSize({ width: 1155, height: 900 });
+    await page.locator('.app-nav').screenshot({ path: join(screenshots, 'app-navigation-reference-width.png') });
+    await page.setViewportSize({ width: 1440, height: 1100 });
     await page.screenshot({ path: join(screenshots, 'project-detail-desktop.png'), fullPage: true });
     for (const width of [768, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Sin desbordamiento a ${width}px.`);
       if (width === 390) {
+        await page.getByRole('button', { name: 'Menú', exact: true }).click();
+        await page.getByRole('navigation', { name: 'Navegación principal' }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Menú', exact: true }).getAttribute('aria-expanded'), 'true');
+        await page.keyboard.press('Escape');
+        await page.getByRole('navigation', { name: 'Navegación principal' }).waitFor({ state: 'hidden' });
+        await userMenu.click();
+        await page.getByRole('button', { name: 'Cerrar sesión' }).waitFor();
+        await page.keyboard.press('Escape');
         const mobileMain = await page.locator('.project-overview__main').boundingBox();
         const mobileAside = await page.locator('.project-overview__aside').boundingBox();
         assert.ok(mobileMain.y + mobileMain.height <= mobileAside.y, 'Móvil: IPA después de los datos.');
         await page.screenshot({ path: join(screenshots, 'project-detail-mobile.png'), fullPage: true });
       }
     }
+    account.organization.name = 'Organización con un nombre muy largo para comprobar el encabezado en móvil';
+    await page.reload();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320, 'El nombre largo no desborda en móvil.');
+    account.organization.name = 'AutoQA Demo';
     await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.reload();
     await page.getByRole('tab', { name: 'Datos', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
     assert.equal(await page.getByRole('tab', { name: 'Escenarios', exact: true }).getAttribute('aria-selected'), 'true');
@@ -180,8 +220,16 @@ async function run() {
     await page.reload();
     await page.getByLabel('Nombre de la aplicación').waitFor();
     assert.equal(await page.getByLabel('Nombre de la aplicación').inputValue(), project.name, 'Los borradores conservan el formulario.');
+    account.subscription.plan = undefined;
+    await page.reload();
+    assert.equal(await page.locator('.app-nav-plan').count(), 0, 'No inventa un plan cuando no está asignado.');
+    await userMenu.click();
+    await page.getByText('Plan: Sin plan asignado', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Cerrar sesión' }).click();
+    await page.waitForURL(website + '/');
+    assert.equal(logoutCalled, true, 'Conserva el endpoint de cierre de sesión.');
     assert.deepEqual(pageErrors, [], 'No hay errores de JavaScript durante las interacciones.');
-    console.log('PASS: diseño escritorio/móvil (1440/768/390/320), datos y estados documentales, entornos, copiar URL, exportación sin credenciales, tabs/teclado, formulario de documentos, edición/guardado, roles, error/reintento, IPA ausente, plan y borradores. API simulada; no valida persistencia ni motores.');
+    console.log('PASS: cabecera de ancho completo, organización/plan real, menú de cuenta/teclado/cierre de sesión, navegación móvil y nombres largos; detalle escritorio/móvil (1440/768/390/320), documentos, entornos, exportación, edición, tabs, errores, IPA ausente, permisos y borradores. API simulada; no valida persistencia ni motores.');
     console.log('Capturas: ' + screenshots);
   } finally {
     await browser?.close();
