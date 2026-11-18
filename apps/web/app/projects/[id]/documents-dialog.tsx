@@ -136,12 +136,18 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
     </header>
     <div className="environments-dialog__form documents-dialog__body">
       <section className="modules-panel" aria-label="Módulos a documentar">
-        <label className="modules-panel__count">
-          Cantidad de módulos
-          <input type="number" min={0} max={30} step={1} value={moduleCount}
-            onChange={event => applyModuleCount(Number(event.target.value))}
-            disabled={uploading} />
-        </label>
+        <div className="modules-panel__count">
+          <span className="modules-panel__count-label">Cantidad de módulos</span>
+          <div className="modules-panel__stepper" role="group" aria-label="Cantidad de módulos">
+            <button type="button" className="modules-panel__step" aria-label="Disminuir"
+              onClick={() => applyModuleCount(moduleCount - 1)}
+              disabled={uploading || moduleCount <= 0}>−</button>
+            <span className="modules-panel__count-value" aria-live="polite">{moduleCount}</span>
+            <button type="button" className="modules-panel__step" aria-label="Aumentar"
+              onClick={() => applyModuleCount(moduleCount + 1)}
+              disabled={uploading || moduleCount >= 30}>+</button>
+          </div>
+        </div>
         {modules.length > 0 && <ol className="modules-panel__list">
           {modules.map((slot, index) => (
             <li key={slot.id} className={`modules-panel__item modules-panel__item--${slot.state.toLowerCase()}`}>
