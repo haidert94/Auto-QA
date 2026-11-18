@@ -6,6 +6,8 @@ import {
   type Category, type PendingDocument, type Report, type SavedDocument,
 } from './document-client';
 import { DocumentReport } from './document-report';
+import type { OrgRole } from '../autoqa-server';
+import { can } from '../permissions';
 
 const states = {
   DECLARED: 'Declarado', UPLOADED: 'Cargado', PROCESSED: 'Procesado', VALIDATED: 'Validado',
@@ -20,9 +22,14 @@ type Props = {
   pending: PendingDocument[];
   setPending: Dispatch<SetStateAction<PendingDocument[]>>;
   upload: () => void;
+  role?: OrgRole;
 };
 
-export function DocumentPanel({ projectId, disabled, uploading, revision, pending, setPending, upload }: Props) {
+export function DocumentPanel({ projectId, disabled, uploading, revision, pending, setPending, upload, role }: Props) {
+  const canUpload = can(role, 'document.upload');
+  const canAnalyze = can(role, 'document.analyze');
+  const canValidate = can(role, 'document.validate');
+  const canDelete = can(role, 'document.delete');
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [report, setReport] = useState<Report>();
   const [error, setError] = useState('');
@@ -79,11 +86,11 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
     }
   }
 
-  const locked = disabled || uploading || !!busy;
+  const locked = disabled || uploading || !!busy || !canUpload;
   return (
     <section aria-labelledby="document-heading">
       <h2 id="document-heading">Documentación y requisitos</h2>
-      <div className="document-drop"
+      {canUpload && <div className="document-drop"
         onDragOver={event => event.preventDefault()}
         onDrop={event => { event.preventDefault(); select(event.dataTransfer.files); }}>
         <label>Seleccionar archivos
@@ -94,7 +101,7 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
             }} />
         </label>
         <p className="muted">También puedes arrastrar archivos aquí. PDF, DOCX, XLSX, CSV, TXT, MD, JSON, YAML o YML. Hasta 5 MiB por archivo.</p>
-      </div>
+      </div>}
       {selectionError && <p className="error" role="alert">{selectionError}</p>}
       {pending.length > 0 && (
         <ul className="document-list">
@@ -140,24 +147,24 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
                     </ul>
                   </details>
                   <div className="actions">
-                    {version?.hasText && (
-                      <button type="button" className="secondary" disabled={locked}
+                    {canValidate && version?.hasText && (
+                      <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
                         onClick={() => operation('Guardando revisión…', '/' + document.id + '/validation', {
                           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ versionId: version.id, validated: !validated }),
                         })}>{validated ? 'Retirar validación' : 'Marcar como validado'}</button>
                     )}
-                    <button type="button" className="secondary" disabled={locked}
+                    {canDelete && <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
                       onClick={() => operation('Eliminando documento…', '/' + document.id, { method: 'DELETE' })}>
                       Eliminar documento y versiones
-                    </button>
+                    </button>}
                   </div>
                 </li>
               );
             })}
           </ul>
-          <button type="button" disabled={locked || !documents.some(document => document.state !== 'DECLARED')}
-            onClick={() => operation('Analizando documentos…', '/analyze', { method: 'POST' })}>Analizar documentación</button>
+          {canAnalyze && <button type="button" disabled={disabled || uploading || !!busy || !documents.some(document => document.state !== 'DECLARED')}
+            onClick={() => operation('Analizando documentos…', '/analyze', { method: 'POST' })}>Analizar documentación</button>}
         </>
       )}
       {busy && <p role="status">{busy}</p>}

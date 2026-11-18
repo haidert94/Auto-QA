@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { accountFetch } from '../../../autoqa-server';
+import { accountFetch, requireAccount, type OrgRole } from '../../../autoqa-server';
 import { PerformancePanel } from './performance-panel';
 
 type Environment = { id: string; type: string | null; baseUrl: string | null; authorizationConfirmed?: boolean; readOnly?: boolean };
@@ -22,9 +22,12 @@ export default async function PerformancePage({ params }: { params: Promise<{ id
   const envs: Environment[] = (data.environments ?? [])
     .filter((e: Environment) => e.authorizationConfirmed && e.readOnly !== false);
 
+  let role: OrgRole = 'VIEWER';
+  try { role = (await requireAccount()).role; } catch {}
+
   return <section className="panel">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Performance · Lighthouse</h1>
-    <PerformancePanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} />
+    <PerformancePanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} role={role} />
   </section>;
 }

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { accountFetch } from '../../../autoqa-server';
+import { accountFetch, requireAccount, type OrgRole } from '../../../autoqa-server';
+import { can } from '../../../permissions';
 import { SnapshotButton } from './snapshot-button';
 
 type Dimension = {
@@ -51,6 +52,10 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
   const icsp: Icsp = await current.json();
   const historyRows: HistoryItem[] = history?.ok ? await history.json() : [];
 
+  let role: OrgRole = 'VIEWER';
+  try { role = (await requireAccount()).role; } catch {}
+  const canSnapshot = can(role, 'icsp.snapshot');
+
   return <section className="panel ipa-panel">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <header className="ipa-header">
@@ -63,7 +68,7 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
       </div>
       <div className="ipa-score">
         <div className="ipa-score-number ipa-assessed">{icsp.score}</div>
-        <SnapshotButton projectId={id} />
+        {canSnapshot && <SnapshotButton projectId={id} />}
       </div>
     </header>
 

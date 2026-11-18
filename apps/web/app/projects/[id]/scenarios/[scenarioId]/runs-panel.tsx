@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import type { OrgRole } from '../../../../autoqa-server';
+import { can } from '../../../../permissions';
 
 export type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null };
 
@@ -78,7 +80,8 @@ function formatDuration(ms: number | null) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function RunsPanel({ projectId, scenarioId, environments }: { projectId: string; scenarioId: string; environments: EnvironmentOption[] }) {
+export function RunsPanel({ projectId, scenarioId, environments, role }: { projectId: string; scenarioId: string; environments: EnvironmentOption[]; role?: OrgRole }) {
+  const canRun = can(role, 'run.execute');
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
   const [targetBrowser, setTargetBrowser] = useState<'CHROMIUM' | 'FIREFOX' | 'WEBKIT'>('CHROMIUM');
@@ -159,7 +162,7 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
       de requests y guarda el trace.
     </p>
 
-    <form onSubmit={queue} className="run-form">
+    {canRun && <form onSubmit={queue} className="run-form">
       <label>Entorno<select value={envId} onChange={e => setEnvId(e.target.value)} required>
         {environments.map(env => <option key={env.id} value={env.id}>
           {env.type ?? 'Entorno'} · {env.baseUrl ?? env.id.slice(0, 8)}
@@ -178,7 +181,7 @@ export function RunsPanel({ projectId, scenarioId, environments }: { projectId: 
         <button type="submit" disabled={busy}>{busy ? 'Encolando…' : 'Ejecutar'}</button>
         <button type="button" className="secondary" onClick={load}>Actualizar</button>
       </div>
-    </form>
+    </form>}
 
     {notice && <p className="success" role="status">{notice}</p>}
     {error && <p className="error" role="alert">{error}</p>}

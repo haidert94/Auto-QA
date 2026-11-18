@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { accountFetch } from '../../../autoqa-server';
+import { accountFetch, requireAccount, type OrgRole } from '../../../autoqa-server';
 import { LoadPanel } from './load-panel';
 
 type Environment = { id: string; type: string | null; baseUrl: string | null; authorizationConfirmed?: boolean };
@@ -22,9 +22,12 @@ export default async function LoadPage({ params }: { params: Promise<{ id: strin
   const envs: Environment[] = (data.environments ?? [])
     .filter((e: Environment) => e.authorizationConfirmed);
 
+  let role: OrgRole = 'VIEWER';
+  try { role = (await requireAccount()).role; } catch {}
+
   return <section className="panel">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Pruebas de carga · k6</h1>
-    <LoadPanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} />
+    <LoadPanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} role={role} />
   </section>;
 }

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { accountFetch } from '../../../autoqa-server';
+import { accountFetch, requireAccount, type OrgRole } from '../../../autoqa-server';
 import { MonitorsPanel } from './monitors-panel';
 
 type Environment = { id: string; type: string | null; baseUrl: string | null; authorizationConfirmed?: boolean };
@@ -21,9 +21,12 @@ export default async function MonitorsPage({ params }: { params: Promise<{ id: s
   const data = await project.json();
   const envs: Environment[] = (data.environments ?? []).filter((e: Environment) => e.authorizationConfirmed);
 
+  let role: OrgRole = 'VIEWER';
+  try { role = (await requireAccount()).role; } catch {}
+
   return <section className="panel">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Monitores de disponibilidad</h1>
-    <MonitorsPanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} />
+    <MonitorsPanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} role={role} />
   </section>;
 }

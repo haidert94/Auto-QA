@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import type { OrgRole } from '../../../autoqa-server';
+import { can } from '../../../permissions';
 
 type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null };
 
@@ -38,7 +40,8 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function LoadPanel({ projectId, environments }: { projectId: string; environments: EnvironmentOption[] }) {
+export function LoadPanel({ projectId, environments, role }: { projectId: string; environments: EnvironmentOption[]; role?: OrgRole }) {
+  const canCreate = can(role, 'load.create');
   const [tests, setTests] = useState<LoadTest[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
   const [name, setName] = useState('');
@@ -88,7 +91,7 @@ export function LoadPanel({ projectId, environments }: { projectId: string; envi
       cuánto tiempo y AutoQA mide latencias p50/p95/p99, requests por segundo y tasa de error.
     </p>
 
-    <form onSubmit={queue} className="run-form">
+    {canCreate && <form onSubmit={queue} className="run-form">
       <label>Nombre<input value={name} onChange={e => setName(e.target.value)} required maxLength={120}
         placeholder="Pico mañana del lunes"/></label>
       <label>Entorno<select value={envId} onChange={e => setEnvId(e.target.value)} required>
@@ -104,7 +107,7 @@ export function LoadPanel({ projectId, environments }: { projectId: string; envi
         <button type="submit" disabled={busy}>{busy ? 'Encolando…' : 'Encolar prueba'}</button>
         <button type="button" className="secondary" onClick={load}>Actualizar</button>
       </div>
-    </form>
+    </form>}
 
     {error && <p className="error" role="alert">{error}</p>}
 

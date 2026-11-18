@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { accountFetch } from '../../../../autoqa-server';
+import { accountFetch, requireAccount, type OrgRole } from '../../../../autoqa-server';
 import { RunsPanel, type EnvironmentOption } from './runs-panel';
 import { ScenarioEditor, type RequirementOption, type Scenario } from './scenario-editor';
 
@@ -42,10 +42,13 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
     .filter(env => env.authorizationConfirmed && env.readOnly !== false)
     .map(env => ({ id: env.id, type: env.type ?? null, baseUrl: env.baseUrl ?? null }));
 
+  let role: OrgRole = 'VIEWER';
+  try { role = (await requireAccount()).role; } catch {}
+
   return <section className="panel">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Editar escenario</h1>
-    <ScenarioEditor initial={{ ...scenario, projectId: id }} requirements={requirements} />
-    <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} />
+    <ScenarioEditor initial={{ ...scenario, projectId: id }} requirements={requirements} role={role} />
+    <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} role={role} />
   </section>;
 }

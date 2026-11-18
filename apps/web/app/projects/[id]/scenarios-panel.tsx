@@ -290,8 +290,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {listError ? <div className="scenario-message" role="alert"><p className="error">{listError}</p>
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
-      : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked}
-        onRun={runnable ? scenarios => setRunSelection(scenarios) : undefined}
+      : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
+        onRun={runnable && canRun ? scenarios => setRunSelection(scenarios) : undefined}
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}

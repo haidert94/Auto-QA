@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import type { OrgRole } from '../../../autoqa-server';
+import { can } from '../../../permissions';
 
 type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null };
 
@@ -38,9 +40,10 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function PerformancePanel({ projectId, environments }: {
-  projectId: string; environments: EnvironmentOption[];
+export function PerformancePanel({ projectId, environments, role }: {
+  projectId: string; environments: EnvironmentOption[]; role?: OrgRole;
 }) {
+  const canCreate = can(role, 'performance.create');
   const [audits, setAudits] = useState<Audit[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
   const [url, setUrl] = useState(environments[0]?.baseUrl ?? '');
@@ -85,7 +88,7 @@ export function PerformancePanel({ projectId, environments }: {
       Audita una URL dentro del alcance autorizado con Lighthouse. Guarda puntajes de performance,
       accesibilidad, buenas prácticas y SEO, más métricas Web Vitals (FCP, LCP, TBT, CLS, SI).
     </p>
-    <form onSubmit={queue} className="run-form">
+    {canCreate && <form onSubmit={queue} className="run-form">
       <label>Entorno<select value={envId} onChange={e => setEnvId(e.target.value)} required>
         {environments.map(env => <option key={env.id} value={env.id}>
           {env.type ?? 'Entorno'} · {env.baseUrl ?? env.id.slice(0, 8)}
@@ -99,7 +102,7 @@ export function PerformancePanel({ projectId, environments }: {
         <button type="submit" disabled={busy}>{busy ? 'Encolando…' : 'Auditar'}</button>
         <button type="button" className="secondary" onClick={load}>Actualizar</button>
       </div>
-    </form>
+    </form>}
     {notice && <p className="success" role="status">{notice}</p>}
     {error && <p className="error" role="alert">{error}</p>}
 

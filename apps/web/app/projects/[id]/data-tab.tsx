@@ -80,7 +80,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
     {project.status === 'READY' && <button type="button" className="secondary" onClick={() => setEditing(false)}>
       ← Volver a la vista de resumen
     </button>}
-    <ProjectForm initial={project} onSaved={saved => {
+    <ProjectForm initial={project} role={role} onSaved={saved => {
       setProject(saved);
       if (saved.status === 'READY') setEditing(false);
     }} />

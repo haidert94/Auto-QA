@@ -5,12 +5,15 @@ import { Code2, ExternalLink, FileText, Pencil, PlayCircle, Search, X } from 'lu
 import { useEffect, useRef, useState } from 'react';
 import { gherkinKeyword, ScenarioCard, type ScenarioListItem } from './scenario-card';
 import { durationLabel, runPresentation, type ScenarioRun } from './scenario-presentation';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 
-export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, onRun }: {
+export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, onRun, role }: {
   items: ScenarioListItem[]; runs: ScenarioRun[]; runsAvailable: boolean; checked: Set<string>;
   setChecked: (selection: Set<string>) => void; onChange: (scenario: ScenarioListItem) => void;
-  projectId: string; onRun?: (scenarios: ScenarioListItem[]) => void;
+  projectId: string; onRun?: (scenarios: ScenarioListItem[]) => void; role?: OrgRole;
 }) {
+  const canEdit = can(role, 'scenario.update');
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
   const [mode, setMode] = useState<'all' | 'results' | 'pending'>('all');
@@ -116,7 +119,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
         </header>
         <div className="scenario-detail__body">
           {editing ? <ul className="scenario-editor-list"><ScenarioCard key={active.id} projectId={projectId} scenario={active} initialEditing
-            onChange={onChange} onEditComplete={() => setEditing(false)} /></ul> : <>
+            onChange={onChange} onEditComplete={() => setEditing(false)} role={role} /></ul> : <>
             <h3>{active.title}</h3>
             <p className="scenario-detail__source"><FileText size={14} />{active.requirement ? `${active.requirement.externalKey ? active.requirement.externalKey + ' / ' : ''}${active.requirement.title}` : 'Sin requisito asociado'}</p>
             <div className="scenario-detail__section-label"><span>Especificación BDD (vista derivada)</span><Code2 size={14} /></div>
@@ -126,7 +129,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
             </li>)}</ol>{!active.steps?.length && <p>No hay pasos registrados.</p>}</div>
             <p className="scenario-derived-note">Palabras clave inferidas de las acciones. Revisa esta vista antes de utilizarla como especificación.</p>
             <section className="scenario-expected"><h4>Resultado esperado registrado</h4><p>{active.expectedResult ?? 'No declarado. Pendiente de definir.'}</p></section>
-            <div className="scenario-detail__actions"><button type="button" className="secondary" onClick={() => setEditing(true)}><Pencil size={13} />Editar escenario</button>
+            <div className="scenario-detail__actions">{canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}><Pencil size={13} />Editar escenario</button>}
               <Link href={`/projects/${projectId}/scenarios/${active.id}`}><ExternalLink size={13} />Abrir ficha y ejecuciones</Link></div>
           </>}
         </div>

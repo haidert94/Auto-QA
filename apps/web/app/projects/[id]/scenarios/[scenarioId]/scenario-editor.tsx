@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import type { OrgRole } from '../../../../autoqa-server';
+import { can } from '../../../../permissions';
 
 export type ScenarioStep = { ordinal: number; action: string; data?: string; expected?: string };
 
@@ -17,8 +19,10 @@ export type Scenario = {
 
 export type RequirementOption = { id: string; title: string; externalKey: string | null };
 
-export function ScenarioEditor({ initial, requirements }: { initial: Scenario; requirements: RequirementOption[] }) {
+export function ScenarioEditor({ initial, requirements, role }: { initial: Scenario; requirements: RequirementOption[]; role?: OrgRole }) {
   const router = useRouter();
+  const canEdit = can(role, 'scenario.update');
+  const canDelete = can(role, 'scenario.delete');
   const [title, setTitle] = useState(initial.title);
   const [requirementId, setRequirementId] = useState(initial.requirementId ?? '');
   const [expectedResult, setExpectedResult] = useState(initial.expectedResult ?? '');
@@ -157,9 +161,9 @@ export function ScenarioEditor({ initial, requirements }: { initial: Scenario; r
     </fieldset>
 
     <div className="actions">
-      <button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
+      {canEdit && <button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>}
       <button type="button" className="secondary" onClick={loadPlaywright} disabled={busy}>Ver código Playwright</button>
-      <button type="button" className="secondary" onClick={remove} disabled={busy}>Eliminar escenario</button>
+      {canDelete && <button type="button" className="secondary" onClick={remove} disabled={busy}>Eliminar escenario</button>}
     </div>
 
     {notice && <p className="success" role="status">{notice}</p>}

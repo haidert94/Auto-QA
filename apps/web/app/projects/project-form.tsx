@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { DocumentPanel } from './document-panel';
 import { documentRequest, type PendingDocument } from './document-client';
 import { useState, type FormEvent } from 'react';
+import type { OrgRole } from '../autoqa-server';
 import { EnvironmentFields, ExecutionFields, RoleFields, TextField } from './onboarding-fields';
 import {
   apiProjects, environmentForm, environmentPayload, executionForm, lines, limitFields,
@@ -26,7 +27,7 @@ function formValues(project?: Project) {
   };
 }
 
-export function ProjectForm({ initial, onSaved }: { initial?: Project; onSaved?: (project: Project) => void }) {
+export function ProjectForm({ initial, onSaved, role }: { initial?: Project; onSaved?: (project: Project) => void; role?: OrgRole }) {
   const router = useRouter();
   const [saved, setSaved] = useState(initial);
   const [form, setForm] = useState(() => formValues(initial));
@@ -181,6 +182,7 @@ export function ProjectForm({ initial, onSaved }: { initial?: Project; onSaved?:
             pending={pending}
             setPending={setPending}
             upload={() => { if (saved) void uploadPending(saved.id); }}
+            role={role}
           />
 
 

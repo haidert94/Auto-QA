@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 
 export type ScenarioStep = { ordinal: number; action: string; data?: string | null; expected?: string | null };
 
@@ -32,14 +34,16 @@ export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Da
   return 'Dado';
 }
 
-export function ScenarioCard({ projectId, scenario, onChange, initialEditing = false, onEditComplete }: {
+export function ScenarioCard({ projectId, scenario, onChange, initialEditing = false, onEditComplete, role }: {
   projectId: string;
   scenario: ScenarioListItem;
   onChange: (updated: ScenarioListItem) => void;
   initialEditing?: boolean;
   onEditComplete?: () => void;
+  role?: OrgRole;
 }) {
-  const [editing, setEditing] = useState(initialEditing);
+  const canEdit = can(role, 'scenario.update');
+  const [editing, setEditing] = useState(initialEditing && canEdit);
   const [title, setTitle] = useState(scenario.title);
   const [expectedResult, setExpectedResult] = useState(scenario.expectedResult ?? '');
   const [tags, setTags] = useState<string[]>(scenario.tags ?? []);
@@ -147,7 +151,7 @@ export function ScenarioCard({ projectId, scenario, onChange, initialEditing = f
               {scenario._count && scenario._count.results > 0 && <> · <small>{scenario._count.results} resultado(s)</small></>}
             </p>
           </div>
-          <button type="button" className="secondary" onClick={() => setEditing(true)}>Editar</button>
+          {canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}>Editar</button>}
         </header>
 
         {scenario.tags && scenario.tags.length > 0 && (

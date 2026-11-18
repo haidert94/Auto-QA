@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
+import type { OrgRole } from '../../../autoqa-server';
+import { can } from '../../../permissions';
 
 type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null };
 
@@ -24,7 +26,10 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function MonitorsPanel({ projectId, environments }: { projectId: string; environments: EnvironmentOption[] }) {
+export function MonitorsPanel({ projectId, environments, role }: { projectId: string; environments: EnvironmentOption[]; role?: OrgRole }) {
+  const canCreate = can(role, 'monitor.create');
+  const canUpdate = can(role, 'monitor.update');
+  const canDelete = can(role, 'monitor.delete');
   const [monitors, setMonitors] = useState<Monitor[] | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
@@ -88,13 +93,13 @@ export function MonitorsPanel({ projectId, environments }: { projectId: string; 
       guarda cada resultado y envía correo a la lista de alerta cuando cambia de UP ↔ DOWN.
     </p>
 
-    <div className="actions">
+    {canCreate && <div className="actions">
       <button type="button" onClick={() => setShowForm(s => !s)}>
         {showForm ? 'Cancelar' : 'Nuevo monitor'}
       </button>
-    </div>
+    </div>}
 
-    {showForm && <form onSubmit={create} className="scenario-form">
+    {canCreate && showForm && <form onSubmit={create} className="scenario-form">
       <label>Nombre<input value={name} onChange={e => setName(e.target.value)} required maxLength={120}
         placeholder="Landing · staging"/></label>
       <label>Entorno<select value={envId} onChange={e => setEnvId(e.target.value)} required>
@@ -136,10 +141,10 @@ export function MonitorsPanel({ projectId, environments }: { projectId: string; 
               </p>}
               <div className="actions">
                 <Link href={`/projects/${projectId}/monitors/${m.id}`}>Ver historial →</Link>
-                <button type="button" className="secondary" onClick={() => toggle(m.id, m.active)}>
+                {canUpdate && <button type="button" className="secondary" onClick={() => toggle(m.id, m.active)}>
                   {m.active ? 'Pausar' : 'Reactivar'}
-                </button>
-                <button type="button" className="secondary" onClick={() => remove(m.id)}>Eliminar</button>
+                </button>}
+                {canDelete && <button type="button" className="secondary" onClick={() => remove(m.id)}>Eliminar</button>}
               </div>
             </li>;
           })}
