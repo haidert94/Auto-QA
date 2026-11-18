@@ -71,7 +71,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         reporte: <ExecutionReport key={project.id} project={project} />,
         calidad: <QualityPanel key={project.id} project={project} />,
         exploracion: showExploration
-          ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />
+          ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} project={project} />
           : undefined,
       }}
     </ProjectTabs>

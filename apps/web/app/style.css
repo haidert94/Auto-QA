@@ -213,16 +213,31 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .document-list > li { border-bottom: 1px solid var(--line); padding: 12px 0; overflow-wrap: anywhere; }
 .document-list p { margin: 6px 0; }
 
-.exploration-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 24px; margin-top: 16px; }
-.exploration-panel > h2 { margin-top: 0; }
-.exploration-form { display: grid; grid-template-columns: 1fr 2fr auto; gap: 12px; align-items: end; margin: 14px 0; }
-.exploration-form label { margin: 0; }
-.exploration-form button { margin: 0; }
-.exploration-list ul { list-style: none; padding: 0; margin: 0; }
-.exploration-list li a { display: grid; grid-template-columns: 110px 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); color: inherit; }
+.exploration-panel { display: grid; gap: 18px; margin-top: 16px; }
+.exploration-section { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 22px 24px; }
+.exploration-section > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.exploration-section > header h2 { font-size: 18px; margin: 0; letter-spacing: -.02em; }
+.exploration-section > header h2 span { font: 500 11px/1 var(--mono); color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-right: 6px; }
+.exploration-badge { font: 500 11px/1 var(--mono); color: var(--muted); letter-spacing: .06em; text-transform: uppercase; padding: 6px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--quiet); }
+.exploration-section__body { display: grid; gap: 14px; }
+.exploration-lede { margin: 0; max-width: 72ch; }
+.exploration-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(280px, 2fr) auto; gap: 14px; align-items: end; margin: 4px 0 0; }
+.exploration-form label { display: grid; gap: 6px; margin: 0; }
+.exploration-form button { margin: 0; display: inline-flex; align-items: center; gap: 8px; }
+.exploration-field-label { display: inline-flex; align-items: center; gap: 6px; font: 500 11px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.exploration-notice { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.exploration-notice.error { color: var(--danger); }
+.exploration-empty { display: grid; justify-items: center; gap: 10px; padding: 28px 12px; text-align: center; color: var(--muted); background: var(--quiet); border: 1px dashed var(--line); border-radius: 6px; }
+.exploration-empty svg { color: var(--muted); opacity: .75; }
+.exploration-empty p { margin: 0; max-width: 52ch; }
+.exploration-list { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.exploration-list li + li a { border-top: 1px solid var(--line); }
+.exploration-list li a { display: grid; grid-template-columns: 120px 1fr auto 18px; gap: 14px; align-items: center; padding: 14px 16px; color: inherit; text-decoration: none; transition: background-color .12s ease; }
 .exploration-list li a:hover { background: var(--quiet); text-decoration: none; }
-.exploration-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.exploration-meta { color: var(--muted); font-size: 13px; }
+.exploration-list li a:hover .exploration-chev { transform: translateX(2px); color: var(--ink); }
+.exploration-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px/1.3 var(--mono); color: var(--ink); }
+.exploration-meta { color: var(--muted); font: 400 12px/1.3 var(--mono); letter-spacing: .02em; }
+.exploration-chev { color: var(--muted); transition: transform .12s ease, color .12s ease; }
 
 .exploration-detail header { margin-bottom: 20px; }
 .exploration-meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 16px 0; }
@@ -510,8 +525,11 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .generation-counters .counter-head strong { font-size: 24px; color: var(--blue); font-weight: 650; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 640px) {
+  .exploration-section { padding: 18px 16px; }
+  .exploration-section > header { flex-wrap: wrap; row-gap: 6px; }
   .exploration-form { grid-template-columns: 1fr; }
-  .exploration-list li a { grid-template-columns: 1fr; }
+  .exploration-list li a { grid-template-columns: auto 1fr; row-gap: 6px; }
+  .exploration-list .exploration-meta, .exploration-list .exploration-chev { grid-column: 1 / -1; }
 }
 
 /* Listado de proyectos: tarjetas con estado, URL del entorno y acciones. */
