@@ -94,6 +94,14 @@
 .scenario-run-dialog .check input { flex-shrink: 0; margin-top: 3px; accent-color: var(--blue); }
 .scenario-queue-results { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; font-size: 12px; }
 .scenario-queue-results li { display: grid; gap: 5px; overflow-wrap: anywhere; }
+.environments-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); padding: 0; border-radius: 6px; color: var(--ink); background: var(--surface); }
+.environments-dialog::backdrop { background: #10142180; }
+.environments-dialog__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.environments-dialog__head h2 { margin: 0; font-size: 15px; letter-spacing: 0.02em; }
+.environments-dialog__head button { padding: 4px 10px; font-size: 16px; line-height: 1; }
+.environments-dialog__form { padding: 20px 24px 22px; }
+.environments-dialog__form .errors { margin-top: 14px; display: grid; gap: 6px; }
+.environments-dialog__form .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 1100px) {
   .scenario-toolbar__top { align-items: stretch; }
   .scenario-search { flex-basis: 100%; }

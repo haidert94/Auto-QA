@@ -6,3 +6,4 @@ dist
 *.log
 
 .autoqa/
+apps/web/tsconfig.tsbuildinfo

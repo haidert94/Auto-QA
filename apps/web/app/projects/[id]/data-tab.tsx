@@ -7,6 +7,7 @@ import { accessModes, environmentTypes, type Project } from '../onboarding';
 import { categoryLabels, documentRequest, fileSize, type SavedDocument } from '../document-client';
 import { ProjectForm } from '../project-form';
 import { IpaHero, type IpaSummary } from './ipa-hero';
+import { EnvironmentsDialog } from './environments-dialog';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
@@ -32,6 +33,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   const [reload, setReload] = useState(0);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
+  const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const environment = project.environments.find(env => env.id === environmentId) ?? project.environments[0];
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   return <div className="project-overview">
     <div className="project-overview__main">
       <DetailCard number="01" title="Parámetros del entorno y reglas de acceso" action={
-        canEdit ? <button type="button" className="detail-edit" onClick={() => edit()}><Pencil size={12} /> Modificar</button> : null
+        canEdit ? <button type="button" className="detail-edit" onClick={() => setEnvDialogOpen(true)}><Pencil size={12} /> Modificar</button> : null
       }>
         {project.environments.length > 1 && <label className="detail-label">Entorno seleccionado
           <select aria-label="Entorno seleccionado" value={environment?.id ?? ''} onChange={event => { setEnvironmentId(event.target.value); setCopied(false); setCopyError(''); }}>
@@ -175,5 +177,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
         <p>Estado del registro. No representa una ejecución de pruebas.</p>
       </section>
     </aside>
+    {envDialogOpen && <EnvironmentsDialog project={project} onClose={() => setEnvDialogOpen(false)}
+      onSaved={saved => { setProject(saved); setEnvDialogOpen(false); }} />}
   </div>;
 }
