@@ -4,7 +4,7 @@
 // de fallback: modelo primario → equivalente del otro proveedor →
 // rule-based.
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { CapabilityCode } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import type { AiModel, AiOperation, AiProvider, AiRequest, AiResponse } from './ai-provider';
@@ -85,35 +85,48 @@ export type AiRouterRequest = AiRequest & {
 @Injectable()
 export class AiRouter {
   private readonly fallback = new RuleBasedProvider();
+  // Logger temporal para diagnosticar por qué una operación cae al
+  // rule-based. Al cerrar la validación, se puede dejar a nivel debug
+  // en vez de log para no inflar los runtime logs.
+  private readonly logger = new Logger(AiRouter.name);
 
   constructor(private readonly prisma: PrismaService, private readonly budget: BudgetService) {}
 
   async dispatch(request: AiRouterRequest): Promise<AiResponse> {
     const capability = CAPABILITY_FOR_OPERATION[request.operation];
+    const tag = `${request.operation}:${request.projectId ?? 'no-project'}`;
     if (!request.organizationId) {
+      this.logger.log(`[router] ${tag} fallback: sin organizationId`);
       return this.fallback.complete(request);
     }
     if (capability && !(await this.planHasCapability(request.organizationId, capability))) {
+      this.logger.log(`[router] ${tag} fallback: plan no incluye ${capability}`);
       return this.fallback.complete(request);
     }
 
     const estimatedTokens = Math.ceil((request.prompt.length / 4) + (request.maxOutputTokens ?? 2048));
     try { await this.budget.ensureBudget(request.organizationId, estimatedTokens); }
-    catch { return this.fallback.complete(request); }
+    catch { this.logger.log(`[router] ${tag} fallback: budget agotado (~${estimatedTokens} tokens)`); return this.fallback.complete(request); }
 
     const primary = modelForOperation(request.operation);
     for (const provider of this.providerCascade(primary)) {
-      if (!provider.isConfigured) continue;
+      if (!provider.isConfigured) {
+        this.logger.log(`[router] ${tag} skip ${provider.model}: no configurado`);
+        continue;
+      }
       try {
         const response = await provider.complete(request);
+        this.logger.log(`[router] ${tag} OK via ${response.model} (in=${response.inputTokens} out=${response.outputTokens})`);
         await this.budget.recordConsumption(
           request.organizationId, request.projectId, request.operation, response, request.runKey,
         );
         return response;
-      } catch {
-        // Error de red o 5xx: probamos el siguiente proveedor sin cobrar.
+      } catch (error) {
+        const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        this.logger.warn(`[router] ${tag} ${provider.model} falló: ${detail.slice(0, 200)}`);
       }
     }
+    this.logger.log(`[router] ${tag} fallback final: ningún proveedor respondió`);
     return this.fallback.complete(request);
   }
 
