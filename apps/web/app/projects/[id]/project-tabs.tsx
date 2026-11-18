@@ -9,6 +9,8 @@ const ScenarioHeaderContext = createContext<{
 export function useScenarioHeader() { return useContext(ScenarioHeaderContext); }
 const AutomationHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
 export function useAutomationHeader() { return useContext(AutomationHeaderContext); }
+const ReportHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
+export function useReportHeader() { return useContext(ReportHeaderContext); }
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -50,6 +52,8 @@ export function ProjectTabs({
   const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount }), [headerElement]);
   const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
   const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion' }), [automationElement, active]);
+  const [reportElement, setReportElement] = useState<HTMLDivElement | null>(null);
+  const reportHeader = useMemo(() => ({ element: reportElement, active: active === 'reporte' }), [reportElement, active]);
 
   useEffect(() => {
     setActive(readHashTab(visible));
@@ -68,9 +72,11 @@ export function ProjectTabs({
   return (
     <ScenarioHeaderContext.Provider value={scenarioHeader}>
     <AutomationHeaderContext.Provider value={automationHeader}>
-      {active !== 'escenarios' && active !== 'automatizacion' && heading}
+    <ReportHeaderContext.Provider value={reportHeader}>
+      {active !== 'escenarios' && active !== 'automatizacion' && active !== 'reporte' && heading}
       <div ref={setHeaderElement} hidden={active !== 'escenarios'} className="scenario-heading-slot" />
       <div ref={setAutomationElement} hidden={active !== 'automatizacion'} className="automation-heading-slot" />
+      <div ref={setReportElement} hidden={active !== 'reporte'} className="report-heading-slot" />
       <nav className="project-tabs" aria-label="Secciones del proyecto">
         <ul role="tablist">
           {TABS.filter(t => t.id !== 'exploracion' || showExploration).map(tab => (
@@ -102,6 +108,7 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
+    </ReportHeaderContext.Provider>
     </AutomationHeaderContext.Provider>
     </ScenarioHeaderContext.Provider>
   );

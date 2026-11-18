@@ -67,7 +67,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         datos: <DataTab project={project} ipa={ipa} />,
         escenarios: <ScenariosPanel key={project.id} project={project} />,
         automatizacion: <AutomationPanel key={project.id} project={project} />,
-        reporte: <ExecutionReport projectId={project.id} />,
+        reporte: <ExecutionReport key={project.id} project={project} />,
         calidad: (
           <section className="panel">
             <h2>Calidad</h2>

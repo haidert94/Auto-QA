@@ -72,6 +72,7 @@ export class RunsService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, status: true, scenarioId: true, environmentId: true,
+        targetBrowser: true, targetDevice: true, targetProvider: true,
         startedAt: true, completedAt: true, errorCode: true, createdAt: true,
         scenario: { select: { id: true, title: true } },
         results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true } },

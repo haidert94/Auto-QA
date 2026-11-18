@@ -1,233 +1,152 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Activity, Clock, Download, HelpCircle, Play, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { Project } from '../onboarding';
+import type { ScenarioListItem } from './scenario-card';
+import { ProjectHeading } from './project-heading';
+import { useReportHeader } from './project-tabs';
+import { dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
+import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, type RunFilter } from './run-report-views';
 
-type ResultStatus = 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED';
-type RunStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
-
-type RunResult = {
-  id: string;
-  status: ResultStatus;
-  durationMs: number | null;
-  errorMessage: string | null;
-  evidenceKey: string | null;
-};
-
-type Run = {
-  id: string;
-  scenarioId: string;
-  environmentId: string | null;
-  status: RunStatus;
-  startedAt: string | null;
-  completedAt: string | null;
-  errorCode: string | null;
-  createdAt: string;
-  scenario: { id: string; title: string };
-  results: RunResult[];
-};
-
-const resultBadge: Record<ResultStatus, string> = {
-  PASSED: 'badge-completed', FAILED: 'badge-failed', BLOCKED: 'badge-canceled', SKIPPED: 'badge-queued',
-};
-
-const resultLabel: Record<ResultStatus, string> = {
-  PASSED: 'Pasó', FAILED: 'Falló', BLOCKED: 'Bloqueada', SKIPPED: 'Omitida',
-};
-
-const runStatusLabel: Record<RunStatus, string> = {
-  QUEUED: 'En cola', RUNNING: 'En curso', COMPLETED: 'Completada', FAILED: 'Falló', CANCELED: 'Cancelada',
-};
-
-function formatDate(iso: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
-}
-
-function formatDuration(ms: number | null) {
-  if (ms === null) return '—';
-  if (ms < 1000) return `${ms} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
-}
-
-function totalDuration(run: Run): number | null {
-  const sum = run.results.reduce((acc, r) => acc + (r.durationMs ?? 0), 0);
-  return sum > 0 ? sum : null;
-}
-
-export function ExecutionReport({ projectId }: { projectId: string }) {
-  const [runs, setRuns] = useState<Run[] | null>(null);
+export function ExecutionReport({ project }: { project: Project }) {
+  const header = useReportHeader();
+  const [runs, setRuns] = useState<ReportRun[] | null>(null);
+  const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [error, setError] = useState('');
+  const [tagsWarning, setTagsWarning] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+  const [scope, setScope] = useState('all');
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<RunFilter>('all');
+  const [tag, setTag] = useState('');
+  const [view, setView] = useState<'table' | 'timeline' | 'matrix'>('table');
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const response = await fetch(`/api/projects/${projectId}/runs`, { credentials: 'same-origin' });
-        if (!active) return;
-        if (!response.ok) {
-          if (response.status === 403) {
-            setError('Tu plan actual no incluye ejecuciones de navegador.');
-          } else {
-            setError('No se pudo cargar el historial de ejecuciones.');
-          }
-          setRuns([]);
-          return;
-        }
-        setRuns(await response.json());
-      } catch {
-        if (active) {
-          setError('No se pudo comunicar con la API.');
-          setRuns([]);
-        }
+    if (!header?.active) return;
+    const controller = new AbortController();
+    const options = { cache: 'no-store' as const, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) };
+    setLoading(true); setError(''); setTagsWarning('');
+    Promise.allSettled([
+      fetch(`/api/projects/${project.id}/runs`, options), fetch(`/api/projects/${project.id}/scenarios`, options),
+    ]).then(async ([history, catalog]) => {
+      if (history.status !== 'fulfilled') throw new Error('No se pudo consultar el historial de ejecuciones.');
+      if (!history.value.ok) throw new Error(history.value.status === 403
+        ? 'No tienes permiso para consultar este historial o tu plan no lo permite.' : 'No se pudo consultar el historial de ejecuciones.');
+      const data: ReportRun[] = await history.value.json();
+      if (controller.signal.aborted) return;
+      setRuns([...data].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
+      setScope(previous => previous === 'all' || data.some(run => run.id === previous) ? previous : 'all');
+      if (catalog.status === 'fulfilled' && catalog.value.ok) {
+        const list: ScenarioListItem[] = await catalog.value.json();
+        if (!controller.signal.aborted) setScenarios(list);
+      } else {
+        setScenarios(null); setTagsWarning('Las etiquetas actuales no están disponibles. El historial sigue visible.');
       }
-    })();
-    return () => { active = false; };
-  }, [projectId]);
+    }).catch((reason: unknown) => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No se pudo cargar el reporte.');
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [project.id, header?.active, refresh]);
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'k' || !search.current?.getClientRects().length) return;
+      event.preventDefault(); search.current.focus();
+    }
+    document.addEventListener('keydown', shortcut);
+    return () => document.removeEventListener('keydown', shortcut);
+  }, []);
 
-  if (runs === null) {
-    return <section className="panel"><p className="muted">Cargando reporte…</p></section>;
-  }
+  const scoped = (runs ?? []).filter(run => scope === 'all' || run.id === scope);
+  const stats = reportStatistics(scoped);
+  const tags = new Map((scenarios ?? []).map(scenario => [scenario.id, scenario.tags ?? []]));
+  const availableTags = [...new Set(scoped.flatMap(run => run.scenarioId ? tags.get(run.scenarioId) ?? [] : []))].sort();
+  const normalized = query.trim().toLocaleLowerCase('es');
+  const visible = scoped.filter(run => (filter === 'all' || category(run) === filter)
+    && (!tag || (run.scenarioId && tags.get(run.scenarioId)?.includes(tag)))
+    && (!normalized || [runTitle(run), run.id, run.scenarioId ?? '', run.errorCode ?? '', run.targetBrowser ?? '',
+      ...(run.results.map(result => result.errorMessage ?? '')), ...(run.scenarioId ? tags.get(run.scenarioId) ?? [] : [])]
+      .join(' ').toLocaleLowerCase('es').includes(normalized)));
+  const selectedRun = scope === 'all' ? null : scoped[0];
+  const selectedState = selectedRun ? outcome(selectedRun) : null;
+  const detail = (runs ?? []).find(run => run.id === detailId);
+  const filters = Object.keys(filterLabels) as RunFilter[];
+  const downloadDisabled = loading || !!error || !visible.length;
 
-  if (error && runs.length === 0) {
-    return (
-      <section className="panel">
-        <h2>Reporte de ejecución</h2>
-        <p className="error" role="alert">{error}</p>
-      </section>
-    );
-  }
-
-  if (runs.length === 0) {
-    return (
-      <section className="panel">
-        <h2>Reporte de ejecución</h2>
-        <p className="muted">
-          Todavía no se ha ejecutado ningún escenario en este proyecto. Al lanzar un run desde la pestaña
-          Escenarios, aparecerán aquí sus resultados con evidencias (capturas, logs, trazas).
-        </p>
-      </section>
-    );
-  }
-
-  const allResults = runs.flatMap(r => r.results);
-  const totals = {
-    runs: runs.length,
-    scenarios: new Set(runs.map(r => r.scenarioId)).size,
-    passed: allResults.filter(r => r.status === 'PASSED').length,
-    failed: allResults.filter(r => r.status === 'FAILED').length,
-    blocked: allResults.filter(r => r.status === 'BLOCKED').length,
-    skipped: allResults.filter(r => r.status === 'SKIPPED').length,
-  };
-  const passRate = allResults.length > 0 ? Math.round(100 * totals.passed / allResults.length) : 0;
-
-  // Agrupa por escenario, Allure-style, para que se vea la historia de cada
-  // caso de prueba en una sola columna.
-  const byScenario = new Map<string, { title: string; runs: Run[] }>();
-  for (const run of runs) {
-    const key = run.scenarioId;
-    const entry = byScenario.get(key) ?? { title: run.scenario.title, runs: [] };
-    entry.runs.push(run);
-    byScenario.set(key, entry);
-  }
-
-  return (
-    <>
-      <section className="panel">
-        <header className="projects-panel__head">
-          <div>
-            <h2 style={{ margin: 0 }}>Reporte de ejecución</h2>
-            <p className="muted" style={{ margin: 0 }}>
-              Últimos {totals.runs} runs sobre {totals.scenarios} escenario{totals.scenarios === 1 ? '' : 's'}.
-              Tasa de aprobación: <strong>{passRate}%</strong>.
-            </p>
-          </div>
-          <Link href={`/projects/${projectId}/report`} className="button-like outline">
-            Reporte consolidado →
-          </Link>
-        </header>
-
-        <div className="report-totals">
-          <div className="report-total">
-            <span className="report-total__value">{totals.passed}</span>
-            <span className="report-total__label">Pasaron</span>
-          </div>
-          <div className="report-total">
-            <span className="report-total__value">{totals.failed}</span>
-            <span className="report-total__label">Fallaron</span>
-          </div>
-          <div className="report-total">
-            <span className="report-total__value">{totals.blocked}</span>
-            <span className="report-total__label">Bloqueados</span>
-          </div>
-          <div className="report-total">
-            <span className="report-total__value">{totals.skipped}</span>
-            <span className="report-total__label">Omitidos</span>
-          </div>
+  return <section className="run-report" aria-label="Reporte de ejecuciones">
+    {header?.element && createPortal(<ProjectHeading project={project}
+      summary="Historial de ejecuciones, resultados y trazas registradas por escenario. Consulta los datos disponibles y prepara una nueva ejecución."
+      actions={<><details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
+        <div><button type="button" disabled={downloadDisabled} onClick={event => { downloadRunReport(project.id, visible, 'xml'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Exportar JUnit XML</button>
+          <button type="button" disabled={downloadDisabled} onClick={event => { downloadRunReport(project.id, visible, 'json'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Exportar JSON</button>
+          <small>Exporta las {visible.length} ejecuciones visibles.</small></div></details>
+        <a className="button-like" href="#automatizacion"><Play size={14} />Nueva ejecución →</a></>} />, header.element)}
+    <div className="run-report-selection">
+      <label>Ejecución<select aria-label="Ejecución del reporte" value={scope} disabled={loading || !!error} onChange={event => { setScope(event.target.value); setDetailId(null); setTag(''); }}>
+        <option value="all">Historial disponible ({runs?.length ?? 0})</option>
+        {(runs ?? []).map(run => <option value={run.id} key={run.id}>{run.id.slice(0, 8)} · {runTitle(run)} · {dateText(run.createdAt)}</option>)}
+      </select></label>
+      <p>{selectedRun ? dateText(selectedRun.createdAt) : 'Últimas ejecuciones devueltas por la API (máximo 100).'}<small>{scoped.length} ejecuciones · {stats.results} resultados registrados</small></p>
+      <span className={`run-report-state run-report-state--${selectedState?.tone ?? 'unknown'}`}>{selectedState?.label ?? 'Historial del proyecto'}</span>
+      <button className="run-report-refresh" type="button" aria-label="Actualizar reporte" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} /></button>
+    </div>
+    {loading ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
+      : error ? <div className="run-report-message" role="alert"><p className="error">{error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar reporte</button></div>
+      : <>
+        <div className="run-report-metrics">
+          <section aria-label="Tasa de éxito"><header><h2>Tasa de éxito</h2><Activity size={16} /></header>
+            <p className="run-report-metric-value"><strong>{stats.rate === null ? 'Sin resultados' : `${Number(stats.rate.toFixed(1))}%`}</strong><span>{stats.counts.PASSED}/{stats.results} resultados aprobados</span></p>
+            <div className="run-report-success-bar" role="img" aria-label={`${stats.counts.PASSED} aprobados, ${stats.counts.FAILED} fallidos, ${stats.counts.BLOCKED} bloqueados y ${stats.counts.SKIPPED} omitidos`}>
+              {(['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED'] as const).map(status => <span key={status} className={`run-bar-${status.toLowerCase()}`} style={{ width: `${stats.results ? 100 * stats.counts[status] / stats.results : 0}%` }} />)}
+            </div><small>{stats.counts.FAILED} fallidos · {stats.counts.BLOCKED} bloqueados · {stats.counts.SKIPPED} omitidos</small>
+          </section>
+          <section aria-label="Tiempo registrado"><header><h2>Tiempo registrado</h2><Clock size={16} /></header>
+            <p className="run-report-metric-value"><strong>{durationText(stats.duration)}</strong></p>
+            <p>Suma de duraciones de resultados.</p><small>{stats.timed}/{stats.results} resultados con duración registrada. No equivale al tiempo de pared de una suite.</small>
+          </section>
+          <section aria-label="Flakiness y reintentos"><header><h2>Flakiness y reintentos</h2><HelpCircle size={16} /></header>
+            <p className="run-report-metric-value"><strong>No disponible</strong></p><p>No hay medición registrada.</p><small>No se infiere estabilidad ni número de reintentos a partir de este historial.</small>
+          </section>
+          <section aria-label="Cobertura de aserciones"><header><h2>Cobertura de aserciones</h2><ShieldCheck size={16} /></header>
+            <p className="run-report-metric-value"><strong>No disponible</strong></p><p>Sin contador de aserciones.</p><small>La cantidad de resultados no demuestra cobertura de requisitos, API o DOM.</small>
+          </section>
         </div>
-      </section>
-
-      {Array.from(byScenario.entries()).map(([scenarioId, group]) => (
-        <section className="panel" key={scenarioId}>
-          <header className="projects-panel__head">
-            <h3 style={{ margin: 0 }}>
-              <Link href={`/projects/${projectId}/scenarios/${scenarioId}`}>{group.title}</Link>
-            </h3>
-            <span className="muted">{group.runs.length} ejecucion{group.runs.length === 1 ? '' : 'es'}</span>
-          </header>
-
-          <ul className="run-list">
-            {group.runs.map(run => {
-              const duration = totalDuration(run);
-              const failed = run.results.filter(r => r.status === 'FAILED');
-              return (
-                <li key={run.id} className="run-item">
-                  <div className="run-item__head">
-                    <span className={`badge ${run.status === 'COMPLETED' ? 'badge-completed'
-                      : run.status === 'FAILED' ? 'badge-failed'
-                      : run.status === 'RUNNING' ? 'badge-queued' : 'badge-queued'}`}>
-                      {runStatusLabel[run.status]}
-                    </span>
-                    <span className="muted"><small>{formatDate(run.createdAt)}</small></span>
-                    <span className="muted"><small>· duración {formatDuration(duration)}</small></span>
-                    {run.errorCode && <span className="error"><small>· {run.errorCode}</small></span>}
-                  </div>
-
-                  {run.results.length > 0 && (
-                    <div className="run-item__results">
-                      {run.results.map(r => (
-                        <span key={r.id} className={`badge ${resultBadge[r.status]}`} title={r.errorMessage ?? undefined}>
-                          {resultLabel[r.status]} · {formatDuration(r.durationMs)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {failed.length > 0 && failed[0].errorMessage && (
-                    <details className="run-item__error">
-                      <summary><small>Ver mensaje de error ({failed.length})</small></summary>
-                      <pre>{failed[0].errorMessage}</pre>
-                    </details>
-                  )}
-
-                  {run.results.some(r => r.evidenceKey) && (
-                    <p className="run-item__evidence">
-                      <small className="muted">Evidencias:</small>{' '}
-                      {run.results.filter(r => r.evidenceKey).map((r, i) => (
-                        <Link key={r.id}
-                          href={`/api/projects/${projectId}/runs/${run.id}/trace/${r.id}`}
-                          target="_blank" rel="noreferrer">
-                          <small>traza #{i + 1} ↗</small>
-                        </Link>
-                      )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ' · ', el], [])}
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+        <section className="run-report-filters" aria-label="Filtros del reporte">
+          <div><label className="run-report-search"><Search size={14} /><input ref={search} type="search" aria-label="Buscar ejecuciones" placeholder="Filtrar por escenario, ID, etiqueta o error…" value={query} onChange={event => setQuery(event.target.value)} /><kbd>Ctrl K</kbd></label>
+            <div className="run-report-views" role="group" aria-label="Vista del reporte"><span>Vista:</span>{([['table', 'Ejecuciones'], ['timeline', 'Cronología'], ['matrix', 'Matriz']] as const).map(([id, label]) =>
+              <button type="button" key={id} aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}</div></div>
+          <div className="run-report-filter-options" role="group" aria-label="Estado de ejecución">{filters.map(value => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+            {filterLabels[value]} ({value === 'all' ? scoped.length : scoped.filter(run => category(run) === value).length})
+          </button>)}</div>
+          {availableTags.length > 0 && <div className="run-report-filter-options run-report-tag-options" role="group" aria-label="Etiqueta actual del escenario"><button type="button" aria-pressed={!tag} onClick={() => setTag('')}>Todas las etiquetas</button>
+            {availableTags.map(value => <button type="button" key={value} aria-pressed={tag === value} onClick={() => setTag(tag === value ? '' : value)}>{value}</button>)}</div>}
+          <p role="status">{visible.length} visibles de {scoped.length} ejecuciones del ámbito seleccionado.</p>
         </section>
-      ))}
-    </>
-  );
+        {tagsWarning && <p className="run-report-warning">{tagsWarning}</p>}
+        <div className="run-report-content"><div className="run-report-main">
+          {!visible.length ? <div className="run-report-empty"><Activity size={28} /><h3>{runs?.length ? 'No hay ejecuciones que coincidan' : 'Aún no hay ejecuciones registradas'}</h3>
+            <p>{runs?.length ? 'Ajusta los filtros o selecciona otra ejecución.' : 'Los resultados aparecerán después de ejecutar escenarios autorizados.'}</p>
+            {runs?.length ? <button type="button" className="secondary" onClick={() => { setQuery(''); setFilter('all'); setTag(''); setScope('all'); }}>Limpiar filtros del reporte</button> : <a href="#automatizacion">Preparar una ejecución →</a>}</div>
+            : view === 'timeline' ? <RunTimeline runs={visible} onDetail={setDetailId} />
+            : view === 'matrix' ? <RunMatrix runs={visible} />
+            : <RunsTable projectId={project.id} runs={visible} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
+          <p className="run-report-data-note">Cada fila representa una ejecución registrada. Las etiquetas son las actuales del escenario; no se asumen etiquetas históricas.</p>
+          <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>
+        </div><aside className="run-report-aside" aria-label="Historial y detalle de ejecuciones">
+          {detail && <RunDetail run={detail} projectId={project.id} onClose={() => setDetailId(null)} />}
+          <section className="run-report-history"><header><h2>Historial de últimos runs</h2><span>{Math.min(8, runs?.length ?? 0)} de {runs?.length ?? 0}</span></header>
+            {!runs?.length ? <p>No hay historial disponible.</p> : <ol>{runs.slice(0, 8).map(run => { const status = outcome(run); return <li key={run.id}>
+              <button type="button" aria-pressed={scope === run.id} aria-label={`Seleccionar ejecución ${run.id.slice(0, 8)}`} onClick={() => { setScope(run.id); setDetailId(run.id); setFilter('all'); setTag(''); setQuery(''); }}>
+                <span><code>{run.id.slice(0, 8)}</code><span className={`run-report-state run-report-state--${status.tone}`}>{status.label}</span></span>
+                <strong>{runTitle(run)}</strong><small>{dateText(run.createdAt)} · {durationText(resultDuration(run))}</small>
+              </button></li>; })}</ol>}
+          </section>
+        </aside></div>
+      </>}
+  </section>;
 }

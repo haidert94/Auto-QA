@@ -51,6 +51,8 @@ let scenariosFail = false;
 let historyFail = false;
 let specFailure = false;
 let malformedSpec = false;
+let reportMode = false;
+let reportForbidden = false;
 const scenarioA = '31000001-0000-4000-8000-000000000001';
 const scenarioB = '31000002-0000-4000-8000-000000000002';
 const requirement = { id: '40000000-0000-4000-8000-000000000001', title: 'Checkout sandbox', externalKey: 'RF-01' };
@@ -70,6 +72,17 @@ let scenarioRuns = scenarios.slice(0, 2).map((scenario, i) => ({
   results: [{ id: String(i), status: i ? 'FAILED' : 'PASSED', durationMs: i ? 3200 : 1400, errorMessage: null, evidenceKey: null }],
 }));
 const queuedRequests = [];
+const reportError = 'Timeout <checkout> & "callback" </failure><evil/>\u0000';
+const reportRuns = ['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED', 'QUEUED', 'RUNNING', 'NO_RESULT'].map((status, i) => ({
+  id: `6100000${i + 1}-0000-4000-8000-000000000001`, scenarioId: i % 2 ? scenarioB : scenarioA,
+  scenario: { id: i % 2 ? scenarioB : scenarioA, title: i % 2 ? 'Callback rechazado' : 'Checkout confirmado' },
+  environmentId: environment.id, status: status === 'QUEUED' || status === 'RUNNING' ? status : status === 'NO_RESULT' ? 'FAILED' : 'COMPLETED',
+  createdAt: `2026-11-18T12:0${i}:00Z`, startedAt: i < 2 ? `2026-11-18T12:0${i}:00Z` : null,
+  completedAt: i < 2 ? `2026-11-18T12:0${i}:02Z` : null, errorCode: status === 'NO_RESULT' ? 'ENV_UNAVAILABLE' : null,
+  targetBrowser: i === 0 ? 'CHROMIUM' : i === 1 ? 'FIREFOX' : null, targetDevice: null, targetProvider: 'LOCAL',
+  results: i < 4 ? [{ id: `6200000${i + 1}-0000-4000-8000-000000000001`, status, durationMs: [1400, 3200, null, 0][i],
+    errorMessage: status === 'FAILED' ? reportError : null, evidenceKey: i === 0 ? 'private-internal-key' : null }] : [],
+}));
 
 function fixtureSpec(scenario) {
   const steps = (scenario.steps ?? []).flatMap(step => {
@@ -128,7 +141,12 @@ const api = createServer(async (request, response) => {
       scenarioRuns.push(run); return send(run, 201);
     }
   }
-  if (path === base + '/runs') return historyFail ? send({ message: 'Historial no disponible' }, 503) : send(scenarioRuns);
+  if (path === base + '/runs') return reportForbidden ? send({ message: 'Sin permisos' }, 403) : historyFail ? send({ message: 'Historial no disponible' }, 503) : send(reportMode ? reportRuns : scenarioRuns);
+  if (path === `${base}/runs/${reportRuns[0].id}/trace/${reportRuns[0].results[0].id}`) {
+    response.setHeader('Content-Type', 'application/zip'); response.setHeader('Content-Disposition', 'attachment; filename="trace.zip"');
+    const archive = new JSZip(); archive.file('trace.fixture.json', '{"synthetic":true}');
+    return response.end(await archive.generateAsync({ type: 'nodebuffer' }));
+  }
   if (path === base && request.method === 'PUT') {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -441,6 +459,103 @@ async function verifyAutomation(page, screenshots) {
   console.log('PASS automatización: contrato filename/code, visor seguro, archivos/teclado, copiar, pantalla completa, ZIP con CRC/rutas/contenido, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
 }
 
+async function verifyRunReport(page, screenshots) {
+  reportMode = true;
+  const initialQueues = queuedRequests.length;
+  await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
+  const section = page.getByRole('region', { name: 'Reporte de ejecuciones', exact: true });
+  const table = section.getByRole('table', { name: 'Ejecuciones registradas', exact: true });
+  await expect(table.getByRole('row')).toHaveCount(8);
+  await expect(section.getByRole('region', { name: 'Tasa de éxito', exact: true }).getByText('25%', { exact: true })).toBeVisible();
+  await expect(section.getByRole('region', { name: 'Tiempo registrado', exact: true }).getByText('4.6 s', { exact: true })).toBeVisible();
+  await expect(section.getByRole('region', { name: 'Flakiness y reintentos', exact: true }).getByText('No disponible', { exact: true })).toBeVisible();
+  await expect(section.getByRole('region', { name: 'Cobertura de aserciones', exact: true }).getByText('No disponible', { exact: true })).toBeVisible();
+  await expect(table.getByText('CHROMIUM', { exact: true })).toBeVisible();
+  const evidence = table.getByRole('link', { name: /Descargar traza/ });
+  const traceResponse = await page.request.get(new URL(await evidence.getAttribute('href'), page.url()).href);
+  assert.equal(traceResponse.status(), 200);
+  const traceZip = await JSZip.loadAsync(await traceResponse.body(), { checkCRC32: true });
+  assert.ok(traceZip.file('trace.fixture.json'));
+  assert.ok(!(await section.textContent()).includes('private-internal-key'));
+  await page.setViewportSize({ width: 1170, height: 1000 });
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: join(screenshots, 'project-runs-desktop.png'), fullPage: true, animations: 'disabled' });
+  const search = section.getByRole('searchbox', { name: 'Buscar ejecuciones' });
+  await page.keyboard.press('Control+k'); await expect(search).toBeFocused();
+  await search.fill('callback'); await expect(table.getByRole('row')).toHaveCount(4);
+  await search.fill('');
+  const filter = section.getByRole('group', { name: 'Estado de ejecución', exact: true });
+  await filter.getByRole('button', { name: 'Fallidos (2)', exact: true }).click();
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await filter.getByRole('button', { name: 'Todos (7)', exact: true }).click();
+  await page.getByLabel('Ejecución del reporte', { exact: true }).selectOption(reportRuns[3].id);
+  await expect(section.getByRole('region', { name: 'Tiempo registrado', exact: true }).getByText('0 ms', { exact: true })).toBeVisible();
+  await page.getByLabel('Ejecución del reporte', { exact: true }).selectOption(reportRuns[4].id);
+  await expect(section.getByRole('region', { name: 'Tasa de éxito', exact: true }).getByText('Sin resultados', { exact: true })).toBeVisible();
+  await page.getByLabel('Ejecución del reporte', { exact: true }).selectOption('all');
+  await table.getByRole('row').filter({ hasText: reportRuns[1].id.slice(0, 8) }).getByRole('button', { name: 'Callback rechazado', exact: true }).click();
+  const detail = section.getByRole('region', { name: 'Detalle de ejecución', exact: true });
+  await detail.getByText('Ver mensaje de error', { exact: true }).click();
+  await expect(detail.locator('pre')).toHaveText(reportError);
+  await expect(detail.locator('evil')).toHaveCount(0);
+  const views = section.getByRole('group', { name: 'Vista del reporte', exact: true });
+  await views.getByRole('button', { name: 'Cronología', exact: true }).click();
+  await expect(section.getByRole('region', { name: 'Cronología de ejecuciones', exact: true }).getByText('2 de 7 ejecuciones visibles tienen inicio y fin registrados.', { exact: true })).toBeVisible();
+  await views.getByRole('button', { name: 'Matriz', exact: true }).click();
+  await expect(section.getByRole('table', { name: 'Matriz de estados por escenario', exact: true }).getByRole('row')).toHaveCount(3);
+  await views.getByRole('button', { name: 'Ejecuciones', exact: true }).click();
+  await page.getByText('Exportar resultados', { exact: true }).click();
+  const xmlDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar JUnit XML', exact: true }).click();
+  const xmlFile = await xmlDownload;
+  assert.equal(xmlFile.suggestedFilename(), 'autoqa-runs-junit.xml');
+  const xmlText = await readFile(await xmlFile.path(), 'utf8');
+  const xmlResult = await page.evaluate(text => {
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    return { invalid: doc.querySelectorAll('parsererror').length, tests: doc.documentElement.getAttribute('tests'), failures: doc.documentElement.getAttribute('failures'),
+      skipped: doc.documentElement.getAttribute('skipped'), errors: doc.documentElement.getAttribute('errors'), cases: doc.querySelectorAll('testcase').length, evil: doc.querySelectorAll('evil').length };
+  }, xmlText);
+  assert.deepEqual(xmlResult, { invalid: 0, tests: '7', failures: '1', skipped: '4', errors: '1', cases: 7, evil: 0 });
+  await page.getByText('Exportar resultados', { exact: true }).click();
+  const jsonDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar JSON', exact: true }).click();
+  const jsonFile = await jsonDownload;
+  const jsonText = await readFile(await jsonFile.path(), 'utf8'); const json = JSON.parse(jsonText);
+  assert.equal(json.runs.length, 7); assert.ok(!jsonText.includes('private-internal-key'));
+  for (const width of [1920, 1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    const before = await page.locator('.app-shell-body').boundingBox();
+    await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
+    await expect(table.getByRole('row')).toHaveCount(8);
+    const after = await page.locator('.app-shell-body').boundingBox();
+    assert.equal(before.x, after.x); assert.equal(before.width, after.width);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Reporte sin desbordamiento a ${width}px.`);
+    if (width === 390) await page.screenshot({ path: join(screenshots, 'project-runs-mobile.png'), fullPage: true, animations: 'disabled' });
+  }
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('link', { name: 'Nueva ejecución →', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Automatización', exact: true })).toHaveAttribute('aria-selected', 'true');
+  assert.equal(queuedRequests.length, initialQueues, 'Nueva ejecución navega al flujo de preparación, sin lanzar trabajos.');
+  await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
+  historyFail = true;
+  await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
+  await expect(section.getByText('No se pudo consultar el historial de ejecuciones.', { exact: true })).toBeVisible();
+  historyFail = false;
+  await section.getByRole('button', { name: 'Reintentar reporte', exact: true }).click();
+  await expect(table.getByRole('row')).toHaveCount(8);
+  reportForbidden = true;
+  await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
+  await expect(section.getByText('No tienes permiso para consultar este historial o tu plan no lo permite.', { exact: true })).toBeVisible();
+  reportForbidden = false;
+  const saved = reportRuns.splice(0);
+  await section.getByRole('button', { name: 'Reintentar reporte', exact: true }).click();
+  await expect(section.getByRole('heading', { name: 'Aún no hay ejecuciones registradas', exact: true })).toBeVisible();
+  reportRuns.push(...saved); reportMode = false;
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  console.log('PASS reporte: métricas y denominadores, duración cero/ausente, selector/filtros, error seguro, trazas autorizadas, JUnit XML válido, JSON sin claves privadas, matriz/cronología, móvil, permisos y reintentos. API simulada.');
+}
+
 async function run() {
   const apiPort = await listen(api);
   const reservation = createServer();
@@ -568,6 +683,7 @@ async function run() {
     await page.getByRole('button', { name: /Volver a la vista de resumen/ }).click();
     await verifyScenarios(page, screenshots);
     await verifyAutomation(page, screenshots);
+    await verifyRunReport(page, screenshots);
     docsFail = true;
     await page.reload();
     await page.getByText('Documentos temporalmente no disponibles.', { exact: true }).waitFor();
