@@ -14,7 +14,7 @@ type Member = {
   projects: ProjectRef[];
 };
 type Invite = {
-  id: string; email: string; role: OrgRole; createdAt: string; expiresAt: string;
+  id: string; email: string; name: string | null; role: OrgRole; createdAt: string; expiresAt: string;
   invitedBy: { name: string | null; email: string };
 };
 
@@ -28,6 +28,7 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
   const router = useRouter();
   const [data, setData] = useState(initial);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('VIEWER');
   const [inviteProjectIds, setInviteProjectIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -70,11 +71,19 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
   async function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const projectIds = needsInviteProjects ? [...inviteProjectIds] : [];
+    const payload: { email: string; name?: string; role: OrgRole; projectIds: string[] } = {
+      email: inviteEmail.trim(),
+      role: inviteRole,
+      projectIds,
+    };
+    const name = inviteName.trim();
+    if (name) payload.name = name;
     await run(() => fetch('/api/commerce/members/invite', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole, projectIds }),
+      body: JSON.stringify(payload),
     }), 'Invitación enviada.');
     setInviteEmail('');
+    setInviteName('');
     setInviteProjectIds(new Set());
   }
 
@@ -106,6 +115,10 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
     {canInvite && <section className="members-section">
       <h2>Invitar</h2>
       <form onSubmit={invite} className="members-invite">
+        <label>Nombre
+          <input type="text" value={inviteName} onChange={e => setInviteName(e.target.value)}
+            maxLength={100} placeholder="Ej. Sara Monroy"/>
+        </label>
         <label>Correo
           <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required maxLength={254}/>
         </label>
@@ -207,9 +220,10 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
     {data.invites.length > 0 && <section className="members-section">
       <h2>Invitaciones pendientes ({data.invites.length})</h2>
       <table className="members-table">
-        <thead><tr><th>Correo</th><th>Rol</th><th>Invitó</th><th>Vence</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Invitó</th><th>Vence</th><th></th></tr></thead>
         <tbody>
           {data.invites.map(invite => <tr key={invite.id}>
+            <td>{invite.name ?? <span className="muted">—</span>}</td>
             <td>{invite.email}</td>
             <td><span className={`badge badge-role-${invite.role.toLowerCase()}`}>{invite.role}</span></td>
             <td className="muted">{invite.invitedBy.name ?? invite.invitedBy.email}</td>

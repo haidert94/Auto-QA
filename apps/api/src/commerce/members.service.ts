@@ -22,11 +22,19 @@ export class MembersService {
         select: { userId: true, role: true, joinedAt: true,
           user: { select: { name: true, email: true } } },
       }),
-      this.db.organizationInvite.findMany({
+      // Cast transitorio: la columna "name" del invite fue añadida después
+      // de la última regeneración del cliente Prisma en algunos entornos.
+      (this.db.organizationInvite.findMany as unknown as (args: unknown) => Promise<Array<{
+        id: string; email: string; name: string | null; role: OrgRole;
+        createdAt: Date; expiresAt: Date;
+        invitedBy: { name: string | null; email: string };
+      }>>)({
         where: { organizationId, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: 'desc' },
-        select: { id: true, email: true, role: true, createdAt: true, expiresAt: true,
-          invitedBy: { select: { name: true, email: true } } },
+        select: {
+          id: true, email: true, name: true, role: true, createdAt: true, expiresAt: true,
+          invitedBy: { select: { name: true, email: true } },
+        },
       }),
       // Asignaciones por proyecto para todos los miembros, limitadas a los
       // proyectos de ESTA organización (filtro de seguridad: evita leaks si
@@ -98,9 +106,10 @@ export class MembersService {
 
   // --- Invitaciones -------------------------------------------------------
 
-  async invite(workspace: Workspace, dto: { email: string; role: OrgRole; projectIds?: string[] }, actorIp: string | null) {
+  async invite(workspace: Workspace, dto: { email: string; name?: string; role: OrgRole; projectIds?: string[] }, actorIp: string | null) {
     const organizationId = this.requireOrg(workspace);
     this.requireRole(workspace, ['ADMIN']);
+    const name = dto.name?.trim() || null;
     // Pre-asignación: solo para EDITOR y VIEWER. Para OWNER/ADMIN la ignoramos
     // porque ven todos los proyectos por definición.
     const needsAssignment = dto.role === 'EDITOR' || dto.role === 'VIEWER';
@@ -133,11 +142,11 @@ export class MembersService {
       await this.db.organizationInvite.upsert({
         where: { organizationId_email: { organizationId, email } },
         create: {
-          organizationId, email, role: dto.role, projectIds,
+          organizationId, email, name, role: dto.role, projectIds,
           digest: dg, expiresAt, invitedByUserId: workspace.userId!,
         } as Prisma.OrganizationInviteUncheckedCreateInput,
         update: {
-          role: dto.role, projectIds,
+          name, role: dto.role, projectIds,
           digest: dg, expiresAt, invitedByUserId: workspace.userId!,
         } as Prisma.OrganizationInviteUncheckedUpdateInput,
       });
@@ -170,10 +179,14 @@ export class MembersService {
 
   async describeInvite(token: string) {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new NotFoundException('Invitación no encontrada.');
-    const invite = await this.db.organizationInvite.findUnique({
+    const invite = await (this.db.organizationInvite.findUnique as unknown as (args: unknown) => Promise<{
+      email: string; name: string | null; role: OrgRole; expiresAt: Date;
+      organization: { name: string };
+      invitedBy: { name: string | null; email: string };
+    } | null>)({
       where: { digest: digest(token) },
       select: {
-        email: true, role: true, expiresAt: true,
+        email: true, name: true, role: true, expiresAt: true,
         organization: { select: { name: true } },
         invitedBy: { select: { name: true, email: true } },
       },

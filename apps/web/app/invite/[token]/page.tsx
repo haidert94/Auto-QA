@@ -6,6 +6,7 @@ type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 
 type Invite = {
   email: string;
+  name: string | null;
   role: OrgRole;
   expiresAt: string;
   organization: { name: string };
@@ -47,6 +48,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   return <section className="panel invite-panel">
     <h1>Invitación a {invite.organization.name}</h1>
     <p className="muted">
+      {invite.name ? <>Hola <strong>{invite.name}</strong>. </> : null}
       Te invita <strong>{invite.invitedBy.name ?? invite.invitedBy.email}</strong> con el rol <strong>{invite.role}</strong>.
       Dirigida a <strong>{invite.email}</strong>. Vence el {new Date(invite.expiresAt).toLocaleDateString('es-CO')}.
     </p>

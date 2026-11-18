@@ -608,6 +608,10 @@ model OrganizationInvite {
   organizationId  String
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email           String
+  // Nombre declarado por quien invita. Se muestra en la tabla de miembros
+  // mientras la invitación está pendiente y se pre-rellena en la UI de
+  // registro cuando el invitado crea su cuenta.
+  name            String?
   role            OrgRole
   // Para EDITOR/VIEWER, projectIds declara a qué proyectos tendrá acceso al
   // aceptar. Para OWNER/ADMIN se ignora porque ven todos los proyectos.

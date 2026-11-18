@@ -13,7 +13,7 @@ type Member = {
   projects: ProjectRef[];
 };
 type Invite = {
-  id: string; email: string; role: OrgRole; createdAt: string; expiresAt: string;
+  id: string; email: string; name: string | null; role: OrgRole; createdAt: string; expiresAt: string;
   invitedBy: { name: string | null; email: string };
 };
 

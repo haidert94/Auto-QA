@@ -9,6 +9,9 @@ const roleValues = ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'] as const satisfies rea
 
 class InviteDto {
   @IsEmail() @Length(3, 254) email!: string;
+  // Nombre del invitado declarado por quien lo invita. Se usa como etiqueta
+  // mientras la invitación está pendiente y se pre-rellena en el registro.
+  @IsOptional() @Length(1, 100) @Matches(/^[^\u0000-\u001f]+$/) name?: string;
   @IsIn(roleValues) role!: OrgRole;
   // Opcional: proyectos a los que el invitado tendrá acceso al aceptar.
   // Solo aplica para EDITOR y VIEWER; para ADMIN/OWNER se ignora.
