@@ -94,14 +94,36 @@
 .scenario-run-dialog .check input { flex-shrink: 0; margin-top: 3px; accent-color: var(--blue); }
 .scenario-queue-results { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; font-size: 12px; }
 .scenario-queue-results li { display: grid; gap: 5px; overflow-wrap: anywhere; }
-.environments-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--line); padding: 0; border-radius: 6px; color: var(--ink); background: var(--surface); }
+.environments-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid #e9e7e1; padding: 0; border-radius: 4px; color: var(--ink); background: var(--surface); }
 .environments-dialog::backdrop { background: #10142180; }
-.environments-dialog__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); z-index: 1; }
-.environments-dialog__head h2 { margin: 0; font-size: 15px; letter-spacing: 0.02em; }
-.environments-dialog__head button { padding: 4px 10px; font-size: 16px; line-height: 1; }
-.environments-dialog__form { padding: 20px 24px 22px; }
-.environments-dialog__form .errors { margin-top: 14px; display: grid; gap: 6px; }
-.environments-dialog__form .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+.environments-dialog__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 18px; border-bottom: 1px solid #e9e7e1; background: #f5f4f0; position: sticky; top: 0; z-index: 1; }
+.environments-dialog__head h2 { margin: 0; font: 400 10px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink); }
+.environments-dialog__head button { padding: 2px 9px; font-size: 14px; line-height: 1; border-radius: 2px; }
+.environments-dialog__form { padding: 20px 22px 22px; display: grid; gap: 16px; }
+.environments-dialog__form > fieldset.form-content { border: 0; padding: 0; margin: 0; display: grid; gap: 16px; }
+.environments-dialog__form > fieldset.form-content > fieldset { border: 1px solid #e9e7e1; border-radius: 4px; padding: 16px; background: var(--surface); margin: 0; display: grid; gap: 14px; }
+.environments-dialog__form > fieldset.form-content > fieldset > legend { padding: 3px 8px; background: #f5f4f0; margin-left: 4px; border: 1px solid #e9e7e1; border-radius: 2px; font: 500 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--blue); }
+.environments-dialog__form label { display: block; font: 400 9px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--muted); }
+.environments-dialog__form label > :is(input, select, textarea) { display: block; width: 100%; margin-top: 6px; padding: 8px 10px; font: 400 12px/1.5 var(--sans); color: var(--ink); background: var(--surface); border: 1px solid #e9e7e1; border-radius: 3px; text-transform: none; letter-spacing: 0; box-sizing: border-box; }
+.environments-dialog__form label > :is(input, select, textarea):focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; border-color: var(--blue); }
+.environments-dialog__form label > textarea { min-height: 72px; resize: vertical; }
+.environments-dialog__form .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+.environments-dialog__form .muted { font: 400 11px/1.6 var(--sans); color: var(--muted); text-transform: none; letter-spacing: 0; margin: 0; }
+.environments-dialog__form fieldset.credentials { border: 1px solid #e9e7e1; border-radius: 4px; background: #faf9f6; padding: 14px; display: grid; gap: 12px; }
+.environments-dialog__form fieldset.credentials > legend { padding: 3px 8px; margin-left: 4px; background: var(--surface); border: 1px solid #e9e7e1; border-radius: 2px; color: var(--ink); font: 500 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .07em; }
+.environments-dialog__form label.check { display: flex; align-items: flex-start; gap: 8px; font: 400 11px/1.55 var(--sans); color: var(--ink); text-transform: none; letter-spacing: 0; }
+.environments-dialog__form label.check input { width: auto; margin: 3px 0 0; padding: 0; accent-color: var(--blue); flex-shrink: 0; }
+.environments-dialog__form button.secondary { background: var(--surface); border: 1px solid #e9e7e1; color: var(--ink); padding: 7px 12px; font: 400 11px/1.4 var(--sans); border-radius: 2px; }
+.environments-dialog__form button.secondary:hover { border-color: var(--blue); color: var(--blue); }
+.environments-dialog__form > fieldset.form-content > button.secondary { justify-self: start; }
+.environments-dialog__form .errors { display: grid; gap: 6px; }
+.environments-dialog__form .error { color: var(--error, #b23); font-size: 11px; margin: 0; }
+.environments-dialog__form .actions { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid #e9e7e1; margin-top: 4px; padding-top: 16px; }
+.environments-dialog__form .actions button[type="submit"] { background: var(--ink); color: var(--surface); border: 1px solid var(--ink); padding: 9px 16px; font: 500 11px/1.3 var(--sans); border-radius: 2px; letter-spacing: .02em; }
+.environments-dialog__form .actions button[type="submit"]:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 720px) {
+  .environments-dialog__form .form-grid { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 1100px) {
   .scenario-toolbar__top { align-items: stretch; }
   .scenario-search { flex-basis: 100%; }
