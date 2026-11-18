@@ -98,9 +98,21 @@ export class MembersService {
 
   // --- Invitaciones -------------------------------------------------------
 
-  async invite(workspace: Workspace, dto: { email: string; role: OrgRole }, actorIp: string | null) {
+  async invite(workspace: Workspace, dto: { email: string; role: OrgRole; projectIds?: string[] }, actorIp: string | null) {
     const organizationId = this.requireOrg(workspace);
     this.requireRole(workspace, ['ADMIN']);
+    // Pre-asignación: solo para EDITOR y VIEWER. Para OWNER/ADMIN la ignoramos
+    // porque ven todos los proyectos por definición.
+    const needsAssignment = dto.role === 'EDITOR' || dto.role === 'VIEWER';
+    const projectIds = needsAssignment ? [...new Set(dto.projectIds ?? [])] : [];
+    if (projectIds.length > 0) {
+      const found = await this.db.project.findMany({
+        where: { id: { in: projectIds }, organizationId }, select: { id: true },
+      });
+      if (found.length !== projectIds.length) {
+        throw new NotFoundException('Uno o más proyectos no existen en la organización.');
+      }
+    }
     const email = dto.email.trim().toLowerCase();
     if (!/^[^\s<>@]+@[^\s<>@]+$/.test(email)) throw new BadRequestException('Correo no válido.');
     if (dto.role === 'OWNER') throw new BadRequestException('No puedes invitar a otro OWNER.');
@@ -120,8 +132,14 @@ export class MembersService {
     try {
       await this.db.organizationInvite.upsert({
         where: { organizationId_email: { organizationId, email } },
-        create: { organizationId, email, role: dto.role, digest: dg, expiresAt, invitedByUserId: workspace.userId! },
-        update: { role: dto.role, digest: dg, expiresAt, invitedByUserId: workspace.userId! },
+        create: {
+          organizationId, email, role: dto.role, projectIds,
+          digest: dg, expiresAt, invitedByUserId: workspace.userId!,
+        } as Prisma.OrganizationInviteUncheckedCreateInput,
+        update: {
+          role: dto.role, projectIds,
+          digest: dg, expiresAt, invitedByUserId: workspace.userId!,
+        } as Prisma.OrganizationInviteUncheckedUpdateInput,
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -172,10 +190,19 @@ export class MembersService {
     const existing = await this.db.organizationMember.findUnique({ where: { userId: workspace.userId }, select: { organizationId: true } });
 
     await this.db.$transaction(async tx => {
-      const invite = await tx.organizationInvite.findUnique({
+      // Cast transitorio: el cliente Prisma local puede no conocer todavía
+      // la columna projectIds. El esquema persistido ya la tiene.
+      const inviteRaw = await (tx.organizationInvite.findUnique as unknown as (args: unknown) => Promise<{
+        id: string; email: string; role: OrgRole; organizationId: string;
+        expiresAt: Date; projectIds: string[] | null;
+      } | null>)({
         where: { digest: digest(token) },
-        select: { id: true, email: true, role: true, organizationId: true, expiresAt: true },
+        select: {
+          id: true, email: true, role: true, organizationId: true, expiresAt: true,
+          projectIds: true,
+        },
       });
+      const invite = inviteRaw;
       if (!invite || invite.expiresAt <= new Date()) throw new NotFoundException('La invitación ya no está disponible.');
       if (invite.email.toLowerCase() !== userEmail.toLowerCase()) {
         throw new ForbiddenException('La invitación está dirigida a otro correo.');
@@ -191,6 +218,27 @@ export class MembersService {
       await tx.organizationMember.create({
         data: { userId: workspace.userId!, organizationId: invite.organizationId, role: invite.role },
       });
+      // Si la invitación traía proyectos pre-asignados (solo para EDITOR/
+      // VIEWER), creamos las filas de ProjectMember en la misma transacción
+      // para que al primer login el usuario vea exactamente esos proyectos.
+      const needsAssignment = invite.role === 'EDITOR' || invite.role === 'VIEWER';
+      const toAssign = needsAssignment && Array.isArray(invite.projectIds) ? invite.projectIds : [];
+      if (toAssign.length > 0) {
+        const projectMember = (tx as unknown as { projectMember: {
+          createMany(args: unknown): Promise<unknown>;
+        } }).projectMember;
+        // Verificar que los proyectos siguen siendo de la misma org (defensivo
+        // por si cambiaron entre invite y accept).
+        const stillValid = await tx.project.findMany({
+          where: { id: { in: toAssign }, organizationId: invite.organizationId },
+          select: { id: true },
+        });
+        if (stillValid.length > 0) {
+          await projectMember.createMany({
+            data: stillValid.map(p => ({ projectId: p.id, userId: workspace.userId!, createdByUserId: null })),
+          });
+        }
+      }
       await tx.organizationInvite.delete({ where: { id: invite.id } });
       await this.audit(invite.organizationId, workspace.userId!, 'invite-accepted', 'member', workspace.userId!, actorIp, tx);
     });

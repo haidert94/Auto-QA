@@ -29,9 +29,21 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
   const [data, setData] = useState(initial);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<OrgRole>('VIEWER');
+  const [inviteProjectIds, setInviteProjectIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+
+  const needsInviteProjects = inviteRole === 'EDITOR' || inviteRole === 'VIEWER';
+
+  function toggleInviteProject(id: string) {
+    setInviteProjectIds(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const canInvite = RANK[myRole] >= RANK.ADMIN;
   const canChangeRole = myRole === 'OWNER';
@@ -57,11 +69,13 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
 
   async function invite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const projectIds = needsInviteProjects ? [...inviteProjectIds] : [];
     await run(() => fetch('/api/commerce/members/invite', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole, projectIds }),
     }), 'Invitación enviada.');
     setInviteEmail('');
+    setInviteProjectIds(new Set());
   }
 
   async function revokeInvite(id: string) {
@@ -104,6 +118,27 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
         </label>
         <button type="submit" disabled={busy}>{busy ? 'Enviando…' : 'Enviar invitación'}</button>
       </form>
+      {needsInviteProjects && data.orgProjects.length > 0 && <fieldset className="members-invite-projects">
+        <legend>Proyectos asignados al aceptar ({inviteProjectIds.size} de {data.orgProjects.length})</legend>
+        <p className="muted"><small>
+          El invitado solo verá estos proyectos al entrar. Puedes dejarlos sin seleccionar y asignarlos
+          después desde la tabla de miembros.
+        </small></p>
+        <ul className="members-project-list">
+          {data.orgProjects.map(project => (
+            <li key={project.id}>
+              <label>
+                <input type="checkbox" checked={inviteProjectIds.has(project.id)}
+                  onChange={() => toggleInviteProject(project.id)} disabled={busy}/>
+                <span>{project.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </fieldset>}
+      {needsInviteProjects && data.orgProjects.length === 0 && <p className="muted"><small>
+        Aún no hay proyectos en la organización. El invitado podrá aceptar y lo asignas después.
+      </small></p>}
       {notice && <p className="success" role="status">{notice}</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </section>}

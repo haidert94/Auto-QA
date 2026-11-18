@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
-import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsUUID, Length, Matches } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsOptional, IsUUID, Length, Matches } from 'class-validator';
 import { OrgRole } from '@prisma/client';
 import { AccountService } from './account';
 import { MembersService } from './members.service';
@@ -10,6 +10,10 @@ const roleValues = ['OWNER', 'ADMIN', 'EDITOR', 'VIEWER'] as const satisfies rea
 class InviteDto {
   @IsEmail() @Length(3, 254) email!: string;
   @IsIn(roleValues) role!: OrgRole;
+  // Opcional: proyectos a los que el invitado tendrá acceso al aceptar.
+  // Solo aplica para EDITOR y VIEWER; para ADMIN/OWNER se ignora.
+  @IsOptional() @IsArray() @ArrayMaxSize(200) @IsUUID('all', { each: true })
+  projectIds?: string[];
 }
 
 class ChangeRoleDto {

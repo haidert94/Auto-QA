@@ -609,6 +609,10 @@ model OrganizationInvite {
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email           String
   role            OrgRole
+  // Para EDITOR/VIEWER, projectIds declara a qué proyectos tendrá acceso al
+  // aceptar. Para OWNER/ADMIN se ignora porque ven todos los proyectos.
+  // Default [] para que las invitaciones heredadas sigan funcionando.
+  projectIds      String[]     @default([])
   digest          String       @unique
   expiresAt       DateTime
   invitedByUserId String
