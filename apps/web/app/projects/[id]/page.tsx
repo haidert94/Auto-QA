@@ -60,14 +60,12 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
 
   return (
     <div className="project-detail">
-    <ProjectHeading project={project} />
-    <ProjectTabs showExploration={showExploration} context={
+    <ProjectTabs heading={<ProjectHeading project={project} />} showExploration={showExploration} context={
       <span className="project-environment-context"><i aria-hidden="true" />{project.environments.length} {project.environments.length === 1 ? 'entorno' : 'entornos'} registrados</span>
     }>
       {{
         datos: <DataTab project={project} ipa={ipa} />,
-        escenarios: <ScenariosPanel projectId={project.id}
-          projectBaseUrl={project.environments.find(e => e.authorizationConfirmed)?.baseUrl ?? null} />,
+        escenarios: <ScenariosPanel key={project.id} project={project} />,
         automatizacion: <AutomationPanel projectId={project.id}
           environments={project.environments.filter(e => e.authorizationConfirmed)
             .map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} />,

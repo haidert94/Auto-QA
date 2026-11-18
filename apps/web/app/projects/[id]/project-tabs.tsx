@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+
+const ScenarioHeaderContext = createContext<{
+  element: HTMLDivElement | null;
+  setCount: (count: number | null) => void;
+} | null>(null);
+export function useScenarioHeader() { return useContext(ScenarioHeaderContext); }
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -26,15 +32,20 @@ function readHashTab(available: TabId[]): TabId {
 export function ProjectTabs({
   showExploration,
   context,
+  heading,
   children,
 }: {
   showExploration: boolean;
   context?: ReactNode;
+  heading?: ReactNode;
   children: Partial<Record<TabId, ReactNode>>;
 }) {
   const visible: TabId[] = TABS.map(t => t.id).filter(id => id !== 'exploracion' || showExploration);
   const [active, setActive] = useState<TabId>('datos');
   const tabGroup = useId();
+  const [headerElement, setHeaderElement] = useState<HTMLDivElement | null>(null);
+  const [scenarioCount, setScenarioCount] = useState<number | null>(null);
+  const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount }), [headerElement]);
 
   useEffect(() => {
     setActive(readHashTab(visible));
@@ -51,7 +62,9 @@ export function ProjectTabs({
   }
 
   return (
-    <>
+    <ScenarioHeaderContext.Provider value={scenarioHeader}>
+      {active !== 'escenarios' && heading}
+      <div ref={setHeaderElement} hidden={active !== 'escenarios'} className="scenario-heading-slot" />
       <nav className="project-tabs" aria-label="Secciones del proyecto">
         <ul role="tablist">
           {TABS.filter(t => t.id !== 'exploracion' || showExploration).map(tab => (
@@ -71,7 +84,7 @@ export function ProjectTabs({
                 }}
                 className={active === tab.id ? 'current' : ''}
                 onClick={() => select(tab.id)}>
-                {tab.label}
+                {tab.label}{tab.id === 'escenarios' && scenarioCount !== null ? ` (${scenarioCount})` : ''}
               </button>
             </li>
           ))}
@@ -83,6 +96,6 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
-    </>
+    </ScenarioHeaderContext.Provider>
   );
 }

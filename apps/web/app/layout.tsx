@@ -2,6 +2,7 @@ import localFont from 'next/font/local';
 import './commercial.css';
 import './style.css';
 import './project-detail.css';
+import './scenario-workspace.css';
 
 const geist = localFont({
   src: './fonts/geist.woff2',

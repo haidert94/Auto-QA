@@ -7,6 +7,7 @@ const { resolve, join } = require('node:path');
 const { mkdir, readFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { chromium } = require('playwright-core');
+const { expect } = require('@playwright/test');
 
 const root = resolve(__dirname, '../../..');
 const projectId = '10000000-0000-4000-8000-000000000001';
@@ -45,6 +46,27 @@ let docsFail = false;
 let ipaFail = false;
 let saveCount = 0;
 let logoutCalled = false;
+let scenariosFail = false;
+let historyFail = false;
+const scenarioA = '31000001-0000-4000-8000-000000000001';
+const scenarioB = '31000002-0000-4000-8000-000000000002';
+const requirement = { id: '40000000-0000-4000-8000-000000000001', title: 'Checkout sandbox', externalKey: 'RF-01' };
+let scenarios = [
+  { id: scenarioA, title: 'Pago exitoso con tarjeta tokenizada 3DS', requirementId: requirement.id,
+    expectedResult: 'La pasarela sandbox confirma la transacción.', requirement, tags: ['@flujoBasico', '@smoke'], _count: { results: 1 },
+    steps: [{ ordinal: 1, action: 'goto: /checkout' }, { ordinal: 2, action: 'click: #confirmar-pago' }, { ordinal: 3, action: 'expect: Confirmación', expected: 'Transacción confirmada' }] },
+  { id: scenarioB, title: 'Rechazo por fondos insuficientes con callback asíncrono', requirementId: requirement.id,
+    expectedResult: 'Se informa el rechazo sin duplicar la transacción.', requirement, tags: ['@flujoAlterno', '@apiRest'], _count: { results: 1 },
+    steps: [{ ordinal: 1, action: 'goto: /checkout/rechazo' }, { ordinal: 2, action: 'expect: Fondos insuficientes' }] },
+  { id: '31000003-0000-4000-8000-000000000003', title: 'Timeout en pasarela y reintento pendiente de especificación', requirementId: null,
+    expectedResult: null, requirement: null, tags: ['@edgeCases'], _count: { results: 0 }, steps: [] },
+];
+let scenarioRuns = scenarios.slice(0, 2).map((scenario, i) => ({
+  id: `50000000-0000-4000-8000-00000000000${i}`, scenarioId: scenario.id, scenario: { id: scenario.id, title: scenario.title },
+  environmentId: environment.id, status: 'COMPLETED', createdAt: `2026-11-17T1${i}:00:00Z`, startedAt: null, completedAt: null, errorCode: null,
+  results: [{ id: String(i), status: i ? 'FAILED' : 'PASSED', durationMs: i ? 3200 : 1400, errorMessage: null, evidenceKey: null }],
+}));
+const queuedRequests = [];
 
 async function listen(server) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -58,6 +80,33 @@ const api = createServer(async (request, response) => {
   if (path === '/api/commerce/me') return send(account);
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
+  if (path === base + '/scenarios/requirements') return send([requirement]);
+  if (path === base + '/scenarios') {
+    if (request.method === 'POST') {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      const payload = JSON.parse(Buffer.concat(chunks).toString());
+      const created = { ...payload, id: '31000004-0000-4000-8000-000000000004', tags: [], requirement: null, _count: { results: 0 } };
+      scenarios.push(created); return send(created, 201);
+    }
+    return scenariosFail ? send({ message: 'Consulta de escenarios fallida' }, 503) : send(scenarios);
+  }
+  const scenarioPath = path.slice((base + '/scenarios/').length);
+  if (path.startsWith(base + '/scenarios/')) {
+    const scenario = scenarios.find(item => scenarioPath.startsWith(item.id));
+    if (scenario && scenarioPath === scenario.id && request.method === 'PATCH') {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      Object.assign(scenario, JSON.parse(Buffer.concat(chunks).toString())); return send(scenario);
+    }
+    if (scenario && scenarioPath === scenario.id + '/runs' && request.method === 'POST') {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      const payload = JSON.parse(Buffer.concat(chunks).toString()); queuedRequests.push({ scenarioId: scenario.id, ...payload });
+      if (scenario.id === scenarioB) return send({ message: 'Cuota de ejecuciones alcanzada.' }, 403);
+      const run = { id: '50000000-0000-4000-8000-000000000099', scenarioId: scenario.id, scenario: { id: scenario.id, title: scenario.title },
+        status: 'QUEUED', createdAt: '2026-11-18T12:00:00Z', completedAt: null, startedAt: null, errorCode: null, environmentId: payload.environmentId, results: [] };
+      scenarioRuns.push(run); return send(run, 201);
+    }
+  }
+  if (path === base + '/runs') return historyFail ? send({ message: 'Historial no disponible' }, 503) : send(scenarioRuns);
   if (path === base && request.method === 'PUT') {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -75,6 +124,133 @@ const api = createServer(async (request, response) => {
   if (path.startsWith(base + '/')) return send([]);
   return send({ message: 'No encontrado' }, 404);
 });
+
+async function verifyScenarios(page, screenshots) {
+  await page.getByRole('tab', { name: /^Escenarios \(3\)$/ }).click();
+  const list = page.locator('.scenario-results');
+  const detail = page.getByRole('complementary', { name: 'Detalle del escenario seleccionado' });
+  await expect(list.locator('.scenario-result')).toHaveCount(3);
+  await expect(list.getByText('Pasó · 1.4 s', { exact: true })).toBeVisible();
+  await expect(list.getByText('Falló · 3.2 s', { exact: true })).toBeVisible();
+  await expect(list.getByText('Sin ejecuciones', { exact: true })).toBeVisible();
+  await expect(detail.getByText('Requisito: inventado')).toHaveCount(0);
+  assert.equal(queuedRequests.length, 0, 'Abrir escenarios no ejecuta pruebas.');
+  await page.setViewportSize({ width: 1170, height: 950 });
+  assert.ok((await list.boundingBox()).x < (await detail.boundingBox()).x);
+  await page.screenshot({ path: join(screenshots, 'project-scenarios-desktop.png'), fullPage: true, animations: 'disabled' });
+  const search = page.getByRole('searchbox', { name: 'Buscar escenarios' });
+  await page.keyboard.press('Control+k');
+  await expect(search).toBeFocused();
+  await search.fill('fondos insuficientes');
+  await expect(list.locator('.scenario-result')).toHaveCount(1);
+  await expect(detail.getByRole('heading', { name: scenarios[1].title, exact: true })).toBeVisible();
+  await search.fill('');
+  const modes = page.getByRole('group', { name: 'Filtrar por resultados' });
+  await modes.getByRole('button', { name: 'Con resultados (2)', exact: true }).click();
+  await expect(list.locator('.scenario-result')).toHaveCount(2);
+  const tags = page.getByRole('group', { name: 'Filtrar por etiqueta' });
+  await tags.getByRole('button', { name: '@flujoBasico (1)', exact: true }).click();
+  await expect(list.locator('.scenario-result')).toHaveCount(1);
+  await tags.getByRole('button', { name: 'Todos (3)', exact: true }).click();
+  await modes.getByRole('button', { name: 'Todos (3)', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Seleccionar visibles (3)', exact: true }).uncheck();
+  await search.fill('tokenizada');
+  await page.getByRole('checkbox', { name: 'Seleccionar visibles (1)', exact: true }).check();
+  await search.fill('');
+  const featureDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar feature', exact: true }).click();
+  const feature = await featureDownload;
+  assert.equal(feature.suggestedFilename(), 'autoqa-escenarios.feature');
+  const featureContent = await readFile(await feature.path(), 'utf8');
+  assert.ok(featureContent.includes('Vista derivada'));
+  assert.ok(featureContent.includes(scenarioA));
+  assert.ok(featureContent.includes('goto: /checkout'));
+  assert.ok(!featureContent.includes(scenarioB), 'Exporta sólo los escenarios seleccionados.');
+  await list.getByRole('button', { name: scenarios[2].title, exact: true }).click();
+  await expect(detail.getByText('No declarado. Pendiente de definir.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cerrar detalle del escenario', exact: true }).click();
+  await expect(detail).toHaveCount(0);
+  await list.getByRole('button', { name: scenarios[0].title, exact: true }).click();
+  for (const width of [768, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Escenarios sin desbordamiento a ${width}px.`);
+    if (width === 390) {
+      const rows = await list.boundingBox(); const sidebar = await detail.boundingBox();
+      assert.ok(rows.y + rows.height <= sidebar.y, 'El detalle se apila en móvil.');
+      await page.screenshot({ path: join(screenshots, 'project-scenarios-mobile.png'), fullPage: true, animations: 'disabled' });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('button', { name: 'Nuevo escenario', exact: true }).click();
+  const form = page.getByRole('form', { name: 'Nuevo escenario manual' });
+  await form.getByLabel('Título', { exact: true }).fill('Escenario creado desde el nuevo diseño');
+  await form.getByLabel('Primer paso', { exact: true }).fill('goto: /qa');
+  await form.getByRole('button', { name: 'Crear escenario', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Escenarios (4)', exact: true })).toBeVisible();
+  await expect(list.getByRole('button', { name: 'Escenario creado desde el nuevo diseño', exact: true })).toBeVisible();
+  await detail.getByRole('button', { name: 'Editar escenario', exact: true }).click();
+  await detail.getByLabel('Título', { exact: true }).fill('Pago sandbox editado');
+  await detail.getByLabel('@flujoAlterno', { exact: true }).check();
+  await detail.getByRole('button', { name: 'Guardar', exact: true }).click();
+  await expect(list.getByRole('button', { name: 'Pago sandbox editado', exact: true })).toBeVisible();
+  assert.ok(scenarios[0].tags.includes('@flujoAlterno') && !scenarios[0].tags.includes('@flujoBasico'));
+  const execute = page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true });
+  await execute.click();
+  let dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+  await expect(dialog.getByLabel('Entorno autorizado').locator('option')).toHaveCount(1);
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  assert.equal(queuedRequests.length, 0, 'Cancelar la confirmación no encola nada.');
+  await execute.click();
+  dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
+  await expect(dialog.getByText(/En cola ·/)).toBeVisible();
+  assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id }]);
+  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await expect(list.locator('.scenario-result').filter({ hasText: 'Pago sandbox editado' }).getByText('En cola', { exact: true })).toBeVisible();
+  await list.getByRole('checkbox', { name: 'Seleccionar Pago sandbox editado', exact: true }).uncheck();
+  await list.getByRole('checkbox', { name: `Seleccionar ${scenarios[1].title}`, exact: true }).check();
+  await execute.click();
+  dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
+  await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  scenariosFail = true;
+  await page.reload();
+  await expect(page.getByText('No se pudo cargar el listado de escenarios.', { exact: true })).toBeVisible();
+  scenariosFail = false;
+  await page.getByRole('button', { name: 'Reintentar escenarios', exact: true }).click();
+  await expect(list.locator('.scenario-result')).toHaveCount(4);
+  historyFail = true;
+  await page.reload();
+  await expect(page.locator('.scenario-history-warning').filter({ hasText: 'No se pudo consultar el historial' })).toBeVisible();
+  await expect(list.getByText('Estado no disponible', { exact: true })).toHaveCount(4);
+  historyFail = false;
+  await page.getByRole('button', { name: 'Reintentar historial', exact: true }).click();
+  await expect(list.getByText('En cola', { exact: true })).toBeVisible();
+  const populated = scenarios;
+  scenarios = [];
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Aún no hay escenarios', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Exportar feature', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Ejecutar suite (0)', exact: true })).toBeDisabled();
+  scenarios = populated;
+  project.status = 'DRAFT';
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Escenarios (4)', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true })).toBeDisabled();
+  project.status = 'READY';
+  const authorizations = project.environments.map(environment => environment.authorizationConfirmed);
+  project.environments.forEach(environment => { environment.authorizationConfirmed = false; });
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Escenarios (4)', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true })).toBeDisabled();
+  project.environments.forEach((environment, i) => { environment.authorizationConfirmed = authorizations[i]; });
+  await page.reload();
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  console.log('PASS escenarios: listado/detalle, búsqueda y etiquetas, selección, exportación derivada, creación/edición, confirmación sin envíos automáticos, encolado y errores de cuota, reintentos, estados vacíos, borradores y autorización; escritorio y móvil.');
+}
 
 async function run() {
   const apiPort = await listen(api);
@@ -180,7 +356,7 @@ async function run() {
     await page.reload();
     await page.getByRole('tab', { name: 'Datos', exact: true }).focus();
     await page.keyboard.press('ArrowRight');
-    assert.equal(await page.getByRole('tab', { name: 'Escenarios', exact: true }).getAttribute('aria-selected'), 'true');
+    await expect(page.getByRole('tab', { name: /^Escenarios/ })).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Home');
     assert.equal(await page.getByRole('tab', { name: 'Datos', exact: true }).getAttribute('aria-selected'), 'true');
     await page.getByRole('link', { name: 'Automatizar con IA', exact: true }).click();
@@ -201,6 +377,7 @@ async function run() {
     await page.getByRole('heading', { name: 'Roles de la aplicación', exact: true }).waitFor();
     assert.equal(await page.evaluate(() => document.activeElement.id), 'role-heading');
     await page.getByRole('button', { name: /Volver a la vista de resumen/ }).click();
+    await verifyScenarios(page, screenshots);
     docsFail = true;
     await page.reload();
     await page.getByText('Documentos temporalmente no disponibles.', { exact: true }).waitFor();

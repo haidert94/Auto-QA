@@ -32,12 +32,14 @@ export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Da
   return 'Dado';
 }
 
-export function ScenarioCard({ projectId, scenario, onChange }: {
+export function ScenarioCard({ projectId, scenario, onChange, initialEditing = false, onEditComplete }: {
   projectId: string;
   scenario: ScenarioListItem;
   onChange: (updated: ScenarioListItem) => void;
+  initialEditing?: boolean;
+  onEditComplete?: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialEditing);
   const [title, setTitle] = useState(scenario.title);
   const [expectedResult, setExpectedResult] = useState(scenario.expectedResult ?? '');
   const [tags, setTags] = useState<string[]>(scenario.tags ?? []);
@@ -58,6 +60,7 @@ export function ScenarioCard({ projectId, scenario, onChange }: {
   function cancel() {
     reset();
     setEditing(false);
+    onEditComplete?.();
   }
 
   function toggleFlowTag(tag: typeof FLOW_TAGS[number]) {
@@ -123,8 +126,9 @@ export function ScenarioCard({ projectId, scenario, onChange }: {
         setError(Array.isArray(payload.message) ? payload.message.join(' · ') : (payload.message ?? 'No se pudo guardar.'));
         return;
       }
-      onChange({ ...scenario, ...payload, tags, steps });
+      onChange({ ...scenario, ...payload, tags: payload.tags ?? tags, steps: payload.steps ?? steps });
       setEditing(false);
+      onEditComplete?.();
     } catch { setError('No se pudo comunicar con la API.'); }
     finally { setBusy(false); }
   }

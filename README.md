@@ -37,6 +37,8 @@ Abre **Proyectos**, selecciona una aplicación con registro completo y entra en 
 
 La barra superior de la zona autenticada ocupa todo el ancho: logo a la izquierda, navegación central, organización y plan asignado a la derecha, y menú de cuenta con icono azul. El nombre y correo están dentro del menú. La organización se mantiene visible aunque coincida con el nombre del usuario; si no hay plan, no se muestra una insignia inventada. En móvil la navegación se abre con **Menú**.
 
+En **Escenarios**, la lista permite buscar por título, ID, requisito o paso (atajo `Ctrl+K`), filtrar por etiquetas y presencia de resultados, seleccionar casos y abrir su detalle lateral. **Nuevo escenario** y **Editar escenario** conservan las operaciones existentes. **Exportar feature** descarga los seleccionados, o todos cuando no hay selección; la vista BDD y sus palabras clave son derivadas y deben revisarse. **Ejecutar suite** solicita confirmar los casos y un entorno autorizado de solo lectura antes de encolar; presenta cada respuesta y respeta rechazos de autorización, plan y cuota del backend. Un envío en cola no se presenta como una prueba aprobada. La generación con IA continúa disponible en el desplegable inferior.
+
 **Modificar**, **Adjuntar nuevo documento o especificación** y **Editar roles y permisos** abren las secciones del formulario existente. El selector permite consultar cada entorno sin cambiar su autorización. **Automatizar con IA** abre la pestaña de automatización y requiere las acciones y controles existentes para generar o ejecutar pruebas. **Exportar especificación** descarga un resumen JSON de alcance y permisos; excluye credenciales, identidades de acceso y referencias de bóveda. No incluye los archivos adjuntos.
 
 Para comprobar la interfaz en Windows, con Node.js y Google Chrome instalados:
@@ -46,6 +48,8 @@ npm.cmd run test:project-detail
 ```
 
 Esta prueba compila solamente la web, inicia servidores temporales en loopback con una API simulada y verifica escritorio/móvil, teclado, exportación, documentos, edición y estados de error. No necesita PostgreSQL ni ejecuta migraciones. No comprueba persistencia ni motores IA. Guarda capturas en `%TEMP%\autoqa-project-detail-preview`; configura `AUTOQA_UI_SCREENSHOT_DIR` para elegir otra carpeta. Consulta [el alcance técnico de la vista](docs/PROJECT_DETAIL_UI.md).
+
+Para revisar el nuevo diseño manualmente: abre `/projects/<id>#escenarios`, cambia un filtro, selecciona un caso y consulta el detalle; exporta y revisa el `.feature`; crea o edita un escenario sintético y recarga. El botón de ejecución abre una confirmación: cancelar no envía trabajos. Verificar una ejecución real requiere la API, la base y el worker configurados; la suite de interfaz no los sustituye.
 
 ## Página comercial, cuentas y suscripciones
 

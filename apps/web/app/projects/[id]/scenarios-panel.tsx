@@ -1,17 +1,36 @@
 'use client';
 
-import Link from 'next/link';
-import { useEffect, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { ArrowRight, Code2, Plus, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
-import { ScenarioCard, type ScenarioListItem } from './scenario-card';
+import type { ScenarioListItem } from './scenario-card';
+import type { Project } from '../onboarding';
+import { ProjectHeading } from './project-heading';
+import { useScenarioHeader } from './project-tabs';
+import { featureText, type ScenarioRun } from './scenario-presentation';
+import { ScenarioRunDialog } from './scenario-run-dialog';
+import { ScenarioWorkspace } from './scenario-workspace';
 
 type RequirementOption = { id: string; title: string; externalKey: string | null };
 
 type TestType = { code: string; label: string; description: string; available: boolean };
 type AutomationSummary = { id: string; status: string; stage: string | null; createdAt: string };
 
-export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: string; projectBaseUrl: string | null }) {
+export function ScenariosPanel({ project }: { project: Project }) {
+  const projectId = project.id;
+  const projectBaseUrl = project.environments.find(environment => environment.authorizationConfirmed)?.baseUrl ?? null;
+  const environments = project.environments.filter(environment => environment.authorizationConfirmed && environment.readOnly);
+  const runnable = project.status === 'READY' && environments.length > 0;
+  const header = useScenarioHeader();
+  const updateCount = header?.setCount;
   const [items, setItems] = useState<ScenarioListItem[] | null>(null);
+  const [listError, setListError] = useState('');
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [runs, setRuns] = useState<ScenarioRun[]>([]);
+  const [runsAvailable, setRunsAvailable] = useState(false);
+  const [runsWarning, setRunsWarning] = useState('');
+  const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
   const [requirements, setRequirements] = useState<RequirementOption[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
@@ -28,6 +47,24 @@ export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: strin
   const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateNotice, setGenerateNotice] = useState('');
+
+  useEffect(() => { updateCount?.(items?.length ?? null); }, [updateCount, items?.length]);
+
+  const loadRuns = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/runs`, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error('Historial no disponible');
+      setRuns(await response.json()); setRunsAvailable(true); setRunsWarning('');
+    } catch { setRunsAvailable(false); setRunsWarning('No se pudo consultar el historial. Los estados de ejecución no están disponibles.'); }
+  }, [projectId]);
+  useEffect(() => { void loadRuns(); }, [loadRuns]);
+
+  function exportFeature() {
+    const exported = (items ?? []).filter(item => checked.size === 0 || checked.has(item.id));
+    const url = URL.createObjectURL(new Blob([featureText(project.name, exported)], { type: 'text/plain;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'autoqa-escenarios.feature'; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   async function suggest() {
     if (!requirementId) { setError('Selecciona primero un requisito para sugerir escenarios.'); return; }
@@ -66,15 +103,20 @@ export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: strin
   }
 
   async function load() {
+    setListError('');
     try {
       const [listRes, reqRes] = await Promise.all([
         fetch(`/api/projects/${projectId}/scenarios`, { cache: 'no-store' }),
         fetch(`/api/projects/${projectId}/scenarios/requirements`, { cache: 'no-store' }),
       ]);
-      if (listRes.ok) setItems(await listRes.json());
-      else { setError('No se pudo cargar el listado.'); setItems([]); }
+      if (listRes.ok) {
+        const list: ScenarioListItem[] = await listRes.json();
+        setChecked(previous => new Set(list.filter(item => items === null || previous.has(item.id)).map(item => item.id)));
+        setItems(list);
+      }
+      else { setListError('No se pudo cargar el listado de escenarios.'); }
       if (reqRes.ok) setRequirements(await reqRes.json());
-    } catch { setError('No se pudo cargar el listado.'); setItems([]); }
+    } catch { setListError('No se pudo cargar el listado de escenarios.'); }
   }
 
   useEffect(() => { void load(); }, [projectId]);
@@ -215,13 +257,42 @@ export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: strin
     finally { setBusy(false); }
   }
 
-  return <section className="exploration-panel">
-    <h2>Escenarios</h2>
-    <p className="muted">
-      Selecciona los tipos de prueba que incluye tu plan y genera escenarios a partir del análisis
-      de los documentos. También puedes crear escenarios manualmente.
-    </p>
+  return <section className="scenarios-panel" aria-label="Gestión de escenarios">
+    {header?.element && createPortal(<ProjectHeading project={project}
+      summary={items ? `${items.length} escenarios registrados. Consulta sus pasos, requisitos asociados y resultados de ejecución.` : 'Consulta y prepara los escenarios del proyecto.'}
+      actions={<>
+        <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>
+        <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
+        <button type="button" disabled={!runnable || !checked.size || !!listError} onClick={() => setRunSelection((items ?? []).filter(item => checked.has(item.id)))}>
+          Ejecutar suite ({checked.size})<ArrowRight size={14} />
+        </button>
+      </>} />, header.element)}
 
+    {showForm && <form onSubmit={create} className="scenario-form scenario-create-form" aria-label="Nuevo escenario manual">
+      <header><h2>Nuevo escenario manual</h2><p>Registra únicamente pasos y resultados definidos para tu aplicación.</p></header>
+      <label>Título<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={300} autoFocus /></label>
+      <label>Requisito asociado (opcional)<select value={requirementId} onChange={event => setRequirementId(event.target.value)}>
+        <option value="">— Sin requisito —</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>
+          {requirement.externalKey ? `[${requirement.externalKey}] ` : ''}{requirement.title}</option>)}
+      </select></label>
+      <label>Resultado esperado (opcional)<textarea value={expectedResult} onChange={event => setExpectedResult(event.target.value)} maxLength={2000} rows={2} /></label>
+      <label>Primer paso<input value={firstAction} onChange={event => setFirstAction(event.target.value)} maxLength={1000} /></label>
+      <div className="actions"><button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear escenario'}</button>
+        <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancelar</button></div>
+    </form>}
+    {error && <p className="error scenario-message" role="alert">{error}</p>}
+    {listError ? <div className="scenario-message" role="alert"><p className="error">{listError}</p>
+      <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
+      : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
+      : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked}
+        onRun={runnable ? scenarios => setRunSelection(scenarios) : undefined}
+        onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
+    {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
+    {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}
+    {runSelection && <ScenarioRunDialog projectId={projectId} scenarios={runSelection} environments={environments}
+      onClose={() => setRunSelection(null)} onQueued={() => { void loadRuns(); void load(); }} />}
+
+    <details className="scenario-ai-tools"><summary><Sparkles size={14} />Generar y sugerir escenarios con IA</summary>
     <section className="generator">
       <h3>Generar escenarios con IA</h3>
       {types === null
@@ -258,10 +329,10 @@ export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: strin
         </>}
     </section>
 
+    <label>Requisito para sugerencias<select value={requirementId} onChange={event => setRequirementId(event.target.value)}>
+      <option value="">Selecciona un requisito</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>{requirement.title}</option>)}
+    </select></label>
     <div className="actions">
-      <button type="button" className="secondary" onClick={() => setShowForm(s => !s)}>
-        {showForm ? 'Cancelar' : 'Nuevo escenario manual'}
-      </button>
       <button type="button" className="secondary" onClick={suggest} disabled={suggesting || !requirementId}>
         {suggesting ? 'Pensando…' : 'Sugerir desde requisito'}
       </button>
@@ -292,40 +363,6 @@ export function ScenariosPanel({ projectId, projectBaseUrl }: { projectId: strin
         </ul>}
     </section>}
 
-    {showForm && <form onSubmit={create} className="scenario-form">
-      <label>Título
-        <input value={title} onChange={e => setTitle(e.target.value)} required maxLength={300} placeholder="Login con credenciales válidas"/>
-      </label>
-      <label>Requisito asociado (opcional)
-        <select value={requirementId} onChange={e => setRequirementId(e.target.value)}>
-          <option value="">— Sin requisito —</option>
-          {requirements.map(r => <option key={r.id} value={r.id}>
-            {r.externalKey ? `[${r.externalKey}] ` : ''}{r.title}
-          </option>)}
-        </select>
-      </label>
-      <label>Resultado esperado (opcional)
-        <textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} maxLength={2000} rows={2}
-                  placeholder="El sistema redirige al dashboard del usuario."/>
-      </label>
-      <label>Primer paso
-        <input value={firstAction} onChange={e => setFirstAction(e.target.value)} maxLength={1000}
-               placeholder="Abrir la página de login"/>
-      </label>
-      <button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear escenario'}</button>
-    </form>}
-
-    {error && <p className="error" role="alert">{error}</p>}
-
-    {items === null
-      ? <p className="muted">Cargando…</p>
-      : items.length === 0
-        ? <p className="muted">Aún no hay escenarios en este proyecto.</p>
-        : <ul className="scenario-cards">
-          {items.map(item => (
-            <ScenarioCard key={item.id} projectId={projectId} scenario={item}
-              onChange={updated => setItems(current => current?.map(i => i.id === updated.id ? updated : i) ?? null)}/>
-          ))}
-        </ul>}
+    </details>
   </section>;
 }
