@@ -1,7 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { type OrgRole, Prisma } from '@prisma/client';
 import { AccountMail } from './account-mail';
-import { digest, newToken } from './account';
+import { CONSENT_VERSION, digest, newToken, passwordHash, SESSION_SECONDS } from './account';
 import { hasRole, type Workspace } from './workspace.guard';
 import { PrismaService } from '../prisma.service';
 
@@ -192,7 +192,13 @@ export class MembersService {
       },
     });
     if (!invite || invite.expiresAt <= new Date()) throw new NotFoundException('La invitación ya no está disponible.');
-    return invite;
+    // Pistas para decidir qué UI mostrar en la página pública: si ya hay
+    // cuenta, mostramos CTA de login; si no, mostramos el formulario de
+    // crear cuenta inline. No exponemos el userId aquí, solo el flag.
+    const existing = await this.db.user.findUnique({
+      where: { email: invite.email.toLowerCase() }, select: { id: true },
+    });
+    return { ...invite, hasAccount: !!existing };
   }
 
   // --- Aceptación por un usuario autenticado ------------------------------
@@ -323,6 +329,83 @@ export class MembersService {
       // No queremos romper la operación por una falla de auditoría; se loguea
       // vía el consumo normal de Nest (console) si alguna vez falla.
     }
+  }
+
+  // --- Claim con creación de cuenta (flujo inline del invite) -------------
+
+  // Crea una cuenta nueva con la contraseña provista Y acepta la invitación
+  // en una sola transacción. La verificación de correo es implícita: el
+  // digest de la invite se derivó del token entregado por email a esa
+  // dirección, así que llegar aquí demuestra control del buzón. Si ya existe
+  // una cuenta con ese correo, este endpoint rechaza y el usuario debe
+  // iniciar sesión por el flujo normal.
+  async claimInvite(token: string, password: string, actorIp: string | null) {
+    if (!/^[a-f0-9]{64}$/.test(token)) throw new NotFoundException('Invitación no encontrada.');
+    if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
+      throw new BadRequestException('La contraseña debe tener entre 12 y 128 caracteres.');
+    }
+    const inviteRaw = await (this.db.organizationInvite.findUnique as unknown as (args: unknown) => Promise<{
+      id: string; email: string; name: string | null; role: OrgRole;
+      organizationId: string; expiresAt: Date; projectIds: string[] | null;
+    } | null>)({
+      where: { digest: digest(token) },
+      select: { id: true, email: true, name: true, role: true, organizationId: true, expiresAt: true, projectIds: true },
+    });
+    if (!inviteRaw || inviteRaw.expiresAt <= new Date()) {
+      throw new NotFoundException('La invitación ya no está disponible.');
+    }
+    const email = inviteRaw.email.toLowerCase();
+    const existing = await this.db.user.findUnique({ where: { email }, select: { id: true } });
+    if (existing) {
+      throw new ConflictException('Ya existe una cuenta con este correo. Inicia sesión para aceptar la invitación.');
+    }
+    const hash = await passwordHash(password);
+    const sessionTokenValue = newToken();
+    const sessionDigest = digest(sessionTokenValue);
+    const sessionExpiry = new Date(Date.now() + SESSION_SECONDS * 1000);
+    const needsAssignment = inviteRaw.role === 'EDITOR' || inviteRaw.role === 'VIEWER';
+    const projectIds = needsAssignment && Array.isArray(inviteRaw.projectIds) ? inviteRaw.projectIds : [];
+
+    const createdUserId = await this.db.$transaction(async tx => {
+      // Verifica que los proyectos de la invite sigan siendo de la org
+      // (defensivo contra cambios entre invite y accept).
+      const validProjectIds = projectIds.length > 0
+        ? (await tx.project.findMany({
+            where: { id: { in: projectIds }, organizationId: inviteRaw.organizationId },
+            select: { id: true },
+          })).map(p => p.id)
+        : [];
+      const user = await tx.user.create({
+        data: {
+          email,
+          name: inviteRaw.name?.trim() || null,
+          passwordHash: hash,
+          consentVersion: CONSENT_VERSION,
+          consentAt: new Date(),
+          verifiedAt: new Date(),
+          membership: { create: {
+            role: inviteRaw.role,
+            organization: { connect: { id: inviteRaw.organizationId } },
+          } },
+        }, select: { id: true },
+      });
+      if (validProjectIds.length > 0) {
+        const projectMember = (tx as unknown as { projectMember: {
+          createMany(args: unknown): Promise<unknown>;
+        } }).projectMember;
+        await projectMember.createMany({
+          data: validProjectIds.map(projectId => ({ projectId, userId: user.id, createdByUserId: null })),
+        });
+      }
+      await tx.accountSession.create({
+        data: { digest: sessionDigest, userId: user.id, expiresAt: sessionExpiry },
+      });
+      await tx.organizationInvite.delete({ where: { id: inviteRaw.id } });
+      await this.audit(inviteRaw.organizationId, user.id, 'invite-claimed-with-signup', 'member', user.id, actorIp, tx);
+      return user.id;
+    });
+
+    return { token: sessionTokenValue, maxAge: SESSION_SECONDS, userId: createdUserId };
   }
 
   // --- helpers ------------------------------------------------------------

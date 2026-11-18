@@ -31,6 +31,11 @@ class AcceptDto {
   @Matches(/^[a-f0-9]{64}$/) token!: string;
 }
 
+class ClaimDto {
+  @Matches(/^[a-f0-9]{64}$/) token!: string;
+  @Length(12, 128) password!: string;
+}
+
 class TokenParamDto {
   @Matches(/^[a-f0-9]{64}$/) token!: string;
 }
@@ -79,6 +84,15 @@ export class MembersController {
   ) {
     const identity = await this.accounts.identity(auth);
     return this.service.accept(workspace, dto.token, identity.email, ip);
+  }
+
+  // Flujo "crear cuenta y aceptar" para el invitado que todavía no tiene
+  // cuenta. No requiere sesión; la crea al vuelo y devuelve el token.
+  @Post('claim')
+  @HttpCode(200)
+  claim(@Body() dto: ClaimDto, @Ip() ip: string) {
+    this.accounts.limit('invite-claim-ip', ip, 20);
+    return this.service.claimInvite(dto.token, dto.password, ip);
   }
 
   @Delete(':userId')

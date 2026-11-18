@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { accountFetch, sessionToken } from '../../autoqa-server';
 import { AcceptButton } from './accept-button';
+import { ClaimForm } from './claim-form';
 
 type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 
@@ -9,6 +10,7 @@ type Invite = {
   name: string | null;
   role: OrgRole;
   expiresAt: string;
+  hasAccount: boolean;
   organization: { name: string };
   invitedBy: { name: string | null; email: string };
 };
@@ -53,17 +55,16 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       Dirigida a <strong>{invite.email}</strong>. Vence el {new Date(invite.expiresAt).toLocaleDateString('es-CO')}.
     </p>
 
-    {!currentEmail && <div className="invite-cta">
-      <p>Inicia sesión como <strong>{invite.email}</strong> para aceptar.</p>
-      <p>
-        <Link href="/login">Iniciar sesión</Link>
-        {' · '}
-        <Link href="/registro">Crear cuenta</Link>
-      </p>
-      <p className="muted">
-        Si no tienes cuenta, crea una con el correo <code>{invite.email}</code>, verifica el correo y vuelve a este enlace.
-      </p>
+    {!currentEmail && invite.hasAccount && <div className="invite-cta">
+      <p>Ya existe una cuenta con <strong>{invite.email}</strong>. Inicia sesión para aceptar.</p>
+      <p><Link href="/login" className="button-like">Iniciar sesión</Link></p>
     </div>}
+
+    {!currentEmail && !invite.hasAccount && <ClaimForm
+      token={token}
+      email={invite.email}
+      name={invite.name}
+    />}
 
     {currentEmail && !matches && <div className="invite-cta">
       <p className="error">

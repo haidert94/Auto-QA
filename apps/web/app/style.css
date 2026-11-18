@@ -293,6 +293,12 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .invite-panel { max-width: 640px; }
 .invite-cta { margin-top: 18px; padding: 14px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }
 .invite-cta button { margin: 0; }
+.invite-claim { margin-top: 18px; padding: 16px 18px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; display: grid; gap: 10px; }
+.invite-claim h2 { margin: 0 0 4px; font-size: 18px; }
+.invite-claim label { display: block; font-weight: 500; }
+.invite-claim label input { margin-top: 4px; }
+.invite-claim label input[readonly] { background: var(--quiet); color: var(--muted); }
+.invite-claim small { display: block; margin-top: 2px; }
 
 /* ---- Diff / exploration ---- */
 .diff-panel { margin-top: 20px; padding: 16px; background: var(--quiet); border: 1px solid var(--line); border-radius: 6px; }

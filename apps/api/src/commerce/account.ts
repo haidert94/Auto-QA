@@ -18,7 +18,7 @@ async function key(password: string, salt: string) {
   });
 }
 
-async function passwordHash(password: string) {
+export async function passwordHash(password: string) {
   const salt = randomBytes(16).toString('hex');
   return salt + ':' + (await key(password, salt)).toString('hex');
 }
