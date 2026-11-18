@@ -111,6 +111,18 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
           });
         }
       }
+      // Encadena el análisis: al terminar la carga, el agente levanta los
+      // documentos nuevos y los procesa sin que el usuario tenga que pulsar
+      // "Analizar". Un fallo del análisis no borra las cargas ya guardadas.
+      if (changed) {
+        try {
+          await documentRequest(projectId, '/analyze', { method: 'POST' });
+        } catch (error) {
+          setModuleError(error instanceof Error
+            ? `Se cargaron los módulos, pero el análisis falló: ${error.message}`
+            : 'Se cargaron los módulos, pero el análisis falló.');
+        }
+      }
     } finally {
       setUploading(false);
       setRevision(value => value + 1);
