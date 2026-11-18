@@ -11,7 +11,7 @@ const statusBadge: Record<ProjectSummary['status'], string> = {
   ARCHIVED: 'badge-canceled',
 };
 
-export function ProjectCard({ project }: { project: ProjectSummary }) {
+export function ProjectCard({ project, canRemove = true }: { project: ProjectSummary; canRemove?: boolean }) {
   const router = useRouter();
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState('');
@@ -62,9 +62,9 @@ export function ProjectCard({ project }: { project: ProjectSummary }) {
 
       <footer className="project-card__actions">
         <Link href={`/projects/${project.id}`} className="button-like outline">Abrir</Link>
-        <button type="button" className="outline project-card__remove" onClick={handleRemove} disabled={removing}>
+        {canRemove && <button type="button" className="outline project-card__remove" onClick={handleRemove} disabled={removing}>
           {removing ? 'Eliminando…' : 'Eliminar'}
-        </button>
+        </button>}
       </footer>
       {error && <p className="error" role="alert">{error}</p>}
     </article>
