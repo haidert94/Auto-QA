@@ -8,6 +8,7 @@ import { categoryLabels, documentRequest, fileSize, type SavedDocument } from '.
 import { ProjectForm } from '../project-form';
 import { IpaHero, type IpaSummary } from './ipa-hero';
 import { EnvironmentsDialog } from './environments-dialog';
+import { DocumentsDialog } from './documents-dialog';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
@@ -34,6 +35,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState('');
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
+  const [docDialogOpen, setDocDialogOpen] = useState(false);
   const environment = project.environments.find(env => env.id === environmentId) ?? project.environments[0];
 
   useEffect(() => {
@@ -143,7 +145,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
             </span></div>
             <span className={`detail-document-state detail-document-state--${document.state.toLowerCase()}`}>{documentStates[document.state]}</span>
           </li>)}</ul>}
-        {canEdit && <button type="button" className="detail-attach" onClick={() => edit('document-heading')}>
+        {canEdit && <button type="button" className="detail-attach" onClick={() => setDocDialogOpen(true)}>
           <PlusCircle size={14} /> Adjuntar nuevo documento o especificación
         </button>}
       </DetailCard>
@@ -179,5 +181,8 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
     </aside>
     {envDialogOpen && <EnvironmentsDialog project={project} onClose={() => setEnvDialogOpen(false)}
       onSaved={saved => { setProject(saved); setEnvDialogOpen(false); }} />}
+    {docDialogOpen && <DocumentsDialog projectId={project.id} role={role}
+      onClose={() => setDocDialogOpen(false)}
+      onChanged={() => setReload(value => value + 1)} />}
   </div>;
 }
