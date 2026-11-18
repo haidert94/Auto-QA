@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { ArrowRight, ChevronRight, Download } from 'lucide-react';
 import { statusLabels, type Project } from '../onboarding';
 import type { ReactNode } from 'react';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 
-export function ProjectHeading({ project, actions, summary }: { project: Project; actions?: ReactNode; summary?: string }) {
+export function ProjectHeading({ project, actions, summary, role }: { project: Project; actions?: ReactNode; summary?: string; role?: OrgRole }) {
+  const canGenerate = can(role, 'automation.generate');
   function exportSpecification() {
     // Explicit projection: omit credentials, credential identities and vault references.
     const specification = {
@@ -41,7 +44,7 @@ export function ProjectHeading({ project, actions, summary }: { project: Project
       <div className="project-heading__actions">
         {actions ?? <>
         <button type="button" className="secondary" onClick={exportSpecification}><Download size={14} /> Exportar especificación</button>
-        <a className="button-like" href="#automatizacion">Automatizar con IA <ArrowRight size={15} /></a>
+        {canGenerate && <a className="button-like" href="#automatizacion">Automatizar con IA <ArrowRight size={15} /></a>}
         </>}
       </div>
     </header>

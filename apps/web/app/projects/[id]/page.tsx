@@ -1,4 +1,4 @@
-import { accountFetch, requireAccount } from '../../autoqa-server';
+import { accountFetch, requireAccount, type OrgRole } from '../../autoqa-server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { type Project } from '../onboarding';
@@ -39,9 +39,11 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
   const project: Project = await response.json();
 
   let showExploration = true;
+  let role: OrgRole = 'VIEWER';
   try {
     const account = await requireAccount();
     showExploration = hasBrowserTests(account);
+    role = account.role;
   } catch { showExploration = false; }
 
   const readOnlyEnvs: PanelEnvironment[] = project.environments
@@ -65,13 +67,13 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
       <span className="project-environment-context"><i aria-hidden="true" />{project.environments.length} {project.environments.length === 1 ? 'entorno' : 'entornos'} registrados</span>
     }>
       {{
-        datos: <DataTab project={project} ipa={ipa} />,
-        escenarios: <ScenariosPanel key={project.id} project={project} />,
-        automatizacion: <AutomationPanel key={project.id} project={project} />,
+        datos: <DataTab project={project} ipa={ipa} role={role} />,
+        escenarios: <ScenariosPanel key={project.id} project={project} role={role} />,
+        automatizacion: <AutomationPanel key={project.id} project={project} role={role} />,
         reporte: <ExecutionReport key={project.id} project={project} />,
         calidad: <QualityPanel key={project.id} project={project} />,
         exploracion: showExploration
-          ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} project={project} />
+          ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} project={project} role={role} />
           : undefined,
       }}
     </ProjectTabs>

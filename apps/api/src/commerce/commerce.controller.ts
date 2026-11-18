@@ -88,10 +88,10 @@ export class CommerceController {
 
   @Get('me')
   async me(@Headers('authorization') auth?: string) {
-    const { name, email, organization } = await this.accounts.identity(auth);
+    const { name, email, organization, role } = await this.accounts.identity(auth);
     const subscription = organization.subscription;
     return {
-      name, email, organization: { id: organization.id, name: organization.name },
+      name, email, role, organization: { id: organization.id, name: organization.name },
       subscription: {
         status: subscriptionStatus(subscription), plan: subscription ? publicPlan(subscription.plan) : undefined,
         checkoutPrepared: !!subscription?.reference && !!subscription?.quotedPriceCop,

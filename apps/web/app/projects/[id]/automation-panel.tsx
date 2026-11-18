@@ -6,6 +6,8 @@ import { ArrowRight, Download, FileCode2, Play, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader } from './project-tabs';
 import { AutomationCodeViewer } from './automation-code-viewer';
@@ -22,7 +24,9 @@ function reviewCode(scenario: ScenarioListItem, code: string) {
   return reasons;
 }
 
-export function AutomationPanel({ project }: { project: Project }) {
+export function AutomationPanel({ project, role }: { project: Project; role?: OrgRole }) {
+  const canGenerate = can(role, 'automation.generate');
+  const canRunSuite = can(role, 'run.execute');
   const header = useAutomationHeader();
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [listError, setListError] = useState('');
@@ -125,7 +129,7 @@ export function AutomationPanel({ project }: { project: Project }) {
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Generador de código Playwright TypeScript a partir de los escenarios guardados. Revisa el código antes de solicitar su ejecución."
       actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
-        <button type="button" disabled={busy || !canRun} onClick={() => setRunSelection(ready)}><ArrowRight size={14} />Ejecutar en runners ({ready.length})</button></>} />, header.element)}
+        {canRunSuite && <button type="button" disabled={busy || !canRun} onClick={() => setRunSelection(ready)}><ArrowRight size={14} />Ejecutar en runners ({ready.length})</button>}</>} />, header.element)}
     {error && <p className="automation-message error" role="alert">{error}</p>}
     <div className="automation-workspace">
       <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
@@ -151,7 +155,7 @@ export function AutomationPanel({ project }: { project: Project }) {
               </div>
             </li>;
           })}</ul>}
-        <footer className="automation-scenarios__footer"><button type="button" disabled={busy || !selected.size || !!listError} onClick={() => void prepare()}><Play size={13} />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}</button>
+        <footer className="automation-scenarios__footer">{canGenerate && <button type="button" disabled={busy || !selected.size || !!listError} onClick={() => void prepare()}><Play size={13} />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}</button>}
           {notice && <p className="automation-operation-notice" role="status">{notice}</p>}
           <p>Generación determinística. «Generado» no implica compilación ni ejecución aprobada.</p></footer>
       </section>

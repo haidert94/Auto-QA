@@ -1,14 +1,13 @@
 import Link from 'next/link';
 import { accountFetch, requireAccount } from '../autoqa-server';
+import { can } from '../permissions';
 import { type ProjectSummary } from './onboarding';
 import { ProjectCard } from './project-card';
-
-type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
-const ROLE_RANK: Record<OrgRole, number> = { OWNER: 3, ADMIN: 2, EDITOR: 1, VIEWER: 0 };
 
 export const dynamic = 'force-dynamic';
 
 export default async function Projects() {
+  const account = await requireAccount().catch(() => null);
   let projects: ProjectSummary[] = [];
   let error = '';
   try {
@@ -19,20 +18,8 @@ export default async function Projects() {
     error = 'No se pudo consultar la API. Comprueba que NestJS y PostgreSQL estén ejecutándose.';
   }
 
-  // Rol del usuario en su organización, para ocultar acciones destructivas o de
-  // creación cuando no alcanza. El servidor sigue bloqueando por rol — esto es UX.
-  let myRole: OrgRole = 'VIEWER';
-  try {
-    const account = await requireAccount();
-    const membersResponse = await accountFetch('/commerce/members');
-    if (membersResponse.ok) {
-      const data: { members: { user: { email: string }; role: OrgRole }[] } = await membersResponse.json();
-      const me = data.members.find(m => m.user.email.toLowerCase() === account.email.toLowerCase());
-      if (me) myRole = me.role;
-    }
-  } catch {}
-  const canCreate = ROLE_RANK[myRole] >= ROLE_RANK.ADMIN;
-  const canRemove = ROLE_RANK[myRole] >= ROLE_RANK.ADMIN;
+  const canCreate = can(account?.role, 'project.create');
+  const canRemove = can(account?.role, 'project.delete');
 
   const visible = projects.filter(p => p.status !== 'ARCHIVED');
 

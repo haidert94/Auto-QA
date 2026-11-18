@@ -63,8 +63,10 @@ export type Plan = {
   parallelRuns: number; runAvailability: CapabilityAvailability; capabilities: PlanCapability[];
 };
 
+export type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 export type Account = {
-  name: string; email: string; organization: { id: string; name: string };
+  name: string; email: string; role: OrgRole;
+  organization: { id: string; name: string };
   subscription: { status: string; plan?: Plan; checkoutPrepared: boolean; periodEndsAt?: string; quotedPriceCop?: number | null };
   sandbox: boolean;
 };

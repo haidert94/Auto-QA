@@ -5,6 +5,8 @@ import { createPortal } from 'react-dom';
 import { ArrowRight, Compass, Globe2, Play, RefreshCw, Workflow } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { Project } from '../onboarding';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 import { ProjectHeading } from './project-heading';
 import { useExplorationHeader } from './project-tabs';
 
@@ -36,8 +38,9 @@ function Section({ index, title, badge, children }: { index: string; title: stri
   </section>;
 }
 
-export function ExplorationPanel({ projectId, environments, project }: { projectId: string; environments: Environment[]; project?: Project }) {
+export function ExplorationPanel({ projectId, environments, project, role }: { projectId: string; environments: Environment[]; project?: Project; role?: OrgRole }) {
   const header = useExplorationHeader();
+  const canCreate = can(role, 'exploration.create');
   const [items, setItems] = useState<Exploration[] | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -105,7 +108,7 @@ export function ExplorationPanel({ projectId, environments, project }: { project
 
   return <section className="exploration-panel" aria-label="Exploración del producto">
     {headingNode}
-    <Section index="01" title="Nueva exploración" badge={environments.length === 1 ? '1 entorno autorizado' : `${environments.length} entornos autorizados`}>
+    {canCreate && <Section index="01" title="Nueva exploración" badge={environments.length === 1 ? '1 entorno autorizado' : `${environments.length} entornos autorizados`}>
       <p className="muted exploration-lede">Encola un recorrido no destructivo desde una URL raíz. El agente respeta el alcance declarado, pausa ante CAPTCHAs y no envía formularios.</p>
       <form onSubmit={queue} className="exploration-form" aria-label="Encolar exploración">
         <label><span className="exploration-field-label"><Workflow size={12} /> Entorno</span>
@@ -122,9 +125,9 @@ export function ExplorationPanel({ projectId, environments, project }: { project
       </form>
       {notice && <p className="exploration-notice" role="status">{notice}</p>}
       {error && <p className="exploration-notice error" role="alert">{error}</p>}
-    </Section>
+    </Section>}
 
-    <Section index="02" title="Historial de exploraciones" badge={items === null ? 'Consultando' : `${activeItems.length} registros · ${completed} completadas${inProgress ? ` · ${inProgress} en curso` : ''}`}>
+    <Section index={canCreate ? '02' : '01'} title="Historial de exploraciones" badge={items === null ? 'Consultando' : `${activeItems.length} registros · ${completed} completadas${inProgress ? ` · ${inProgress} en curso` : ''}`}>
       {items === null ? <p className="muted" role="status">Cargando historial…</p>
         : activeItems.length === 0 ? <div className="exploration-empty">
             <Compass size={28} strokeWidth={1.4} aria-hidden="true" />

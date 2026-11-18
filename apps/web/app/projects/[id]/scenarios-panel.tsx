@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ScenarioListItem } from './scenario-card';
 import type { Project } from '../onboarding';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader } from './project-tabs';
 import { featureText, type ScenarioRun } from './scenario-presentation';
@@ -17,7 +19,11 @@ type RequirementOption = { id: string; title: string; externalKey: string | null
 type TestType = { code: string; label: string; description: string; available: boolean };
 type AutomationSummary = { id: string; status: string; stage: string | null; createdAt: string };
 
-export function ScenariosPanel({ project }: { project: Project }) {
+export function ScenariosPanel({ project, role }: { project: Project; role?: OrgRole }) {
+  const canCreate = can(role, 'scenario.create');
+  const canRun = can(role, 'run.execute');
+  const canSuggest = can(role, 'scenario.suggest');
+  const canGenerate = can(role, 'automation.generate');
   const projectId = project.id;
   const projectBaseUrl = project.environments.find(environment => environment.authorizationConfirmed)?.baseUrl ?? null;
   const environments = project.environments.filter(environment => environment.authorizationConfirmed && environment.readOnly);
@@ -261,11 +267,11 @@ export function ScenariosPanel({ project }: { project: Project }) {
     {header?.element && createPortal(<ProjectHeading project={project}
       summary={items ? `${items.length} escenarios registrados. Consulta sus pasos, requisitos asociados y resultados de ejecución.` : 'Consulta y prepara los escenarios del proyecto.'}
       actions={<>
-        <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>
+        {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
-        <button type="button" disabled={!runnable || !checked.size || !!listError} onClick={() => setRunSelection((items ?? []).filter(item => checked.has(item.id)))}>
+        {canRun && <button type="button" disabled={!runnable || !checked.size || !!listError} onClick={() => setRunSelection((items ?? []).filter(item => checked.has(item.id)))}>
           Ejecutar suite ({checked.size})<ArrowRight size={14} />
-        </button>
+        </button>}
       </>} />, header.element)}
 
     {showForm && <form onSubmit={create} className="scenario-form scenario-create-form" aria-label="Nuevo escenario manual">
@@ -292,7 +298,7 @@ export function ScenariosPanel({ project }: { project: Project }) {
     {runSelection && <ScenarioRunDialog projectId={projectId} scenarios={runSelection} environments={environments}
       onClose={() => setRunSelection(null)} onQueued={() => { void loadRuns(); void load(); }} />}
 
-    <details className="scenario-ai-tools"><summary><Sparkles size={14} />Generar y sugerir escenarios con IA</summary>
+    {(canSuggest || canGenerate) && <details className="scenario-ai-tools"><summary><Sparkles size={14} />Generar y sugerir escenarios con IA</summary>
     <section className="generator">
       <h3>Generar escenarios con IA</h3>
       {types === null
@@ -363,6 +369,6 @@ export function ScenariosPanel({ project }: { project: Project }) {
         </ul>}
     </section>}
 
-    </details>
+    </details>}
   </section>;
 }

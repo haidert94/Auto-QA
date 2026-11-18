@@ -7,6 +7,8 @@ import { accessModes, environmentTypes, type Project } from '../onboarding';
 import { categoryLabels, documentRequest, fileSize, type SavedDocument } from '../document-client';
 import { ProjectForm } from '../project-form';
 import { IpaHero, type IpaSummary } from './ipa-hero';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 
 const documentStates = { DECLARED: 'Declarado', UPLOADED: 'Cargado', PROCESSED: 'Procesado', VALIDATED: 'Validado' };
 
@@ -19,9 +21,10 @@ function DetailCard({ number, title, action, children }: {
   </section>;
 }
 
-export function DataTab({ project: initial, ipa }: { project: Project; ipa: IpaSummary | null }) {
+export function DataTab({ project: initial, ipa, role }: { project: Project; ipa: IpaSummary | null; role?: OrgRole }) {
   const [project, setProject] = useState(initial);
-  const [editing, setEditing] = useState(initial.status !== 'READY');
+  const canEdit = can(role, 'project.update');
+  const [editing, setEditing] = useState(initial.status !== 'READY' && canEdit);
   const [focusSection, setFocusSection] = useState('');
   const [environmentId, setEnvironmentId] = useState(initial.environments[0]?.id ?? '');
   const [documents, setDocuments] = useState<SavedDocument[] | null>(null);
@@ -86,7 +89,7 @@ export function DataTab({ project: initial, ipa }: { project: Project; ipa: IpaS
   return <div className="project-overview">
     <div className="project-overview__main">
       <DetailCard number="01" title="Parámetros del entorno y reglas de acceso" action={
-        <button type="button" className="detail-edit" onClick={() => edit()}><Pencil size={12} /> Modificar</button>
+        canEdit ? <button type="button" className="detail-edit" onClick={() => edit()}><Pencil size={12} /> Modificar</button> : null
       }>
         {project.environments.length > 1 && <label className="detail-label">Entorno seleccionado
           <select aria-label="Entorno seleccionado" value={environment?.id ?? ''} onChange={event => { setEnvironmentId(event.target.value); setCopied(false); setCopyError(''); }}>
@@ -138,9 +141,9 @@ export function DataTab({ project: initial, ipa }: { project: Project; ipa: IpaS
             </span></div>
             <span className={`detail-document-state detail-document-state--${document.state.toLowerCase()}`}>{documentStates[document.state]}</span>
           </li>)}</ul>}
-        <button type="button" className="detail-attach" onClick={() => edit('document-heading')}>
+        {canEdit && <button type="button" className="detail-attach" onClick={() => edit('document-heading')}>
           <PlusCircle size={14} /> Adjuntar nuevo documento o especificación
-        </button>
+        </button>}
       </DetailCard>
       <DetailCard number="03" title="Roles y matriz de autorización" action={<span className="detail-count">{project.roles.length} roles</span>}>
         {project.roles.length ? <ul className="detail-roles">{project.roles.map((role, i) => <li key={i}>
@@ -151,7 +154,7 @@ export function DataTab({ project: initial, ipa }: { project: Project; ipa: IpaS
             </li>)}</ul>}
           </div>
         </li>)}</ul> : <p className="muted">No hay roles declarados. Puedes agregarlos para probar permisos.</p>}
-        <button type="button" className="detail-edit" onClick={() => edit('role-heading')}><Pencil size={12} /> Editar roles y permisos</button>
+        {canEdit && <button type="button" className="detail-edit" onClick={() => edit('role-heading')}><Pencil size={12} /> Editar roles y permisos</button>}
       </DetailCard>
     </div>
     <aside className="project-overview__aside" aria-label="Preparación y diagnóstico del proyecto">
