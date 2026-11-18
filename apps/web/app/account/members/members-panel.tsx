@@ -124,6 +124,16 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
           El invitado solo verá estos proyectos al entrar. Puedes dejarlos sin seleccionar y asignarlos
           después desde la tabla de miembros.
         </small></p>
+        <div className="members-project-toggle">
+          <button type="button" className="secondary" disabled={busy}
+            onClick={() => setInviteProjectIds(
+              inviteProjectIds.size === data.orgProjects.length
+                ? new Set()
+                : new Set(data.orgProjects.map(p => p.id))
+            )}>
+            {inviteProjectIds.size === data.orgProjects.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+          </button>
+        </div>
         <ul className="members-project-list">
           {data.orgProjects.map(project => (
             <li key={project.id}>
@@ -253,17 +263,29 @@ function ProjectAssignmentEditor({ member, orgProjects, busy, onSave }: {
       </small></summary>
       {orgProjects.length === 0
         ? <p className="muted"><small>Aún no hay proyectos.</small></p>
-        : <ul className="members-project-list">
-          {orgProjects.map(project => (
-            <li key={project.id}>
-              <label>
-                <input type="checkbox" checked={selected.has(project.id)}
-                  onChange={() => toggle(project.id)} disabled={busy}/>
-                <span>{project.name}</span>
-              </label>
-            </li>
-          ))}
-        </ul>}
+        : <>
+          <div className="members-project-toggle">
+            <button type="button" className="secondary" disabled={busy}
+              onClick={() => setSelected(
+                selected.size === orgProjects.length
+                  ? new Set()
+                  : new Set(orgProjects.map(p => p.id))
+              )}>
+              {selected.size === orgProjects.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+            </button>
+          </div>
+          <ul className="members-project-list">
+            {orgProjects.map(project => (
+              <li key={project.id}>
+                <label>
+                  <input type="checkbox" checked={selected.has(project.id)}
+                    onChange={() => toggle(project.id)} disabled={busy}/>
+                  <span>{project.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </>}
       {dirty && orgProjects.length > 0 && (
         <div className="actions">
           <button type="button" onClick={() => onSave([...selected])} disabled={busy}>

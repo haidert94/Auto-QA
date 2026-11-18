@@ -284,6 +284,8 @@ summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .members-project-list input[type="checkbox"] { margin: 0; width: auto; }
 .members-invite-projects { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 5px; }
 .members-invite-projects legend { padding: 0 6px; font-weight: 600; font-size: 13px; }
+.members-project-toggle { margin: 4px 0 8px; }
+.members-project-toggle button { padding: 4px 10px; font-size: 12px; }
 .members-table button { margin: 0; padding: 6px 12px; min-height: 32px; }
 @media (max-width: 640px) {
   .members-invite { grid-template-columns: 1fr; }
