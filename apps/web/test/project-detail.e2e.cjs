@@ -53,6 +53,25 @@ let specFailure = false;
 let malformedSpec = false;
 let reportMode = false;
 let reportForbidden = false;
+let qualityMode = false;
+let qualityIcspFail = false;
+let qualityMalformed = false;
+let qualityExportFail = false;
+let qualityNoResults = false;
+let qualityAuditForbidden = false;
+let qualityEmptyHistory = false;
+let auditPosts = 0;
+const qualityIcsp = {
+  score: 88, generatedAt: '2026-11-18T12:00:00Z', window: { days: 30, from: '2026-10-19T12:00:00Z', to: '2026-11-18T12:00:00Z' },
+  counts: { requirements: 4, scenarios: 5, runs: 12, results: 5, passed: 3, failed: 2 },
+  dimensions: [
+    { code: 'requirementsCoverage', label: 'Cobertura de requisitos', weight: 30, value: 1, numerator: 4, denominator: 4 },
+    { code: 'executionCoverage', label: 'Cobertura de ejecución', weight: 20, value: 1, numerator: 5, denominator: 5 },
+    { code: 'stability', label: 'Estabilidad', weight: 30, value: .6, numerator: 3, denominator: 5 },
+    { code: 'traceability', label: 'Trazabilidad', weight: 20, value: 1, numerator: 5, denominator: 5 },
+  ],
+  gaps: { requirementsWithoutScenario: [], scenariosNotExecuted: [], unstableScenarios: [{ id: '31000002-0000-4000-8000-000000000002', label: 'Callback rechazado', detail: 'Tiene resultados distintos en la ventana.' }] },
+};
 const scenarioA = '31000001-0000-4000-8000-000000000001';
 const scenarioB = '31000002-0000-4000-8000-000000000002';
 const requirement = { id: '40000000-0000-4000-8000-000000000001', title: 'Checkout sandbox', externalKey: 'RF-01' };
@@ -157,7 +176,23 @@ const api = createServer(async (request, response) => {
     return send(project);
   }
   if (path === base) return send(project);
-  if (path === base + '/ipa') return ipaFail ? send({ message: 'IPA no disponible' }, 503) : send({ ipa });
+  if (path === base + '/ipa') return ipaFail ? send({ message: 'IPA no disponible' }, 503) : send({ ipa: qualityMode ? { ...ipa,
+    documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, verifiable: 7, ambiguous: 2, blockers: [], hints: ['Revisa el timeout.'] } : ipa,
+    generatedAt: '2026-11-18T12:00:00Z' });
+  if (path === base + '/icsp') return qualityIcspFail ? send({ message: 'ICSP no disponible' }, 503) : send(qualityMalformed ? [] : qualityNoResults ? {
+    ...qualityIcsp, score: 100, counts: { requirements: 0, scenarios: 0, runs: 0, results: 0, passed: 0, failed: 0 },
+    dimensions: qualityIcsp.dimensions.map(dimension => ({ ...dimension, numerator: 0, denominator: 0 })),
+  } : qualityIcsp);
+  if (path === base + '/ipa/history') return send(qualityEmptyHistory ? [] : [{ id: 'ipa-history-1', score: 82, delta: 82, createdAt: '2026-11-18T12:00:00Z' }, { id: 'ipa-history-2', score: 0, delta: null, createdAt: '2026-11-17T12:00:00Z' }]);
+  if (path === base + '/icsp/history') return send(qualityEmptyHistory ? [] : [{ id: 'icsp-history-1', score: 88, delta: null, createdAt: '2026-11-18T12:00:00Z' }]);
+  if (path === base + '/audits') {
+    if (request.method === 'POST') { auditPosts++; return send({ message: 'No debe iniciar auditorías en estas pruebas' }, 503); }
+    return qualityAuditForbidden ? send({ message: 'Sin acceso' }, 403) : send(qualityMode ? [{ id: 'audit-1', status: 'COMPLETED', createdAt: '2026-11-18T11:00:00Z', completedAt: '2026-11-18T11:01:00Z',
+      performanceScore: 94, accessibilityScore: 0, bestPracticesScore: 90, seoScore: 88, lcpMs: 2200, tbtMs: 0, cls: 0, fcpMs: 1100 }] : []);
+  }
+  if (path === base + '/report/export') return qualityExportFail ? send({ message: 'Exportación no disponible' }, 503) : send({
+    project: { id: project.id, name: project.name, status: project.status }, ipa, icsp: qualityIcsp, traceability: [], generatedAt: '2026-11-18T12:00:00Z',
+  });
   if (path === base + '/documents') return docsFail ? send({ message: 'Documentos temporalmente no disponibles.' }, 503) : send(documents);
   if (path === base + '/documents/analysis') return send({ analysis: null, ipa: { ...ipa, verifiable: 0, ambiguous: 0,
     documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, signals: [], recommendations: [] } });
@@ -556,6 +591,104 @@ async function verifyRunReport(page, screenshots) {
   console.log('PASS reporte: métricas y denominadores, duración cero/ausente, selector/filtros, error seguro, trazas autorizadas, JUnit XML válido, JSON sin claves privadas, matriz/cronología, móvil, permisos y reintentos. API simulada.');
 }
 
+async function verifyQuality(page, screenshots) {
+  qualityMode = true;
+  const initialQueues = queuedRequests.length;
+  const initialAudits = auditPosts;
+  await page.getByRole('tab', { name: 'Calidad', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Calidad del proyecto', exact: true });
+  const preparation = panel.getByRole('region', { name: 'Índice de Preparación para Automatización (IPA)', exact: true });
+  const health = panel.getByRole('region', { name: 'Índice Compuesto de Salud del Producto (ICSP)', exact: true });
+  const refresh = panel.getByRole('button', { name: 'Actualizar evaluación', exact: true });
+  await expect(preparation.getByRole('img', { name: 'IPA: 82 de 100', exact: true })).toBeVisible();
+  await expect(health.getByRole('img', { name: 'ICSP: 88 de 100', exact: true })).toBeVisible();
+  await expect(preparation.getByText('7 requisitos verificables · 2 ambiguos o pendientes.', { exact: true })).toBeVisible();
+  await expect(preparation.locator('.quality-document-counts dd')).toHaveText(['1', '3', '2', '1']);
+  await health.getByText('Escenarios inestables (1)', { exact: true }).click();
+  await expect(health.getByText('Tiene resultados distintos en la ventana.', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('region', { name: 'Histórico IPA', exact: true }).locator('li strong')).toHaveText(['82', '0']);
+  const audits = panel.getByRole('region', { name: 'Auditorías Lighthouse registradas', exact: true });
+  await expect(audits.locator('.quality-audit-values strong')).toHaveText(['94/100', '0/100', '90/100', '88/100']);
+  await expect(audits.getByText(/TBT: 0 ms · CLS: 0/)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Configurar auditoría', exact: true })).toHaveAttribute('href', `/projects/${projectId}/performance`);
+  await page.setViewportSize({ width: 1170, height: 1000 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: join(screenshots, 'project-quality-desktop.png'), fullPage: true, animations: 'disabled' });
+  await page.getByText('Exportar informe', { exact: true }).click();
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Descargar informe JSON', exact: true }).click();
+  const file = await downloadPromise;
+  assert.equal(file.suggestedFilename(), 'autoqa-informe-calidad.json');
+  const text = await readFile(await file.path(), 'utf8');
+  const exported = JSON.parse(text);
+  assert.equal(exported.project.id, projectId); assert.equal(exported.ipa.score, 82); assert.equal(exported.icsp.score, 88);
+  assert.ok(!text.includes('synthetic-private')); assert.ok(!text.includes('secretReference'));
+  await page.evaluate(() => { window.print = () => { window.autoqaPrinted = true; }; });
+  await page.getByRole('button', { name: 'Imprimir / Guardar como PDF', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.autoqaPrinted), true);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.app-nav')).toBeHidden();
+  await expect(page.locator('.project-tabs')).toBeHidden();
+  await page.emulateMedia({ media: 'screen' });
+  await page.getByText('Exportar informe', { exact: true }).click();
+  for (const width of [1920, 1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    const before = await page.locator('.app-shell-body').boundingBox();
+    const title = await page.getByRole('heading', { name: project.name, exact: true }).evaluate(element => ({ font: getComputedStyle(element).fontSize, x: element.getBoundingClientRect().x }));
+    await page.getByRole('tab', { name: 'Calidad', exact: true }).click();
+    await expect(health.getByRole('img', { name: 'ICSP: 88 de 100', exact: true })).toBeVisible();
+    const after = await page.locator('.app-shell-body').boundingBox();
+    assert.equal(before.x, after.x); assert.equal(before.width, after.width);
+    assert.deepEqual(await page.getByRole('heading', { name: project.name, exact: true }).evaluate(element => ({ font: getComputedStyle(element).fontSize, x: element.getBoundingClientRect().x })), title);
+    assert.equal(await page.locator('.quality-heading-slot .project-heading').evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Calidad sin desbordamiento a ${width}px.`);
+    if (width === 390) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: join(screenshots, 'project-quality-mobile.png'), fullPage: true, animations: 'disabled' });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  ipaFail = true;
+  await refresh.click();
+  await expect(preparation.getByText('No se pudo consultar esta evaluación.', { exact: true })).toBeVisible();
+  await expect(health.getByRole('img', { name: 'ICSP: 88 de 100', exact: true })).toBeVisible();
+  ipaFail = false;
+  await preparation.getByRole('button', { name: 'Reintentar IPA', exact: true }).click();
+  await expect(preparation.getByRole('img', { name: 'IPA: 82 de 100', exact: true })).toBeVisible();
+  qualityIcspFail = true;
+  await refresh.click();
+  await expect(health.getByText('No se pudo consultar esta evaluación.', { exact: true })).toBeVisible();
+  await expect(preparation.getByRole('img', { name: 'IPA: 82 de 100', exact: true })).toBeVisible();
+  qualityIcspFail = false; qualityMalformed = true;
+  await health.getByRole('button', { name: 'Reintentar ICSP', exact: true }).click();
+  await expect(health.getByText('La API no devolvió una evaluación válida.', { exact: true })).toBeVisible();
+  qualityMalformed = false; qualityNoResults = true;
+  await health.getByRole('button', { name: 'Reintentar ICSP', exact: true }).click();
+  await expect(health.getByRole('img', { name: 'ICSP: sin evaluación', exact: true })).toBeVisible();
+  await expect(health.getByText('Sin resultados de ejecución', { exact: true })).toBeVisible();
+  await expect(health.locator('.quality-dimensions li > div > span').filter({ hasText: 'Sin datos' })).toHaveCount(4);
+  assert.ok((await health.locator('.quality-progress > span').evaluateAll(elements => elements.map(element => element.style.width))).every(width => width === '0%'));
+  qualityNoResults = false; qualityAuditForbidden = true; qualityEmptyHistory = true;
+  await refresh.click();
+  await expect(audits.getByText('Consulta no autorizada o no incluida en el plan.', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Sin evaluaciones guardadas.', { exact: true })).toHaveCount(2);
+  await expect(health.getByRole('img', { name: 'ICSP: 88 de 100', exact: true })).toBeVisible();
+  qualityAuditForbidden = false; qualityEmptyHistory = false;
+  await refresh.click();
+  await expect(audits.locator('.quality-audit-values strong')).toHaveCount(4);
+  qualityExportFail = true;
+  await page.getByText('Exportar informe', { exact: true }).click();
+  await page.getByRole('button', { name: 'Descargar informe JSON', exact: true }).click();
+  await expect(panel.getByText('No se pudo exportar el informe de calidad.', { exact: true })).toBeVisible();
+  await page.getByText('Exportar informe', { exact: true }).click();
+  qualityExportFail = false; qualityMode = false;
+  assert.equal(queuedRequests.length, initialQueues, 'Calidad no encola pruebas.');
+  assert.equal(auditPosts, initialAudits, 'Consultar, actualizar y exportar Calidad no inicia auditorías.');
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  console.log('PASS calidad: IPA/ICSP y fuentes, ceros y ausencia de resultados, histórico, auditorías registradas, exportación JSON, impresión, permisos/errores independientes, geometría común y móvil. Sin auditorías ni ejecuciones automáticas. API simulada.');
+}
+
 async function run() {
   const apiPort = await listen(api);
   const reservation = createServer();
@@ -684,6 +817,7 @@ async function run() {
     await verifyScenarios(page, screenshots);
     await verifyAutomation(page, screenshots);
     await verifyRunReport(page, screenshots);
+    await verifyQuality(page, screenshots);
     docsFail = true;
     await page.reload();
     await page.getByText('Documentos temporalmente no disponibles.', { exact: true }).waitFor();

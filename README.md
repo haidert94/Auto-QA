@@ -49,6 +49,8 @@ En **Reporte**, selecciona todo el historial disponible o una ejecución, consul
 
 **Modificar**, **Adjuntar nuevo documento o especificación** y **Editar roles y permisos** abren las secciones del formulario existente. El selector permite consultar cada entorno sin cambiar su autorización. **Automatizar con IA** abre la pestaña de automatización y requiere las acciones y controles existentes para generar o ejecutar pruebas. **Exportar especificación** descarga un resumen JSON de alcance y permisos; excluye credenciales, identidades de acceso y referencias de bóveda. No incluye los archivos adjuntos.
 
+En **Calidad**, las tarjetas IPA e ICSP muestran los índices calculados por la API, sus dimensiones, brechas, estados documentales e históricos disponibles. La cabecera conserva el ancho, tamaño y fondo de las demás pestañas. Sin resultados de ejecución, ICSP muestra «Sin resultados de ejecución» y no atribuye salud al producto; las dimensiones sin denominador indican «Sin datos». Las auditorías Lighthouse muestran solo registros existentes y distinguen cero de un dato ausente. Los errores y restricciones de plan se presentan por sección. **Actualizar evaluación** consulta datos, **Exportar informe** descarga el JSON del endpoint existente o abre la impresión del navegador para guardar PDF. **Configurar auditoría** abre el flujo existente con sus controles de autorización; consultar esta pestaña no inicia escaneos ni pruebas.
+
 Para comprobar la interfaz en Windows, con Node.js y Google Chrome instalados:
 
 ```powershell

@@ -11,6 +11,8 @@ const AutomationHeaderContext = createContext<{ element: HTMLDivElement | null; 
 export function useAutomationHeader() { return useContext(AutomationHeaderContext); }
 const ReportHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
 export function useReportHeader() { return useContext(ReportHeaderContext); }
+const QualityHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
+export function useQualityHeader() { return useContext(QualityHeaderContext); }
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -54,6 +56,8 @@ export function ProjectTabs({
   const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion' }), [automationElement, active]);
   const [reportElement, setReportElement] = useState<HTMLDivElement | null>(null);
   const reportHeader = useMemo(() => ({ element: reportElement, active: active === 'reporte' }), [reportElement, active]);
+  const [qualityElement, setQualityElement] = useState<HTMLDivElement | null>(null);
+  const qualityHeader = useMemo(() => ({ element: qualityElement, active: active === 'calidad' }), [qualityElement, active]);
 
   useEffect(() => {
     setActive(readHashTab(visible));
@@ -73,10 +77,12 @@ export function ProjectTabs({
     <ScenarioHeaderContext.Provider value={scenarioHeader}>
     <AutomationHeaderContext.Provider value={automationHeader}>
     <ReportHeaderContext.Provider value={reportHeader}>
-      {active !== 'escenarios' && active !== 'automatizacion' && active !== 'reporte' && heading}
+    <QualityHeaderContext.Provider value={qualityHeader}>
+      {!['escenarios', 'automatizacion', 'reporte', 'calidad'].includes(active) && heading}
       <div ref={setHeaderElement} hidden={active !== 'escenarios'} className="scenario-heading-slot" />
       <div ref={setAutomationElement} hidden={active !== 'automatizacion'} className="automation-heading-slot" />
       <div ref={setReportElement} hidden={active !== 'reporte'} className="report-heading-slot" />
+      <div ref={setQualityElement} hidden={active !== 'calidad'} className="quality-heading-slot" />
       <nav className="project-tabs" aria-label="Secciones del proyecto">
         <ul role="tablist">
           {TABS.filter(t => t.id !== 'exploracion' || showExploration).map(tab => (
@@ -108,6 +114,7 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
+    </QualityHeaderContext.Provider>
     </ReportHeaderContext.Provider>
     </AutomationHeaderContext.Provider>
     </ScenarioHeaderContext.Provider>

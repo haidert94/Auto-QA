@@ -10,6 +10,7 @@ import { type IpaSummary } from './ipa-hero';
 import { ProjectTabs } from './project-tabs';
 import { ProjectHeading } from './project-heading';
 import { ScenariosPanel } from './scenarios-panel';
+import { QualityPanel } from './quality-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,23 +69,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         escenarios: <ScenariosPanel key={project.id} project={project} />,
         automatizacion: <AutomationPanel key={project.id} project={project} />,
         reporte: <ExecutionReport key={project.id} project={project} />,
-        calidad: (
-          <section className="panel">
-            <h2>Calidad</h2>
-            <p className="muted">
-              IPA mide la preparación del proyecto; ICSP mide la salud del producto.
-              El reporte consolida ambos con trazabilidad requisito → escenario → resultado.
-            </p>
-            <p>
-              <Link href={`/projects/${project.id}/ipa`}>Ver IPA →</Link>{' · '}
-              <Link href={`/projects/${project.id}/icsp`}>Ver ICSP →</Link>{' · '}
-              <Link href={`/projects/${project.id}/performance`}>Performance →</Link>{' · '}
-              <Link href={`/projects/${project.id}/load`}>Carga (k6) →</Link>{' · '}
-              <Link href={`/projects/${project.id}/monitors`}>Monitores →</Link>{' · '}
-              <Link href={`/projects/${project.id}/report`}>Reporte consolidado →</Link>
-            </p>
-          </section>
-        ),
+        calidad: <QualityPanel key={project.id} project={project} />,
         exploracion: showExploration
           ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} />
           : undefined,
