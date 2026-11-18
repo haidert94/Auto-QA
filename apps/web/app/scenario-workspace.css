@@ -140,6 +140,8 @@
 .documents-dialog__body details summary { font: 400 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--blue); cursor: pointer; }
 .documents-dialog__body h3 { font: 400 10px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 10px; }
 .documents-dialog__body p[role="status"], .documents-dialog__body p[role="alert"] { font-size: 11px; margin: 10px 0 0; }
+.documents-dialog__body ul.document-list li .actions { display: none; }
+.documents-dialog__body ul.document-list + button { display: none; }
 .modules-panel { border: 1px solid #e9e7e1; border-radius: 4px; padding: 16px; background: var(--surface); display: grid; gap: 14px; }
 .modules-panel__count { display: grid; gap: 6px; }
 .modules-panel__count-label { font: 400 9px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--muted); }
