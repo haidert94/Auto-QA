@@ -24,6 +24,8 @@ La misma suite comprueba cabecera sin márgenes, organización/plan recibidos, o
 
 ## Pestaña Escenarios
 
+La cabecera usa los estilos compartidos de `ProjectHeading` y el contenedor general de 1320 px. No tiene tarjeta blanca, ancho ampliado ni reglas de tamaño exclusivas. La prueba compara geometría de contenedor, breadcrumb y título, tamaño de fuente, fondo y espaciado entre Datos y Escenarios a 1920, 1440, 768, 390 y 320 px. Las acciones siguen siendo específicas de cada pestaña; en móvil pueden ocupar distinta altura según su cantidad.
+
 La vista `/projects/[id]#escenarios` usa lista/detalle, búsqueda, etiquetas y selección múltiple. `ScenariosPanel` conserva creación, sugerencias y generación existentes; `ScenarioWorkspace` presenta los datos y reutiliza `ScenarioCard` al editar. `ProjectTabs` proporciona un destino de cabecera mediante contexto; la cabecera de escenarios se monta allí con un portal para mantener el orden visual y de teclado (cabecera, pestañas, filtros, lista y detalle). Las otras pestañas conservan su cabecera. El contador procede de la lista recibida.
 
 El endpoint existente de escenarios aporta pasos, etiquetas y requisito; el historial `/runs` aporta fechas, estados y duraciones. Se toma la ejecución más reciente por fecha. En cola, en curso, fallo, bloqueo, omisiones, ausencia de resultados y error de consulta se muestran separadamente. No se inventa un archivo Playwright persistido, fuente documental, cobertura o worker activo. Los filtros usan presencia de resultados, porque la API no expone una clasificación persistida de «automatizado» frente a «borrador».

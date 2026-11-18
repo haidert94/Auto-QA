@@ -39,6 +39,8 @@ La barra superior de la zona autenticada ocupa todo el ancho: logo a la izquierd
 
 En **Escenarios**, la lista permite buscar por título, ID, requisito o paso (atajo `Ctrl+K`), filtrar por etiquetas y presencia de resultados, seleccionar casos y abrir su detalle lateral. **Nuevo escenario** y **Editar escenario** conservan las operaciones existentes. **Exportar feature** descarga los seleccionados, o todos cuando no hay selección; la vista BDD y sus palabras clave son derivadas y deben revisarse. **Ejecutar suite** solicita confirmar los casos y un entorno autorizado de solo lectura antes de encolar; presenta cada respuesta y respeta rechazos de autorización, plan y cuota del backend. Un envío en cola no se presenta como una prueba aprobada. La generación con IA continúa disponible en el desplegable inferior.
 
+Datos y Escenarios comparten el mismo contenedor, márgenes, tipografía y cabecera sobre el fondo marfil. Cambiar de pestaña conserva la alineación del nombre y del contenido; solamente cambian las acciones y la información de la sección.
+
 **Modificar**, **Adjuntar nuevo documento o especificación** y **Editar roles y permisos** abren las secciones del formulario existente. El selector permite consultar cada entorno sin cambiar su autorización. **Automatizar con IA** abre la pestaña de automatización y requiere las acciones y controles existentes para generar o ejecutar pruebas. **Exportar especificación** descarga un resumen JSON de alcance y permisos; excluye credenciales, identidades de acceso y referencias de bóveda. No incluye los archivos adjuntos.
 
 Para comprobar la interfaz en Windows, con Node.js y Google Chrome instalados:

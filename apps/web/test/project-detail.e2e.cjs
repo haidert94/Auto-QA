@@ -126,6 +126,33 @@ const api = createServer(async (request, response) => {
 });
 
 async function verifyScenarios(page, screenshots) {
+  async function headerGeometry() {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    return page.evaluate(() => {
+      const box = selector => {
+        const element = [...document.querySelectorAll(selector)].find(element => element.getClientRects().length);
+        const bounds = element.getBoundingClientRect();
+        return { x: bounds.x, y: bounds.y, width: bounds.width };
+      };
+      const heading = [...document.querySelectorAll('.project-heading')].find(element => element.getClientRects().length);
+      const style = getComputedStyle(heading);
+      return { body: box('.app-shell-body'), breadcrumb: box('.project-breadcrumb-row'), title: box('.project-heading h1'),
+        titleSize: getComputedStyle(heading.querySelector('h1')).fontSize,
+        idSize: getComputedStyle(heading.querySelector('.project-id')).fontSize,
+        background: style.backgroundColor, border: style.borderTopWidth,
+        padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft] };
+    });
+  }
+  for (const width of [1920, 1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    const dataHeader = await headerGeometry();
+    await page.getByRole('tab', { name: /^Escenarios \(3\)$/ }).click();
+    const scenarioHeader = await headerGeometry();
+    assert.deepEqual(scenarioHeader, dataHeader, `Datos y Escenarios comparten ancho, posición, tipografía y fondo a ${width}px.`);
+    assert.equal(scenarioHeader.background, 'rgba(0, 0, 0, 0)', 'El título no tiene tarjeta blanca.');
+  }
+  await page.setViewportSize({ width: 1440, height: 1100 });
   await page.getByRole('tab', { name: /^Escenarios \(3\)$/ }).click();
   const list = page.locator('.scenario-results');
   const detail = page.getByRole('complementary', { name: 'Detalle del escenario seleccionado' });
