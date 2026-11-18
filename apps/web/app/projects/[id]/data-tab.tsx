@@ -9,6 +9,7 @@ import { ProjectForm } from '../project-form';
 import { IpaHero, type IpaSummary } from './ipa-hero';
 import { EnvironmentsDialog } from './environments-dialog';
 import { DocumentsDialog } from './documents-dialog';
+import { RolesDialog } from './roles-dialog';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
@@ -36,6 +37,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   const [copyError, setCopyError] = useState('');
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [docDialogOpen, setDocDialogOpen] = useState(false);
+  const [rolesDialogOpen, setRolesDialogOpen] = useState(false);
   const environment = project.environments.find(env => env.id === environmentId) ?? project.environments[0];
 
   useEffect(() => {
@@ -158,7 +160,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
             </li>)}</ul>}
           </div>
         </li>)}</ul> : <p className="muted">No hay roles declarados. Puedes agregarlos para probar permisos.</p>}
-        {canEdit && <button type="button" className="detail-edit" onClick={() => edit('role-heading')}><Pencil size={12} /> Editar roles y permisos</button>}
+        {canEdit && <button type="button" className="detail-edit" onClick={() => setRolesDialogOpen(true)}><Pencil size={12} /> Editar roles y permisos</button>}
       </DetailCard>
     </div>
     <aside className="project-overview__aside" aria-label="Preparación y diagnóstico del proyecto">
@@ -184,5 +186,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
     {docDialogOpen && <DocumentsDialog projectId={project.id} role={role}
       onClose={() => setDocDialogOpen(false)}
       onChanged={() => setReload(value => value + 1)} />}
+    {rolesDialogOpen && <RolesDialog project={project} onClose={() => setRolesDialogOpen(false)}
+      onSaved={saved => { setProject(saved); setRolesDialogOpen(false); }} />}
   </div>;
 }
