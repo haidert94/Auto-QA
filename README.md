@@ -22,6 +22,8 @@ npx.cmd prisma validate
 npm.cmd run build
 ```
 
+El build incluye las migraciones. `npm.cmd run db:deploy` usa una conexión directa para Prisma CLI: prioriza `DIRECT_URL`, después `DATABASE_URL_UNPOOLED`; si solo existe una URL Neon con `-pooler`, deriva su endpoint directo conservando base, esquema y TLS. La aplicación conserva su `DATABASE_URL` original. En PostgreSQL local no necesitas otra variable. Los errores `P1002` de bloqueo se reintentan hasta tres veces; si persisten, el build falla. No se desactiva el bloqueo ni se omiten migraciones. Consulta [despliegue y diagnóstico P1002](docs/DEPLOY.md#conexión-directa-y-bloqueos-de-migraciones-p1002). Pruebas del script: `npm.cmd run test:deploy` (sin base de datos).
+
 Abre dos terminales PowerShell en la raíz:
 
 | Terminal | Comando |

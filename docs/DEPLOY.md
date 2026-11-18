@@ -20,7 +20,7 @@ Hay un solo `server.listen()` por restricción de Hostinger (un segundo `listen`
 | Dominio | `yanballilibeth.com` |
 | Hosting | Hostinger Node.js (compartido) |
 | Entry file | `server.js` |
-| Build script | `npm run build` (incluye `prisma generate && prisma migrate deploy && build api && build web`) |
+| Build script | `npm run build` (incluye `prisma generate && npm run db:deploy && build api && build web`) |
 | Base de datos | Neon Postgres (`DATABASE_URL` configurada en hPanel) |
 | Auto-deploy | GitHub `haidert94/Auto-QA`, branch `main` |
 
@@ -32,6 +32,7 @@ Cada push a `main` dispara el build. Cambiar una env var se hace en hPanel → N
 | --- | --- |
 | `AUTOQA_DEPLOYMENT` | `hosted` |
 | `DATABASE_URL` | cadena de Neon Postgres |
+| `DIRECT_URL` (opcional) | conexión directa a la misma base/esquema para migraciones; sin `-pooler`. Alternativa: `DATABASE_URL_UNPOOLED` |
 | `WEB_ORIGIN` / `AUTOQA_ACCOUNT_ORIGIN` | `https://yanballilibeth.com` |
 | `AUTOQA_DOCUMENTS_TOKEN` | clave de 64 hex, generada según [docs/DOCUMENTS.md](DOCUMENTS.md) |
 | `AUTOQA_MAIL_MODE` | `smtp` |
@@ -40,6 +41,38 @@ Cada push a `main` dispara el build. Cambiar una env var se hace en hPanel → N
 | `AUTOQA_SECRET_KEY` | 64 hex (o 32 bytes base64), cifra credenciales de entorno (ver abajo) |
 
 Opcionales: `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` para activar el `AiRouter`; sin ellas se cae al `RuleBasedProvider` y los agentes de generación de escenarios funcionan con resultados mínimos.
+
+## Conexión directa y bloqueos de migraciones (P1002)
+
+El error `Timed out trying to acquire a postgres advisory lock (SELECT pg_advisory_lock(72707369))` ocurre en `migrate deploy`, antes de compilar NestJS y Next.js. No es un fallo de estilos. El log del build fallido mostraba una conexión Neon con `-pooler`; eso es un hecho observado. Neon no admite bloqueos de sesión en conexiones agrupadas, y Prisma Migrate necesita ese mecanismo. Otro proceso también puede retener el bloqueo; el log por sí solo no identifica qué sesión lo tiene. Referencias: [pooling de Neon](https://neon.com/docs/connect/connection-pooling), [bloqueos de Prisma 6](https://www.prisma.io/docs/orm/v6/prisma-migrate/workflows/development-and-production#advisory-locking).
+
+`scripts/prisma-migrate-deploy.cjs` ejecuta la CLI Prisma instalada, sin shell ni instalaciones adicionales, con este orden:
+
+1. `DIRECT_URL`, si está definida y no está vacía.
+2. `DATABASE_URL_UNPOOLED`, si está definida y no está vacía.
+3. Si `DATABASE_URL` tiene un host Neon `ep-…-pooler.…neon.tech`, usa ese mismo host sin `-pooler` **solo en el proceso hijo de migraciones**. Conserva usuario, contraseña codificada, base, esquema y parámetros TLS. Quita `pgbouncer` en la conexión directa.
+4. En otros PostgreSQL usa `DATABASE_URL` sin adivinar otro host.
+
+Las conexiones directas explícitas deben apuntar a la misma base y esquema; en Neon se comprueba también el endpoint. No se añade `directUrl` obligatorio al esquema, por lo que la configuración local existente sigue siendo válida. La conexión de Prisma Client durante la ejecución de la app no cambia. El script carga `.env` de la raíz, dando prioridad al entorno del proceso, y omite URLs y contraseñas en sus mensajes.
+
+Para Hostinger puedes mantener `npm run build` como comando de compilación: la derivación Neon funciona sin añadir variables. Se recomienda configurar explícitamente `DIRECT_URL` desde **Neon → Connect**, desactivando **Connection pooling**, copiando la cadena privada a hPanel para la misma base y conservando TLS. No publiques esa cadena ni la pegues en Git. Mantén `DATABASE_URL` con pooling para la aplicación.
+
+Solo un `P1002` que identifica el advisory lock se reintenta, hasta tres intentos con pausas de 2 y 4 segundos. Prisma conserva su espera interna de 10 segundos por intento. Fallos SQL, migraciones fallidas o errores de conexión no se ocultan ni se reintentan indiscriminadamente. Si el bloqueo persiste se devuelve un estado no exitoso y se detiene el build. No se configura `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK`, no se resetea la base ni se marca ninguna migración como aplicada.
+
+Después de subir la corrección, comprueba que hPanel construye ese commit. Espera a que terminen o cancela desde hPanel los builds duplicados antes de reintentar. Si aún falla con P1002 usando conexión directa, un administrador puede inspeccionar el bloqueo desde el SQL Editor de Neon con esta consulta de solo lectura:
+
+```sql
+SELECT a.pid, a.application_name, a.state, a.query_start, l.granted,
+       pg_blocking_pids(a.pid) AS blocking_pids
+FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory'
+  AND l.classid = 0 AND l.objid = 72707369 AND l.objsubid = 1;
+```
+
+No termines sesiones ni reinicies la base sin identificar al propietario del trabajo y su impacto. Si aparece `P3009` u otro error SQL, revisa esa migración antes de continuar; no se resuelve desactivando bloqueos.
+
+Para repetir las pruebas en Windows: `npm.cmd run test:deploy`. Son pruebas sin red del selector de conexión, redacción, reintentos y propagación de errores. La validación adicional del cambio reprodujo P1002 en un PostgreSQL local temporal, liberó exclusivamente el bloqueo creado por la prueba, aplicó las 26 migraciones y ejecutó el build completo. Esa prueba no acredita el estado de los locks ni el éxito del siguiente despliegue en Neon/Hostinger; hay que comprobar su log.
 
 ## Clave de cifrado de credenciales (`AUTOQA_SECRET_KEY`)
 
