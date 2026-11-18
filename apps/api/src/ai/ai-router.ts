@@ -26,12 +26,15 @@ const CAPABILITY_FOR_OPERATION: Record<AiOperation, CapabilityCode | null> = {
 // Modelo por operación. Justificación en docs/AI.md:
 // - Clasificación y explicación de fallos: Haiku (cost-eficiente).
 // - Análisis documental y generación de escenarios: Sonnet (razonamiento).
+// TEMPORAL — fase de pruebas: todas las operaciones van a Haiku 4.5 para
+// estirar el crédito. Al cerrar la validación de flujo, revertir las tres
+// últimas líneas a 'claude-sonnet-4-5'.
 const MODEL_BY_OPERATION: Record<AiOperation, AiModel> = {
   'document-classification': 'claude-haiku-4-5',
   'failure-explanation': 'claude-haiku-4-5',
-  'document-analysis': 'claude-sonnet-4-5',
-  'scenario-generation': 'claude-sonnet-4-5',
-  'ux-analysis': 'claude-sonnet-4-5',
+  'document-analysis': 'claude-haiku-4-5',
+  'scenario-generation': 'claude-haiku-4-5',
+  'ux-analysis': 'claude-haiku-4-5',
 };
 
 // Env var opcional por operación para experimentar sin recompilar.
