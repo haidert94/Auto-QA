@@ -17,6 +17,21 @@ function moduleSlot(): ModuleSlot {
   return { id: crypto.randomUUID(), name: '', file: null, state: 'IDLE' };
 }
 
+// El backend limita el nombre del archivo a 180 caracteres: si el prefijo del
+// módulo lo empuja por encima, recortamos la base del archivo sin tocar la
+// extensión para que la carga no rebote.
+function prefixFilename(moduleName: string, original: string): string {
+  const MAX = 180;
+  const dot = original.lastIndexOf('.');
+  const ext = dot > 0 ? original.slice(dot) : '';
+  const base = dot > 0 ? original.slice(0, dot) : original;
+  const prefix = `${moduleName} - `;
+  const naive = prefix + original;
+  if (naive.length <= MAX) return naive;
+  const budget = Math.max(1, MAX - prefix.length - ext.length);
+  return prefix + base.slice(0, budget) + ext;
+}
+
 export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
   projectId: string;
   role?: OrgRole;
@@ -80,7 +95,8 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
       for (const slot of ready) {
         if (!slot.file) continue;
         updateModule(slot.id, { state: 'UPLOADING', error: undefined });
-        const prefixed = new File([slot.file], `${slot.name.trim()} - ${slot.file.name}`, { type: slot.file.type });
+        const renamed = prefixFilename(slot.name.trim(), slot.file.name);
+        const prefixed = new File([slot.file], renamed, { type: slot.file.type });
         const data = new FormData();
         data.append('files', prefixed);
         data.append('type', 'AUTO');
