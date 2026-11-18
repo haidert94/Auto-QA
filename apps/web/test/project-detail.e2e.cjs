@@ -8,6 +8,7 @@ const { mkdir, readFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { chromium } = require('playwright-core');
 const { expect } = require('@playwright/test');
+const JSZip = require('jszip');
 
 const root = resolve(__dirname, '../../..');
 const projectId = '10000000-0000-4000-8000-000000000001';
@@ -48,16 +49,18 @@ let saveCount = 0;
 let logoutCalled = false;
 let scenariosFail = false;
 let historyFail = false;
+let specFailure = false;
+let malformedSpec = false;
 const scenarioA = '31000001-0000-4000-8000-000000000001';
 const scenarioB = '31000002-0000-4000-8000-000000000002';
 const requirement = { id: '40000000-0000-4000-8000-000000000001', title: 'Checkout sandbox', externalKey: 'RF-01' };
 let scenarios = [
   { id: scenarioA, title: 'Pago exitoso con tarjeta tokenizada 3DS', requirementId: requirement.id,
     expectedResult: 'La pasarela sandbox confirma la transacción.', requirement, tags: ['@flujoBasico', '@smoke'], _count: { results: 1 },
-    steps: [{ ordinal: 1, action: 'goto: /checkout' }, { ordinal: 2, action: 'click: #confirmar-pago' }, { ordinal: 3, action: 'expect: Confirmación', expected: 'Transacción confirmada' }] },
+    steps: [{ ordinal: 1, action: 'goto: /checkout' }, { ordinal: 2, action: 'click: #confirmar-pago' }, { ordinal: 3, action: 'expect-text: Confirmación', expected: 'Transacción confirmada' }] },
   { id: scenarioB, title: 'Rechazo por fondos insuficientes con callback asíncrono', requirementId: requirement.id,
     expectedResult: 'Se informa el rechazo sin duplicar la transacción.', requirement, tags: ['@flujoAlterno', '@apiRest'], _count: { results: 1 },
-    steps: [{ ordinal: 1, action: 'goto: /checkout/rechazo' }, { ordinal: 2, action: 'expect: Fondos insuficientes' }] },
+    steps: [{ ordinal: 1, action: 'goto: /checkout/rechazo' }, { ordinal: 2, action: 'expect-text: Fondos insuficientes' }] },
   { id: '31000003-0000-4000-8000-000000000003', title: 'Timeout en pasarela y reintento pendiente de especificación', requirementId: null,
     expectedResult: null, requirement: null, tags: ['@edgeCases'], _count: { results: 0 }, steps: [] },
 ];
@@ -67,6 +70,20 @@ let scenarioRuns = scenarios.slice(0, 2).map((scenario, i) => ({
   results: [{ id: String(i), status: i ? 'FAILED' : 'PASSED', durationMs: i ? 3200 : 1400, errorMessage: null, evidenceKey: null }],
 }));
 const queuedRequests = [];
+
+function fixtureSpec(scenario) {
+  const steps = (scenario.steps ?? []).flatMap(step => {
+    const value = step.action.split(':').slice(1).join(':').trim();
+    if (step.action.startsWith('goto:')) return [`  await page.goto(${JSON.stringify(value)});`];
+    if (step.action.startsWith('click:')) return [`  await page.locator(${JSON.stringify(value)}).click();`];
+    if (step.action.startsWith('expect-text:')) return [`  await expect(page.getByText(${JSON.stringify(value)})).toBeVisible();`];
+    return ['  // TODO: revisar acción no reconocida'];
+  });
+  return { filename: scenario.id === scenarioB ? '../../payment-declined.spec.ts' : `${scenario.id.slice(0, 8)}-checkout.spec.ts`,
+    code: ["import { expect, test } from '@playwright/test';", '', `// Escenario ${scenario.id}`,
+      ...(scenario.id === scenarioB ? ['// <img src=x onerror="window.autoqaInjected=true">'] : []), `test(${JSON.stringify(scenario.title)}, async ({ page }) => {`,
+      ...(steps.length ? steps : ['  // TODO: define los pasos del escenario en AutoQA.']), '});', ''].join('\n') };
+}
 
 async function listen(server) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -93,6 +110,11 @@ const api = createServer(async (request, response) => {
   const scenarioPath = path.slice((base + '/scenarios/').length);
   if (path.startsWith(base + '/scenarios/')) {
     const scenario = scenarios.find(item => scenarioPath.startsWith(item.id));
+    if (scenario && scenarioPath === scenario.id + '/playwright') {
+      if (scenario.id === scenarioB && specFailure) return send({ message: 'Generador temporalmente no disponible.' }, 503);
+      if (scenario.id === scenarioB && malformedSpec) return send({ spec: 'contrato incorrecto' });
+      return send(fixtureSpec(scenario));
+    }
     if (scenario && scenarioPath === scenario.id && request.method === 'PATCH') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       Object.assign(scenario, JSON.parse(Buffer.concat(chunks).toString())); return send(scenario);
@@ -279,6 +301,146 @@ async function verifyScenarios(page, screenshots) {
   console.log('PASS escenarios: listado/detalle, búsqueda y etiquetas, selección, exportación derivada, creación/edición, confirmación sin envíos automáticos, encolado y errores de cuota, reintentos, estados vacíos, borradores y autorización; escritorio y móvil.');
 }
 
+async function verifyAutomation(page, screenshots) {
+  const section = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
+  const rows = section.locator('.automation-pick-list > li');
+  const source = section.locator('.automation-source');
+  const initialQueues = queuedRequests.length;
+  await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+  await expect(rows).toHaveCount(4);
+  await expect(source).toContainText(fixtureSpec(scenarios[0]).code.split('\n')[0]);
+  await section.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
+  await expect(section.getByText('4 archivos generados. Revisa los pendientes antes de ejecutar.', { exact: true })).toBeVisible();
+  await expect(section.locator('.automation-generation-state').getByText('Generado', { exact: true })).toHaveCount(2);
+  await expect(section.locator('.automation-generation-state').getByText('Requiere revisión', { exact: true })).toHaveCount(2);
+  assert.equal(queuedRequests.length, initialQueues, 'Generar y visualizar no encola ejecuciones.');
+  await section.getByRole('tab', { name: 'payment-declined.spec.ts', exact: true }).click();
+  await expect(source).toContainText('<img src=x onerror="window.autoqaInjected=true">');
+  await expect(source.locator('img')).toHaveCount(0);
+  assert.equal(await page.evaluate(() => !!window.autoqaInjected), false, 'El código recibido se presenta como texto.');
+  await section.getByRole('tab', { name: fixtureSpec(scenarios[0]).filename, exact: true }).click();
+  await page.setViewportSize({ width: 1170, height: 1000 });
+  const picker = await section.locator('.automation-scenarios').boundingBox();
+  const editor = await section.locator('.automation-editor').boundingBox();
+  assert.ok(picker.x + picker.width <= editor.x, 'La selección queda a la izquierda del código.');
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: join(screenshots, 'project-automation-desktop.png'), fullPage: true, animations: 'disabled' });
+  const firstFile = fixtureSpec(scenarios[0]).filename;
+  await section.getByRole('tab', { name: firstFile, exact: true }).click();
+  await section.getByRole('button', { name: 'Copiar código', exact: true }).click();
+  assert.equal((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n'), fixtureSpec(scenarios[0]).code);
+  const configTab = section.getByRole('tab', { name: 'playwright.config.ts', exact: true });
+  await configTab.click();
+  await expect(source).toContainText('process.env.AUTOQA_BASE_URL');
+  await section.getByRole('button', { name: 'Copiar código', exact: true }).click();
+  const configText = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n');
+  await configTab.focus(); await page.keyboard.press('Home');
+  await expect(section.getByRole('tab', { name: firstFile, exact: true })).toHaveAttribute('aria-selected', 'true');
+  await section.getByRole('button', { name: 'Ampliar visor de código', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+  await section.getByRole('button', { name: 'Restaurar visor de código', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  const zipDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true }).click();
+  const download = await zipDownload;
+  assert.equal(download.suggestedFilename(), 'autoqa-playwright.zip');
+  const zip = await JSZip.loadAsync(await readFile(await download.path()), { checkCRC32: true });
+  const zipNames = Object.keys(zip.files).filter(name => !zip.files[name].dir);
+  assert.equal(zipNames.filter(name => name.endsWith('.spec.ts')).length, 4);
+  assert.ok(zipNames.every(name => !name.includes('..') && !name.startsWith('/') && !name.includes('\\')));
+  assert.equal(await zip.file('playwright.config.ts').async('string'), configText);
+  const firstPath = zipNames.find(name => name.includes(scenarioA) && name.endsWith('.spec.ts'));
+  assert.equal(await zip.file(firstPath).async('string'), fixtureSpec(scenarios[0]).code);
+  const allContents = (await Promise.all(zipNames.map(name => zip.file(name).async('string')))).join('\n');
+  assert.ok(!allContents.includes('synthetic-private-identity') && !allContents.includes('vault:synthetic-private-reference'));
+  assert.ok((await zip.file('README.md').async('string')).includes('Revisar:'));
+
+  for (const width of [1920, 1440, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const original = await page.locator('.app-shell-body').boundingBox();
+    const originalTitle = await page.locator('.project-heading:visible h1').evaluate(node => ({ x: node.getBoundingClientRect().x, size: getComputedStyle(node).fontSize }));
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const automated = await page.locator('.app-shell-body').boundingBox();
+    const automatedTitle = await page.locator('.project-heading:visible h1').evaluate(node => ({ x: node.getBoundingClientRect().x, size: getComputedStyle(node).fontSize }));
+    assert.equal(original.x, automated.x); assert.equal(original.width, automated.width); assert.deepEqual(originalTitle, automatedTitle);
+    assert.equal(await page.locator('.project-heading:visible').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Automatización sin desbordamiento a ${width}px.`);
+    if (width === 390) {
+      const mobilePicker = await section.locator('.automation-scenarios').boundingBox(); const mobileEditor = await section.locator('.automation-editor').boundingBox();
+      assert.ok(mobilePicker.y + mobilePicker.height <= mobileEditor.y);
+      await page.screenshot({ path: join(screenshots, 'project-automation-mobile.png'), fullPage: true, animations: 'disabled' });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const all = section.getByRole('checkbox', { name: 'Seleccionar todos', exact: true });
+  await all.uncheck();
+  await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).check();
+  const execute = page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true });
+  await execute.click();
+  let dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+  await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  assert.equal(queuedRequests.length, initialQueues);
+  await execute.click(); dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
+  await expect(dialog.getByText(/En cola ·/)).toBeVisible();
+  assert.equal(queuedRequests.at(-1).environmentId, environment.id);
+  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).uncheck();
+  await section.getByRole('checkbox', { name: `Automatizar ${scenarios[2].title}`, exact: true }).check();
+  await expect(page.getByRole('button', { name: 'Ejecutar en runners (0)', exact: true })).toBeDisabled();
+  await expect(section.getByText('Sin pasos definidos', { exact: false }).first()).toBeVisible();
+
+  scenarios[1].title += ' · contrato actualizado';
+  malformedSpec = true;
+  await section.getByRole('button', { name: 'Actualizar escenarios de automatización', exact: true }).click();
+  await section.getByRole('button', { name: scenarios[1].title, exact: true }).click();
+  await expect(section.getByText('La API no devolvió un archivo de código válido.', { exact: true }).first()).toBeVisible();
+  malformedSpec = false; specFailure = true;
+  await section.getByRole('button', { name: 'Reintentar archivo', exact: true }).click();
+  await expect(section.getByText('Generador temporalmente no disponible.', { exact: true }).first()).toBeVisible();
+  await all.uncheck();
+  await section.getByRole('checkbox', { name: `Automatizar ${scenarios[1].title}`, exact: true }).check();
+  let unexpectedDownloads = 0;
+  const recordDownload = () => { unexpectedDownloads++; };
+  page.on('download', recordDownload);
+  await page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true }).click();
+  await expect(section.getByText(/no se descargó un ZIP incompleto/)).toBeVisible();
+  assert.equal(unexpectedDownloads, 0); page.off('download', recordDownload);
+  specFailure = false;
+  await section.getByRole('button', { name: 'Reintentar archivo', exact: true }).click();
+  await expect(rows.filter({ hasText: scenarios[1].title }).getByText('Generado', { exact: true })).toBeVisible();
+  await expect(source).toContainText(scenarios[1].title);
+  await page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true }).click();
+  dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
+  await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  scenariosFail = true;
+  await page.reload();
+  await expect(section.getByText('No se pudo cargar la lista de automatización.', { exact: true })).toBeVisible();
+  scenariosFail = false;
+  await section.getByRole('button', { name: 'Reintentar automatización', exact: true }).click();
+  await expect(rows).toHaveCount(4);
+  const populated = scenarios; scenarios = [];
+  await page.reload();
+  await expect(section.getByRole('heading', { name: 'Aún no hay escenarios para automatizar', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true })).toBeDisabled();
+  scenarios = populated;
+  project.status = 'DRAFT';
+  await page.reload();
+  await section.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true })).toBeDisabled();
+  project.status = 'READY';
+  await page.reload();
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  console.log('PASS automatización: contrato filename/code, visor seguro, archivos/teclado, copiar, pantalla completa, ZIP con CRC/rutas/contenido, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
+}
+
 async function run() {
   const apiPort = await listen(api);
   const reservation = createServer();
@@ -405,6 +567,7 @@ async function run() {
     assert.equal(await page.evaluate(() => document.activeElement.id), 'role-heading');
     await page.getByRole('button', { name: /Volver a la vista de resumen/ }).click();
     await verifyScenarios(page, screenshots);
+    await verifyAutomation(page, screenshots);
     docsFail = true;
     await page.reload();
     await page.getByText('Documentos temporalmente no disponibles.', { exact: true }).waitFor();

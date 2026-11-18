@@ -66,9 +66,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
       {{
         datos: <DataTab project={project} ipa={ipa} />,
         escenarios: <ScenariosPanel key={project.id} project={project} />,
-        automatizacion: <AutomationPanel projectId={project.id}
-          environments={project.environments.filter(e => e.authorizationConfirmed)
-            .map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} />,
+        automatizacion: <AutomationPanel key={project.id} project={project} />,
         reporte: <ExecutionReport projectId={project.id} />,
         calidad: (
           <section className="panel">

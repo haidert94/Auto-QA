@@ -3,6 +3,7 @@ import './commercial.css';
 import './style.css';
 import './project-detail.css';
 import './scenario-workspace.css';
+import './automation-workspace.css';
 
 const geist = localFont({
   src: './fonts/geist.woff2',

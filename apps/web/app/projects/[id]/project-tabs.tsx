@@ -7,6 +7,8 @@ const ScenarioHeaderContext = createContext<{
   setCount: (count: number | null) => void;
 } | null>(null);
 export function useScenarioHeader() { return useContext(ScenarioHeaderContext); }
+const AutomationHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
+export function useAutomationHeader() { return useContext(AutomationHeaderContext); }
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -46,6 +48,8 @@ export function ProjectTabs({
   const [headerElement, setHeaderElement] = useState<HTMLDivElement | null>(null);
   const [scenarioCount, setScenarioCount] = useState<number | null>(null);
   const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount }), [headerElement]);
+  const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
+  const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion' }), [automationElement, active]);
 
   useEffect(() => {
     setActive(readHashTab(visible));
@@ -63,8 +67,10 @@ export function ProjectTabs({
 
   return (
     <ScenarioHeaderContext.Provider value={scenarioHeader}>
-      {active !== 'escenarios' && heading}
+    <AutomationHeaderContext.Provider value={automationHeader}>
+      {active !== 'escenarios' && active !== 'automatizacion' && heading}
       <div ref={setHeaderElement} hidden={active !== 'escenarios'} className="scenario-heading-slot" />
+      <div ref={setAutomationElement} hidden={active !== 'automatizacion'} className="automation-heading-slot" />
       <nav className="project-tabs" aria-label="Secciones del proyecto">
         <ul role="tablist">
           {TABS.filter(t => t.id !== 'exploracion' || showExploration).map(tab => (
@@ -96,6 +102,7 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
+    </AutomationHeaderContext.Provider>
     </ScenarioHeaderContext.Provider>
   );
 }

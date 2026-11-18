@@ -7,6 +7,7 @@
     "start": "next start --hostname 127.0.0.1"
   },
   "dependencies": {
+    "jszip": "3.10.2",
     "lucide-react": "^1.73.0",
     "next": "^15.3.3",
     "react": "^19.1.0",
