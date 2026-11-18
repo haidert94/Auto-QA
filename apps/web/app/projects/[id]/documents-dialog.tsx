@@ -58,6 +58,16 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
   }
 
   async function uploadModules() {
+    const missingName = modules.filter(m => m.file && !m.name.trim());
+    if (missingName.length) {
+      setModules(list => list.map(item => item.file && !item.name.trim()
+        ? { ...item, state: 'ERROR', error: 'Falta el nombre del módulo.' }
+        : item));
+      setModuleError(missingName.length === 1
+        ? 'Falta el nombre de un módulo con archivo adjunto.'
+        : `Faltan ${missingName.length} nombres de módulos con archivo adjunto.`);
+      return;
+    }
     const ready = modules.filter(m => m.name.trim() && m.file);
     if (!ready.length) {
       setModuleError('Agrega el nombre y el archivo de al menos un módulo.');
@@ -156,7 +166,13 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
                 <span>Nombre del módulo</span>
                 <input type="text" maxLength={120} value={slot.name}
                   placeholder="Autenticación, Checkout, Reportes…"
-                  onChange={event => updateModule(slot.id, { name: event.target.value })}
+                  onChange={event => {
+                    const name = event.target.value;
+                    updateModule(slot.id, name.trim() && slot.state === 'ERROR'
+                      ? { name, state: 'IDLE', error: undefined }
+                      : { name });
+                    if (name.trim()) setModuleError('');
+                  }}
                   disabled={uploading || slot.state === 'DONE'} />
               </label>
               <label className="modules-panel__file">
