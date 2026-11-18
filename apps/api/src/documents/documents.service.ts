@@ -5,6 +5,7 @@ import {
 import { type DocumentType, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
+import { convertDocument } from '../automation/document-converter';
 import { analyzeFindings, classifyDocument, type DocumentAnalysisProvider, type Finding } from './document-analysis';
 import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-files';
 import { analysisSelect, describeAnalysis, documentSelect, metadata, persistFindings } from './document-records';
@@ -268,7 +269,19 @@ export class DocumentsService {
           });
           if (digest(content) !== file.version.sha256) throw new UnprocessableEntityException('Una versión no coincide con su huella.');
           const blocks = await parseDocument(file.format, content);
-          const findings = await this.analyzer.extract({ versionId: file.version.id, blocks }, context).catch(() => {
+          // Convertimos a Markdown para que el analyzer con IA trabaje
+          // sobre texto natural (historias de usuario, listas, tablas) y
+          // no sobre blocks + locators. Un fallo de conversión degrada al
+          // rule-based (que seguirá usando blocks).
+          let markdown: string | undefined;
+          try {
+            const converted = await convertDocument({ filename: file.document.filename, bytes: content });
+            markdown = converted.markdown;
+          } catch { /* sin markdown: cae al rule-based automáticamente */ }
+          const findings = await this.analyzer.extract(
+            { versionId: file.version.id, blocks, markdown, filename: file.document.filename },
+            context,
+          ).catch(() => {
             throw new UnprocessableEntityException('Un documento supera el límite de elementos para el análisis.');
           });
           facts.push(...findings);

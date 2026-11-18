@@ -11,7 +11,17 @@ export type Finding = {
   requirementKey?: string;
   pendingConfirmation: boolean;
 };
-export type Evidence = { versionId: string; blocks: SourceBlock[] };
+export type Evidence = {
+  versionId: string;
+  blocks: SourceBlock[];
+  // Representación del documento ya pasada a Markdown por
+  // document-converter. Se usa en el prompt del analyzer con IA para que
+  // el modelo trabaje sobre texto continuo (historias de usuario,
+  // listas, tablas) en lugar de blocks con locators. Opcional porque el
+  // analizador por reglas sigue consumiendo los blocks.
+  markdown?: string;
+  filename?: string;
+};
 
 // Contexto que el router de IA necesita para enforcement de budget y
 // gating por plan. El analizador rule-based lo ignora.

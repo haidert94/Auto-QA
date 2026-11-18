@@ -22,18 +22,19 @@ const VALID_KINDS = new Set<FindingKind>([
 ]);
 
 const SYSTEM_PROMPT = [
-  'Eres un analista QA senior. Tu tarea es leer blocks de un documento del cliente y producir findings estructurados.',
+  'Eres un analista QA senior especializado en historias de usuario y requisitos funcionales.',
+  'Vas a recibir un documento en Markdown y tu tarea es extraer findings estructurados.',
   '',
   'Reglas:',
-  '- Solo propones findings que están explícitamente en los blocks. Está prohibido inventar texto, páginas o líneas.',
-  '- Cada finding referencia el locator exacto de un block del input. Si no puedes dar un locator presente, descarta el candidato.',
-  '- "pendingConfirmation" es true cuando el texto admite más de una interpretación razonable o depende de información no declarada.',
-  '- Si identificas un requisito con llave visible (HU-1, RF-01, CA-2, REQ-3, etc.), copiala literal en "key".',
-  '- Para criterios de aceptación que mencionan una llave superior (por ejemplo "[HU-1]"), colocala en "requirementKey".',
-  '- Rendimiento máximo: 80 findings por documento. Si hay más, quédate con los más informativos.',
+  '- Solo propones findings cuyo "text" sea literal o una paráfrasis mínima del documento. Está prohibido inventar historias, criterios o actores.',
+  '- Para cada historia de usuario, extrae la frase completa ("Como <rol> quiero <acción> para <valor>" o equivalente).',
+  '- Para criterios de aceptación, extrae el enunciado completo y conserva la referencia al requisito superior cuando el documento la indique (por ejemplo "[HU-1]" o "Criterio de HU-1").',
+  '- "pendingConfirmation" es true cuando el texto admite más de una interpretación razonable, menciona un rol o funcionalidad sin definirla, o depende de información no declarada en el documento.',
+  '- Si identificas una llave visible (HU-1, RF-01, CA-2, REQ-3, RN-4, RNF-01, etc.), copiala literal en "key".',
+  '- Para criterios de aceptación ligados a una historia/requisito, colocá esa llave superior en "requirementKey".',
   '',
-  'Responde ÚNICAMENTE un JSON válido en una línea, sin markdown, sin texto antes ni después. Shape exacto:',
-  '{"findings":[{"kind":"USER_STORY|REQUIREMENT|FUNCTIONAL|NON_FUNCTIONAL|ACCEPTANCE_CRITERION|BUSINESS_RULE|ROLE|PERMISSION|SCENARIO","text":"...","locator":"...","key":"HU-1","requirementKey":"HU-1","pendingConfirmation":false}]}',
+  'Responde ÚNICAMENTE un JSON válido, sin markdown, sin texto antes ni después. Shape exacto:',
+  '{"findings":[{"kind":"USER_STORY|REQUIREMENT|FUNCTIONAL|NON_FUNCTIONAL|ACCEPTANCE_CRITERION|BUSINESS_RULE|ROLE|PERMISSION|SCENARIO","text":"...","key":"HU-1","requirementKey":"HU-1","pendingConfirmation":false}]}',
   '',
   'Si no detectas nada reconocible, responde {"findings":[]}.',
 ].join('\n');
@@ -41,29 +42,10 @@ const SYSTEM_PROMPT = [
 type RawFinding = {
   kind?: unknown;
   text?: unknown;
-  locator?: unknown;
   key?: unknown;
   requirementKey?: unknown;
   pendingConfirmation?: unknown;
 };
-
-function serializeBlocks(evidence: Evidence): string {
-  // Cada línea: locator | texto normalizado. Se truncan los textos muy
-  // largos para mantener el prompt bajo control y por seguridad el total
-  // se corta a ~30 KB.
-  const lines: string[] = [];
-  let bytes = 0;
-  const MAX_BYTES = 30 * 1024;
-  for (const block of evidence.blocks) {
-    const text = block.text.replace(/\s+/g, ' ').trim().slice(0, 600);
-    if (!text) continue;
-    const line = `${block.locator} | ${text}`;
-    if (bytes + line.length + 1 > MAX_BYTES) break;
-    lines.push(line);
-    bytes += line.length + 1;
-  }
-  return lines.join('\n');
-}
 
 function extractJson(text: string): unknown {
   const match = text.match(/\{[\s\S]*\}/);
@@ -77,26 +59,39 @@ function normalizeKey(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
-function parseFindings(response: string, evidence: Evidence): Finding[] {
+// Normaliza whitespace para comparar. Mantiene mayúsculas/minúsculas y
+// acentos; el LLM parafraseos menores pierden match y se descartan.
+function normalize(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function parseFindings(response: string, evidence: Evidence, markdown: string): Finding[] {
   const parsed = extractJson(response) as { findings?: unknown } | null;
   if (!parsed || !Array.isArray(parsed.findings)) return [];
-  const locators = new Set(evidence.blocks.map(b => b.locator));
+  const haystack = normalize(markdown).toLowerCase();
   const findings: Finding[] = [];
+  let ordinal = 0;
   for (const raw of parsed.findings as RawFinding[]) {
-    if (findings.length >= 120) break;
+    if (findings.length >= 200) break;
     if (!raw || typeof raw !== 'object') continue;
     const kind = typeof raw.kind === 'string' ? raw.kind.toUpperCase() : '';
     if (!VALID_KINDS.has(kind as FindingKind)) continue;
     const text = typeof raw.text === 'string' ? raw.text.trim().slice(0, 2000) : '';
     if (!text) continue;
-    const locator = typeof raw.locator === 'string' ? raw.locator.trim() : '';
-    if (!locator || !locators.has(locator)) continue;
+    // Anti-alucinación: el texto debe aparecer (normalizado) en el
+    // markdown original. Un parafraseo mayor del LLM se descarta.
+    const normalizedText = normalize(text).toLowerCase();
+    if (normalizedText.length < 10 || !haystack.includes(normalizedText.slice(0, Math.min(normalizedText.length, 120)))) continue;
     const key = normalizeKey(raw.key);
     const requirementKey = normalizeKey(raw.requirementKey);
+    ordinal += 1;
     findings.push({
       kind: kind as FindingKind,
       text,
-      source: { versionId: evidence.versionId, locator },
+      // Locator a nivel documento + ordinal: perdemos línea pero
+      // mantenemos trazabilidad al archivo. El rule-based sigue dando
+      // locator fino cuando corre como fallback.
+      source: { versionId: evidence.versionId, locator: `ai#${ordinal}` },
       key: isRequirement(kind as FindingKind) ? (key ?? requirementKey) : key,
       requirementKey: requirementKey ?? (isRequirement(kind as FindingKind) ? undefined : key),
       pendingConfirmation: raw.pendingConfirmation !== false,
@@ -112,8 +107,17 @@ export class AiDocumentAnalyzer implements DocumentAnalysisProvider {
   constructor(private readonly router: AiRouter) {}
 
   async extract(evidence: Evidence, context: AnalyzeContext): Promise<Finding[]> {
-    const prompt = serializeBlocks(evidence);
-    if (!prompt) return this.ruleBased.extract(evidence, context);
+    // Sin markdown no hay nada que pedirle al LLM: delegamos al rule-based
+    // que trabaja con los blocks originales.
+    const markdown = evidence.markdown?.trim();
+    if (!markdown) return this.ruleBased.extract(evidence, context);
+
+    const prompt = [
+      evidence.filename ? `Archivo: ${evidence.filename}` : '',
+      '',
+      'Documento:',
+      markdown,
+    ].filter(line => line !== undefined).join('\n');
 
     let response;
     try {
@@ -124,7 +128,7 @@ export class AiDocumentAnalyzer implements DocumentAnalysisProvider {
         runKey: context.runKey,
         systemPrompt: SYSTEM_PROMPT,
         prompt,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
       });
     } catch {
       // El router maneja los errores internos; si igual propaga, no dejamos
@@ -139,7 +143,7 @@ export class AiDocumentAnalyzer implements DocumentAnalysisProvider {
       return this.ruleBased.extract(evidence, context);
     }
 
-    const findings = parseFindings(response.text, evidence);
+    const findings = parseFindings(response.text, evidence, markdown);
     if (!findings.length) return this.ruleBased.extract(evidence, context);
     return findings;
   }
