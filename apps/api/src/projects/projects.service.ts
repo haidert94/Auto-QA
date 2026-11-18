@@ -91,29 +91,44 @@ export class ProjectsService {
     }
 
     const configuration = prepareOnboarding(dto, null);
-    return this.prisma.$transaction(async tx => {
-      const organizationId = workspace.organizationId;
-      if (organizationId) {
-        await tx.$queryRaw`SELECT id FROM "Organization" WHERE id = ${organizationId} FOR UPDATE`;
-        const plan = await activePlan(tx, organizationId);
-        if (configuration.roles.length > plan.maxRoles) throw new ConflictException('Superaste el límite de roles del plan.');
-        if (await tx.project.count({ where: { organizationId, status: { not: 'ARCHIVED' } } }) >= plan.maxProjects) {
-          throw new ConflictException('Superaste el límite de aplicaciones del plan.');
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const organizationId = workspace.organizationId;
+        if (organizationId) {
+          await tx.$queryRaw`SELECT id FROM "Organization" WHERE id = ${organizationId} FOR UPDATE`;
+          const plan = await activePlan(tx, organizationId);
+          if (configuration.roles.length > plan.maxRoles) throw new ConflictException('Superaste el límite de roles del plan.');
+          if (await tx.project.count({ where: { organizationId, status: { not: 'ARCHIVED' } } }) >= plan.maxProjects) {
+            throw new ConflictException('Superaste el límite de aplicaciones del plan.');
+          }
         }
-      }
-      const project = await tx.project.create({
-        data: {
-          ...configuration.project,
-          ...(workspace.organizationId && { organization: { connect: { id: workspace.organizationId } } }),
-          ...(workspace.userId && { owner: { connect: { id: workspace.userId } } }),
-          executionSettings: configuration.executionSettings ?? Prisma.DbNull,
-          environments: { create: configuration.environments.map(({ data }) => this.environmentWrite(data)) },
-          roles: { create: configuration.roles },
-        },
-        include: includeOnboarding,
+        const duplicate = await tx.project.findFirst({
+          where: {
+            organizationId: workspace.organizationId ?? null,
+            name: { equals: configuration.project.name, mode: 'insensitive' },
+          },
+          select: { id: true },
+        });
+        if (duplicate) throw new ConflictException('Ya tienes una aplicación con ese nombre. Elige uno diferente.');
+        const project = await tx.project.create({
+          data: {
+            ...configuration.project,
+            ...(workspace.organizationId && { organization: { connect: { id: workspace.organizationId } } }),
+            ...(workspace.userId && { owner: { connect: { id: workspace.userId } } }),
+            executionSettings: configuration.executionSettings ?? Prisma.DbNull,
+            environments: { create: configuration.environments.map(({ data }) => this.environmentWrite(data)) },
+            roles: { create: configuration.roles },
+          },
+          include: includeOnboarding,
+        });
+        return describeProject(project);
       });
-      return describeProject(project);
-    });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Ya tienes una aplicación con ese nombre. Elige uno diferente.');
+      }
+      throw error;
+    }
   }
 
   async remove(id: string, workspace: Workspace) {
@@ -146,6 +161,18 @@ export class ProjectsService {
     const keptIds = configuration.environments.flatMap(entry => entry.id ? [entry.id] : []);
     const keptNames = configuration.roles.map(role => role.name);
 
+    if (configuration.project.name.toLowerCase() !== previous.name.toLowerCase()) {
+      const duplicate = await this.prisma.project.findFirst({
+        where: {
+          organizationId: previous.organizationId ?? null,
+          name: { equals: configuration.project.name, mode: 'insensitive' },
+          NOT: { id },
+        },
+        select: { id: true },
+      });
+      if (duplicate) throw new ConflictException('Ya tienes una aplicación con ese nombre. Elige uno diferente.');
+    }
+
     try {
       const project = await this.prisma.project.update({
         where: { id, ...projectScope(workspace), revision: dto.revision },
@@ -173,8 +200,9 @@ export class ProjectsService {
       });
       return describeProject(project);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new ConflictException('El proyecto cambió. Recarga la página antes de guardar.');
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') throw new ConflictException('El proyecto cambió. Recarga la página antes de guardar.');
+        if (error.code === 'P2002') throw new ConflictException('Ya tienes una aplicación con ese nombre. Elige uno diferente.');
       }
       throw error;
     }
