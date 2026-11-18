@@ -1,11 +1,29 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { EnvironmentFields } from '../onboarding-fields';
 import {
   apiProjects, environmentForm, environmentPayload, executionForm, limitFields,
   roleForm, type Project,
 } from '../onboarding';
+
+// El back responde con strings tipo "Entorno 1: <mensaje>" o mensajes
+// generales sin prefijo. Los agrupamos por índice para mostrarlos pegados
+// a la tarjeta que los causó, en vez de en un bloque al final.
+function groupErrors(messages: string[]): { general: string[]; perEnv: Map<number, string[]> } {
+  const general: string[] = [];
+  const perEnv = new Map<number, string[]>();
+  for (const message of messages) {
+    const match = message.match(/^Entorno\s+(\d+)\s*:\s*(.+)$/);
+    if (!match) { general.push(message); continue; }
+    const index = Number(match[1]) - 1;
+    const text = match[2];
+    const bucket = perEnv.get(index) ?? [];
+    bucket.push(text);
+    perEnv.set(index, bucket);
+  }
+  return { general, perEnv };
+}
 
 export function EnvironmentsDialog({ project, onClose, onSaved }: {
   project: Project;
@@ -13,11 +31,23 @@ export function EnvironmentsDialog({ project, onClose, onSaved }: {
   onSaved: (project: Project) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const envRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [environments, setEnvironments] = useState(() => project.environments.map(environmentForm));
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const grouped = groupErrors(errors);
 
   useEffect(() => { dialog.current?.showModal(); }, []);
+
+  // Después de un intento de guardado con errores por entorno, llevamos el
+  // foco visual al primer entorno marcado, para que el usuario no tenga que
+  // buscar qué tarjeta se quejó.
+  useLayoutEffect(() => {
+    if (!errors.length) return;
+    const first = [...grouped.perEnv.keys()].sort((a, b) => a - b)[0];
+    if (first === undefined) return;
+    envRefs.current[first]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [errors, grouped.perEnv]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -85,17 +115,25 @@ export function EnvironmentsDialog({ project, onClose, onSaved }: {
     </header>
     <form onSubmit={save} className="environments-dialog__form">
       <fieldset className="form-content" disabled={busy || project.status === 'ARCHIVED'}>
-        {environments.map((env, index) => (
-          <EnvironmentFields key={env.id ?? `new-${index}`} index={index} value={env}
-            onChange={value => setEnvironments(list => list.map((item, n) => n === index ? value : item))}
-            onRemove={() => setEnvironments(list => list.filter((_, n) => n !== index))} />
-        ))}
+        {environments.map((env, index) => {
+          const envMessages = grouped.perEnv.get(index) ?? [];
+          return <div key={env.id ?? `new-${index}`}
+            ref={node => { envRefs.current[index] = node; }}
+            className={envMessages.length ? 'env-slot env-slot--invalid' : 'env-slot'}>
+            <EnvironmentFields index={index} value={env}
+              onChange={value => setEnvironments(list => list.map((item, n) => n === index ? value : item))}
+              onRemove={() => setEnvironments(list => list.filter((_, n) => n !== index))} />
+            {envMessages.length > 0 && <ul className="env-slot__errors" role="alert">
+              {envMessages.map(message => <li key={message}>{message}</li>)}
+            </ul>}
+          </div>;
+        })}
         <button type="button" className="secondary" disabled={environments.length >= 20} onClick={addEnvironment}>
           Agregar entorno
         </button>
       </fieldset>
-      {errors.length > 0 && <div className="errors" role="alert">
-        {errors.map(message => <p key={message} className="error">{message}</p>)}
+      {grouped.general.length > 0 && <div className="errors" role="alert">
+        {grouped.general.map(message => <p key={message} className="error">{message}</p>)}
       </div>}
       <div className="actions">
         <button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
