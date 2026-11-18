@@ -4,7 +4,14 @@ import { MembersPanel } from './members-panel';
 
 type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 
-type Member = { userId: string; role: OrgRole; joinedAt: string; user: { name: string | null; email: string } };
+type ProjectRef = { id: string; name: string };
+type Member = {
+  userId: string;
+  role: OrgRole;
+  joinedAt: string;
+  user: { name: string | null; email: string };
+  projects: ProjectRef[];
+};
 type Invite = {
   id: string; email: string; role: OrgRole; createdAt: string; expiresAt: string;
   invitedBy: { name: string | null; email: string };
@@ -21,7 +28,7 @@ export default async function MembersPage() {
       <p className="error" role="alert">No se pudieron cargar los miembros.</p>
     </section>;
   }
-  const data: { members: Member[]; invites: Invite[] } = await response.json();
+  const data: { members: Member[]; invites: Invite[]; orgProjects: ProjectRef[] } = await response.json();
   const myMember = data.members.find(m => m.user.email.toLowerCase() === account.email.toLowerCase());
   const myRole: OrgRole = myMember?.role ?? 'VIEWER';
 

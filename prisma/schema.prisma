@@ -61,6 +61,7 @@ model User {
   consentVersion String?
   consentAt      DateTime?
   membership     OrganizationMember?
+  projectMemberships ProjectMember[]
   sessions       AccountSession[]
   accountTokens  AccountToken[]
   id             String              @id @default(uuid())
@@ -94,6 +95,7 @@ model Project {
   revision               Int                 @default(0)
   ownerId                String?
   owner                  User?               @relation(fields: [ownerId], references: [id])
+  members                ProjectMember[]
   environments           Environment[]
   roles                  TestRole[]
   documents              Document[]
@@ -571,6 +573,23 @@ enum OrgRole {
   ADMIN
   EDITOR
   VIEWER
+}
+
+// Asignación de un usuario a un proyecto específico. Se usa para que
+// EDITOR y VIEWER solo vean los proyectos que les asignan OWNER/ADMIN.
+// OWNER y ADMIN siguen viendo todos los proyectos de su organización.
+// Un usuario puede estar en varios proyectos; cada par (proyecto, usuario)
+// es único.
+model ProjectMember {
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  createdByUserId String?
+
+  @@id([projectId, userId])
+  @@index([userId])
 }
 
 model OrganizationMember {

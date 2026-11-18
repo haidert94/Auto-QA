@@ -22,10 +22,23 @@ export function hasRole(actual: OrgRole, required: OrgRole[]): boolean {
 
 export type Workspace = { organizationId: string | null; userId?: string | null; role?: OrgRole | null };
 
-// Filtro Prisma para scoping multi-tenant. Project solo conoce
-// organizationId y ownerId; userId y role del Workspace no son columnas.
+// Filtro Prisma para scoping multi-tenant con asignación por proyecto.
+// - OWNER y ADMIN: ven todos los proyectos de la organización.
+// - EDITOR y VIEWER: solo ven los proyectos donde (a) son owner,
+//   (b) tienen una fila en ProjectMember.
+// Modo legacy (sin role) se trata como admin total para no romper tests.
 export function projectScope(workspace: Workspace) {
-  return { organizationId: workspace.organizationId };
+  const base = { organizationId: workspace.organizationId };
+  const role = workspace.role;
+  if (!role || role === 'OWNER' || role === 'ADMIN') return base;
+  if (!workspace.userId) return base;
+  return {
+    ...base,
+    OR: [
+      { ownerId: workspace.userId },
+      { members: { some: { userId: workspace.userId } } },
+    ],
+  };
 }
 type Request = { headers: { authorization?: string }; params: { projectId?: string }; workspace: Workspace };
 

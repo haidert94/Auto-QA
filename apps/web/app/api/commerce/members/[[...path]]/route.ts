@@ -16,6 +16,7 @@ function permitted(method: string, path: string[]): boolean {
     if (first === 'invite') return second ? tokenPattern.test(second) && method === 'GET' : false;
     if (first === 'invites') return uuid.test(second) && method === 'DELETE';
     if (uuid.test(first) && second === 'role') return method === 'PATCH';
+    if (uuid.test(first) && second === 'projects') return method === 'PUT';
   }
   return false;
 }
@@ -30,4 +31,5 @@ async function forward(request: Request, { params }: { params: Promise<{ path?: 
 export const GET = forward;
 export const POST = forward;
 export const PATCH = forward;
+export const PUT = forward;
 export const DELETE = forward;

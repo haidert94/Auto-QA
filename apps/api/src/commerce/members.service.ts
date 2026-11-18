@@ -15,7 +15,7 @@ export class MembersService {
 
   async list(workspace: Workspace) {
     const organizationId = this.requireOrg(workspace);
-    const [members, invites] = await Promise.all([
+    const [members, invites, assignments, orgProjects] = await Promise.all([
       this.db.organizationMember.findMany({
         where: { organizationId },
         orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
@@ -28,8 +28,72 @@ export class MembersService {
         select: { id: true, email: true, role: true, createdAt: true, expiresAt: true,
           invitedBy: { select: { name: true, email: true } } },
       }),
+      // Asignaciones por proyecto para todos los miembros, limitadas a los
+      // proyectos de ESTA organización (filtro de seguridad: evita leaks si
+      // un usuario tuviera asignaciones heredadas de otra org).
+      // Cast transitorio: el cliente Prisma puede no haberse regenerado en
+      // el entorno local; el esquema persistido ya tiene la tabla.
+      (this.db as unknown as { projectMember: { findMany(args: unknown): Promise<Array<{ userId: string; projectId: string; project: { name: string } }>> } })
+        .projectMember.findMany({
+          where: { project: { organizationId } },
+          select: { userId: true, projectId: true, project: { select: { name: true } } },
+        }),
+      this.db.project.findMany({
+        where: { organizationId, status: { not: 'ARCHIVED' } },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      }),
     ]);
-    return { members, invites };
+    const projectsByUser = new Map<string, { id: string; name: string }[]>();
+    for (const row of assignments) {
+      const list = projectsByUser.get(row.userId) ?? [];
+      list.push({ id: row.projectId, name: row.project.name });
+      projectsByUser.set(row.userId, list);
+    }
+    return {
+      members: members.map(m => ({ ...m, projects: projectsByUser.get(m.userId) ?? [] })),
+      invites,
+      orgProjects,
+    };
+  }
+
+  // --- Asignación de proyectos --------------------------------------------
+
+  async setProjectAssignments(workspace: Workspace, targetUserId: string, projectIds: string[], actorIp: string | null) {
+    const organizationId = this.requireOrg(workspace);
+    this.requireRole(workspace, ['ADMIN']);
+    const target = await this.db.organizationMember.findUnique({
+      where: { userId: targetUserId }, select: { organizationId: true, role: true, user: { select: { email: true } } },
+    });
+    if (!target || target.organizationId !== organizationId) throw new NotFoundException('Miembro no encontrado.');
+    // OWNER y ADMIN ven todo por definición; no tiene sentido asignarles
+    // proyectos específicos. Lo rechazamos para no confundir al usuario.
+    if (target.role === 'OWNER' || target.role === 'ADMIN') {
+      throw new BadRequestException('OWNER y ADMIN ya ven todos los proyectos de la organización.');
+    }
+    const unique = [...new Set(projectIds)];
+    // Verificar que todos los proyectos sean de la misma org (otro gate
+    // anti cross-tenant). Si alguno no lo es, 404 silencioso.
+    if (unique.length > 0) {
+      const found = await this.db.project.findMany({
+        where: { id: { in: unique }, organizationId }, select: { id: true },
+      });
+      if (found.length !== unique.length) throw new NotFoundException('Uno o más proyectos no existen en la organización.');
+    }
+    // Cast transitorio por regeneración del cliente Prisma.
+    const projectMember = (this.db as unknown as { projectMember: {
+      deleteMany(args: unknown): Promise<unknown>;
+      createMany(args: unknown): Promise<unknown>;
+    } }).projectMember;
+    await this.db.$transaction([
+      projectMember.deleteMany({ where: { userId: targetUserId, project: { organizationId } } }) as unknown as Prisma.PrismaPromise<unknown>,
+      ...(unique.length > 0 ? [projectMember.createMany({
+        data: unique.map(projectId => ({ projectId, userId: targetUserId, createdByUserId: workspace.userId ?? null })),
+      }) as unknown as Prisma.PrismaPromise<unknown>] : []),
+    ]);
+    await this.audit(organizationId, workspace.userId ?? null,
+      'PROJECT_ASSIGNMENT_CHANGED', 'user', targetUserId, actorIp);
+    return { userId: targetUserId, projectIds: unique };
   }
 
   // --- Invitaciones -------------------------------------------------------

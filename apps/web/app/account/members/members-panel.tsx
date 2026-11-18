@@ -4,8 +4,15 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 
 type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
+type ProjectRef = { id: string; name: string };
 
-type Member = { userId: string; role: OrgRole; joinedAt: string; user: { name: string | null; email: string } };
+type Member = {
+  userId: string;
+  role: OrgRole;
+  joinedAt: string;
+  user: { name: string | null; email: string };
+  projects: ProjectRef[];
+};
 type Invite = {
   id: string; email: string; role: OrgRole; createdAt: string; expiresAt: string;
   invitedBy: { name: string | null; email: string };
@@ -14,7 +21,7 @@ type Invite = {
 const RANK: Record<OrgRole, number> = { OWNER: 3, ADMIN: 2, EDITOR: 1, VIEWER: 0 };
 
 export function MembersPanel({ initial, currentUserId, myRole }: {
-  initial: { members: Member[]; invites: Invite[] };
+  initial: { members: Member[]; invites: Invite[]; orgProjects: ProjectRef[] };
   currentUserId: string;
   myRole: OrgRole;
 }) {
@@ -74,6 +81,13 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
     }), 'Rol actualizado.');
   }
 
+  async function saveProjects(userId: string, projectIds: string[]) {
+    await run(() => fetch('/api/commerce/members/' + userId + '/projects', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectIds }),
+    }), 'Proyectos asignados actualizados.');
+  }
+
   return <>
     {canInvite && <section className="members-section">
       <h2>Invitar</h2>
@@ -96,31 +110,54 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
 
     <section className="members-section">
       <h2>Miembros ({data.members.length})</h2>
+      <p className="muted"><small>
+        OWNER y ADMIN ven todos los proyectos de la organización automáticamente. A EDITOR y VIEWER se les
+        asignan los proyectos a los que pueden acceder; sin asignaciones, solo ven proyectos que ellos mismos
+        crearon.
+      </small></p>
       <table className="members-table">
-        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Desde</th><th></th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Proyectos</th><th>Desde</th><th></th></tr></thead>
         <tbody>
-          {data.members.map(member => <tr key={member.userId}>
-            <td>{member.user.name ?? '—'}{member.userId === currentUserId && <em className="muted"> (tú)</em>}</td>
-            <td>{member.user.email}</td>
-            <td>
-              {canChangeRole && member.userId !== currentUserId
-                ? <select value={member.role} onChange={e => changeRole(member.userId, e.target.value as OrgRole)} disabled={busy}>
-                  <option value="OWNER">OWNER</option>
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="EDITOR">EDITOR</option>
-                  <option value="VIEWER">VIEWER</option>
-                </select>
-                : <span className={`badge badge-role-${member.role.toLowerCase()}`}>{member.role}</span>}
-            </td>
-            <td className="muted">{new Date(member.joinedAt).toLocaleDateString('es-CO')}</td>
-            <td>
-              {canRemove && member.userId !== currentUserId && <button type="button" className="secondary"
-                onClick={() => removeMember(member.userId, member.user.email)} disabled={busy}>Remover</button>}
-            </td>
-          </tr>)}
+          {data.members.map(member => {
+            const needsAssignment = member.role === 'EDITOR' || member.role === 'VIEWER';
+            return <tr key={member.userId}>
+              <td>{member.user.name ?? '—'}{member.userId === currentUserId && <em className="muted"> (tú)</em>}</td>
+              <td>{member.user.email}</td>
+              <td>
+                {canChangeRole && member.userId !== currentUserId
+                  ? <select value={member.role} onChange={e => changeRole(member.userId, e.target.value as OrgRole)} disabled={busy}>
+                    <option value="OWNER">OWNER</option>
+                    <option value="ADMIN">ADMIN</option>
+                    <option value="EDITOR">EDITOR</option>
+                    <option value="VIEWER">VIEWER</option>
+                  </select>
+                  : <span className={`badge badge-role-${member.role.toLowerCase()}`}>{member.role}</span>}
+              </td>
+              <td>
+                {!needsAssignment
+                  ? <span className="muted"><small>todos</small></span>
+                  : canRemove
+                    ? <ProjectAssignmentEditor
+                        member={member}
+                        orgProjects={data.orgProjects}
+                        busy={busy}
+                        onSave={ids => saveProjects(member.userId, ids)} />
+                    : <span className="muted"><small>{member.projects.length} asignado(s)</small></span>}
+              </td>
+              <td className="muted">{new Date(member.joinedAt).toLocaleDateString('es-CO')}</td>
+              <td>
+                {canRemove && member.userId !== currentUserId && <button type="button" className="secondary"
+                  onClick={() => removeMember(member.userId, member.user.email)} disabled={busy}>Remover</button>}
+              </td>
+            </tr>;
+          })}
         </tbody>
       </table>
     </section>
+
+    {canInvite && data.orgProjects.length === 0 && <p className="muted"><small>
+      Aún no hay proyectos en la organización. Cuando crees tu primer proyecto podrás asignarlo aquí.
+    </small></p>}
 
     {data.invites.length > 0 && <section className="members-section">
       <h2>Invitaciones pendientes ({data.invites.length})</h2>
@@ -139,4 +176,70 @@ export function MembersPanel({ initial, currentUserId, myRole }: {
       </table>
     </section>}
   </>;
+}
+
+// Editor inline de asignaciones de proyecto para un miembro EDITOR/VIEWER.
+// Mantiene estado local hasta que el usuario pulsa Guardar, para evitar un
+// PUT por cada checkbox toggled. Cuando se cierra el <details> sin guardar,
+// el próximo open resetea al estado persistido.
+function ProjectAssignmentEditor({ member, orgProjects, busy, onSave }: {
+  member: Member;
+  orgProjects: ProjectRef[];
+  busy: boolean;
+  onSave: (projectIds: string[]) => void;
+}) {
+  const persisted = new Set(member.projects.map(p => p.id));
+  const [selected, setSelected] = useState<Set<string>>(persisted);
+  const [open, setOpen] = useState(false);
+
+  function toggle(id: string) {
+    setSelected(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const dirty = selected.size !== persisted.size
+    || [...selected].some(id => !persisted.has(id));
+
+  return (
+    <details open={open} onToggle={event => {
+      const isOpen = (event.currentTarget as HTMLDetailsElement).open;
+      setOpen(isOpen);
+      // Al reabrir, sincronizar con el estado persistido por si cambió desde fuera.
+      if (isOpen) setSelected(new Set(member.projects.map(p => p.id)));
+    }}>
+      <summary><small>
+        {member.projects.length > 0
+          ? `${member.projects.length} de ${orgProjects.length} asignado(s)`
+          : 'Sin asignaciones · editar'}
+      </small></summary>
+      {orgProjects.length === 0
+        ? <p className="muted"><small>Aún no hay proyectos.</small></p>
+        : <ul className="members-project-list">
+          {orgProjects.map(project => (
+            <li key={project.id}>
+              <label>
+                <input type="checkbox" checked={selected.has(project.id)}
+                  onChange={() => toggle(project.id)} disabled={busy}/>
+                <span>{project.name}</span>
+              </label>
+            </li>
+          ))}
+        </ul>}
+      {dirty && orgProjects.length > 0 && (
+        <div className="actions">
+          <button type="button" onClick={() => onSave([...selected])} disabled={busy}>
+            Guardar asignación
+          </button>
+          <button type="button" className="secondary"
+            onClick={() => setSelected(new Set(member.projects.map(p => p.id)))} disabled={busy}>
+            Descartar
+          </button>
+        </div>
+      )}
+    </details>
+  );
 }

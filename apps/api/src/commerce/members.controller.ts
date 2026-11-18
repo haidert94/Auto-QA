@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsEmail, IsIn, Length, Matches } from 'class-validator';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Ip, Param, ParseUUIDPipe, Patch, Post, Put, UseGuards } from '@nestjs/common';
+import { ArrayMaxSize, IsArray, IsEmail, IsIn, IsUUID, Length, Matches } from 'class-validator';
 import { OrgRole } from '@prisma/client';
 import { AccountService } from './account';
 import { MembersService } from './members.service';
@@ -14,6 +14,10 @@ class InviteDto {
 
 class ChangeRoleDto {
   @IsIn(roleValues) role!: OrgRole;
+}
+
+class ProjectAssignmentDto {
+  @IsArray() @ArrayMaxSize(200) @IsUUID('all', { each: true }) projectIds!: string[];
 }
 
 class AcceptDto {
@@ -88,6 +92,19 @@ export class MembersController {
     @Ip() ip: string,
   ) {
     return this.service.changeRole(workspace, userId, dto.role, ip);
+  }
+
+  @Put(':userId/projects')
+  @UseGuards(WorkspaceGuard)
+  @RequiresRole('ADMIN')
+  @HttpCode(200)
+  setProjects(
+    @CurrentWorkspace() workspace: Workspace,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: ProjectAssignmentDto,
+    @Ip() ip: string,
+  ) {
+    return this.service.setProjectAssignments(workspace, userId, dto.projectIds, ip);
   }
 
   @Get('audit')
