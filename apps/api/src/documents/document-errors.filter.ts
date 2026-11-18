@@ -14,7 +14,11 @@ export class DocumentErrorsFilter implements ExceptionFilter {
       response.status(statusCode).json(typeof body === 'string' ? { statusCode, message: body } : body);
       return;
     }
-    this.logger.error('Error interno en una operación documental.');
+    // Loguea el error real con stack para poder diagnosticar en los logs del
+    // servidor; la respuesta sigue siendo genérica para no filtrar detalles.
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    this.logger.error(`Error interno en una operación documental. ${detail}`, stack);
     response.status(500).json({ statusCode: 500, message: 'No se pudo completar la operación documental.' });
   }
 }
