@@ -56,7 +56,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       <p>
         <Link href="/login">Iniciar sesión</Link>
         {' · '}
-        <Link href="/register">Crear cuenta</Link>
+        <Link href="/registro">Crear cuenta</Link>
       </p>
       <p className="muted">
         Si no tienes cuenta, crea una con el correo <code>{invite.email}</code>, verifica el correo y vuelve a este enlace.
