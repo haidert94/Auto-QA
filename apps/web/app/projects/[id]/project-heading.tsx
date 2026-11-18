@@ -34,7 +34,7 @@ export function ProjectHeading({ project, actions, summary }: { project: Project
     </div>
     <header className="project-heading">
       <div className="project-heading__identity">
-        <div className="project-heading__title"><h1>{project.name}</h1><span className="project-id">ID: {project.id}</span></div>
+        <div className="project-heading__title"><h1>{project.name}</h1></div>
         <span className={`project-status project-status--${project.status.toLowerCase()}`}><i aria-hidden="true" />{statusLabels[project.status]}</span>
         <p>{summary ?? project.description ?? 'Agrega una descripción para documentar el propósito de la aplicación.'}</p>
       </div>

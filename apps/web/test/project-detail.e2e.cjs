@@ -213,7 +213,6 @@ async function verifyScenarios(page, screenshots) {
       const style = getComputedStyle(heading);
       return { body: box('.app-shell-body'), breadcrumb: box('.project-breadcrumb-row'), title: box('.project-heading h1'),
         titleSize: getComputedStyle(heading.querySelector('h1')).fontSize,
-        idSize: getComputedStyle(heading.querySelector('.project-id')).fontSize,
         background: style.backgroundColor, border: style.borderTopWidth,
         padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft] };
     });
