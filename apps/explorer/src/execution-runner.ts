@@ -13,7 +13,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
-import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, readGeneratorSteps, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { readPreparedAutomation } from '../../api/src/scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../api/src/scenarios/scenario-tags';
 import { type ScreenshotStorage } from './screenshot-storage';
 
@@ -26,6 +27,7 @@ export type ExecutionClaim = {
   targetBrowser: string | null;
   targetDevice: string | null;
   targetProvider: string | null;
+  automation?: unknown;
 };
 
 function resolveWsEndpoint(claim: ExecutionClaim): { wsEndpoint: string | null; error: string | null } {
@@ -95,16 +97,12 @@ export async function runTestRun(
     return;
   }
 
-  const rawSteps: unknown[] = Array.isArray(scenario.steps) ? (scenario.steps as unknown[]) : [];
-  const steps = rawSteps
-    .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
-    .map((s, i) => ({
-      ordinal: typeof s.ordinal === 'number' ? s.ordinal : i + 1,
-      action: typeof s.action === 'string' ? s.action : '',
-      data: typeof s.data === 'string' ? s.data : undefined,
-      expected: typeof s.expected === 'string' ? s.expected : undefined,
-    }))
-    .filter(s => s.action.length > 0);
+  const prepared = readPreparedAutomation(claim.automation);
+  if (claim.automation && !prepared) {
+    await failRun(prisma, claim, 'invalid-automation', 'No se pudo recuperar la automatización de esta ejecución.');
+    return;
+  }
+  const steps = prepared?.steps ?? readGeneratorSteps(scenario.steps);
 
   const harness: HarnessEnvironment = {
     baseUrl: environment.baseUrl,
@@ -113,7 +111,7 @@ export async function runTestRun(
     excludedPaths: toStringArray(environment.excludedPaths),
   };
   const spec = generateHarnessedSpec({
-    id: scenario.id, title: scenario.title, expectedResult: scenario.expectedResult, steps,
+    id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
   }, harness, { browser: claim.targetBrowser, device: claim.targetDevice });
 
   // Directorio de trabajo aislado; limpiamos al final (éxito o error).

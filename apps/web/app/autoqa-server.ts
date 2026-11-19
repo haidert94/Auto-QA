@@ -32,14 +32,14 @@ function apiOrigin() {
   return url.href;
 }
 
-export async function accountFetch(path: string, init: RequestInit = {}, options: { public?: boolean; documents?: boolean } = {}) {
+export async function accountFetch(path: string, init: RequestInit = {}, options: { public?: boolean; documents?: boolean; timeoutMs?: number } = {}) {
   const headers = new Headers(init.headers);
   if (!options.public) {
     const token = (await sessionToken()) || (options.documents && legacyWorkspace() ? setting('AUTOQA_DOCUMENTS_TOKEN') : undefined);
     if (token) headers.set('Authorization', 'Bearer ' + token);
   }
   return fetch(apiOrigin() + path, { ...init, headers, redirect: 'error', cache: 'no-store',
-    signal: AbortSignal.timeout(options.documents ? 75000 : 8000) });
+    signal: AbortSignal.timeout(options.timeoutMs ?? (options.documents ? 75000 : 8000)) });
 }
 
 export const activeStatuses = ['ACTIVE', 'TRIALING'];
@@ -119,7 +119,7 @@ export function failure(message: string, status: number) {
   return Response.json({ message }, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-export async function projectProxy(request: Request, pathname: string, documents = false) {
+export async function projectProxy(request: Request, pathname: string, documents = false, timeoutMs?: number) {
   if (!allowedOrigin(request)) return failure('Solicitud fuera del origen de AutoQA.', 403);
   const headers = new Headers();
   const type = request.headers.get('content-type');
@@ -133,6 +133,6 @@ export async function projectProxy(request: Request, pathname: string, documents
   try {
     return responseCopy(await accountFetch(pathname, {
       method: request.method, body: request.body, duplex: 'half', headers,
-    } as RequestInit & { duplex: 'half' }, { documents }));
+    } as RequestInit & { duplex: 'half' }, { documents, timeoutMs }));
   } catch { return failure('No se pudo comunicar con la API de AutoQA.', 502); }
 }

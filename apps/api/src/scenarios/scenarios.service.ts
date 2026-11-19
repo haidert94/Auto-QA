@@ -1,11 +1,29 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { AiRouter } from '../ai/ai-router';
 import { PrismaService } from '../prisma.service';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
-import { generateSpec, suggestedFilename, type GeneratorStep } from './playwright-generator';
+import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
+import { generateSpec, readGeneratorSteps, suggestedFilename } from './playwright-generator';
+
+type ScenarioForAutomation = Parameters<typeof currentAutomation>[0] & { id: string };
+
+function renderPlaywright(scenario: ScenarioForAutomation, prepared: PreparedAutomation | null, notice?: string) {
+  return {
+    filename: suggestedFilename(scenario),
+    code: generateSpec({
+      id: scenario.id,
+      title: scenario.title,
+      expectedResult: scenario.expectedResult,
+      steps: prepared?.steps ?? readGeneratorSteps(scenario.steps),
+    }),
+    automationId: prepared?.id ?? null,
+    notice: notice ?? (prepared ? undefined : 'Vista previa por reglas. Usa Generar seleccionados para preparar el código con IA.'),
+  };
+}
 
 type SuggestedScenario = { title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> };
 
@@ -211,24 +229,41 @@ export class ScenariosService {
   async generatePlaywright(projectId: string, scenarioId: string, workspace: Workspace) {
     const scenario = await this.get(projectId, scenarioId, workspace);
     if (isManualScenario(scenario)) throw new BadRequestException(MANUAL_SCENARIO_MESSAGE);
-    // steps viene como Prisma.JsonValue; lo normalizamos defensivamente.
-    const rawSteps: unknown[] = Array.isArray(scenario.steps) ? (scenario.steps as unknown[]) : [];
-    const steps: GeneratorStep[] = rawSteps
-      .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
-      .map((s, i) => ({
-        ordinal: typeof s.ordinal === 'number' ? s.ordinal : i + 1,
-        action: typeof s.action === 'string' ? s.action : '',
-        data: typeof s.data === 'string' ? s.data : undefined,
-        expected: typeof s.expected === 'string' ? s.expected : undefined,
-      }))
-      .filter(s => s.action.length > 0);
-    const code = generateSpec({
-      id: scenario.id,
+    return renderPlaywright(scenario, currentAutomation(scenario));
+  }
+
+  async preparePlaywright(projectId: string, scenarioId: string, workspace: Workspace) {
+    const scenario = await this.get(projectId, scenarioId, workspace);
+    if (isManualScenario(scenario)) throw new BadRequestException(MANUAL_SCENARIO_MESSAGE);
+
+    const existing = currentAutomation(scenario);
+    if (existing) return renderPlaywright(scenario, existing);
+
+    const steps = await prepareWithAgent(scenario, this.ai, { projectId, organizationId: workspace.organizationId });
+    if (!steps) {
+      return renderPlaywright(scenario, null, 'El agente no pudo completar la automatización. Revisa el código base.');
+    }
+
+    const prepared: PreparedAutomation = {
+      id: randomUUID(),
+      signature: automationSignature(scenario),
       title: scenario.title,
-      expectedResult: scenario.expectedResult,
       steps,
+    };
+    const saved = await this.prisma.testScenario.updateMany({
+      where: {
+        id: scenarioId, projectId, title: scenario.title, expectedResult: scenario.expectedResult,
+        steps: { equals: scenario.steps ?? Prisma.JsonNull }, tags: { equals: scenario.tags },
+        automation: { equals: scenario.automation ?? Prisma.DbNull },
+      },
+      data: { automation: prepared as unknown as Prisma.InputJsonValue },
     });
-    return { filename: suggestedFilename(scenario), code };
+    if (saved.count) return renderPlaywright(scenario, prepared);
+
+    const latest = await this.get(projectId, scenarioId, workspace);
+    const other = currentAutomation(latest);
+    if (!isManualScenario(latest) && other?.signature === prepared.signature) return renderPlaywright(latest, other);
+    throw new ConflictException('El escenario cambió durante la generación. Actualiza la lista y vuelve a intentarlo.');
   }
 
   async listRequirements(projectId: string, workspace: Workspace) {

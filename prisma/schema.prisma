@@ -319,6 +319,7 @@ model TestScenario {
   tags           String[]     @default([])
   steps          Json
   expectedResult String?
+  automation     Json?
   results        TestResult[]
   runs           TestRun[]
 }
@@ -339,6 +340,7 @@ model TestRun {
   createdByUserId String?
   createdBy       User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   specText          String?
+  automation        Json?
   targetBrowser     String?
   targetDevice      String?
   targetProvider    String?

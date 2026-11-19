@@ -46,23 +46,36 @@ function splitAction(raw: string): { verb: string; rest: string } | null {
 }
 
 function commentLines(text: string, indent: string): string[] {
-  return text.split(/\r?\n/).map(line => indent + '// ' + line);
+  return text.split(/[\r\n\u2028\u2029]+/).map(line => indent + '// ' + line);
+}
+
+export function readGeneratorSteps(raw: unknown): GeneratorStep[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((step): step is Record<string, unknown> => !!step && typeof step === 'object' && typeof step.action === 'string' && !!step.action.trim())
+    .map((step, index) => ({
+      ordinal: typeof step.ordinal === 'number' && Number.isSafeInteger(step.ordinal) ? step.ordinal : index + 1,
+      action: step.action as string,
+      data: typeof step.data === 'string' ? step.data : undefined,
+      expected: typeof step.expected === 'string' ? step.expected : undefined,
+    }));
 }
 
 export function generateStepLines(step: GeneratorStep, indent: string): string[] {
   const lines: string[] = [];
-  lines.push(`${indent}// Paso ${step.ordinal}: ${step.action.split(/\r?\n/)[0]}`);
+  lines.push(`${indent}// Paso ${step.ordinal}: ${step.action.split(/[\r\n\u2028\u2029]/)[0]}`);
   if (step.expected && step.expected.trim()) {
     lines.push(...commentLines('Esperado: ' + step.expected.trim(), indent));
   }
 
   const parsed = splitAction(step.action);
   if (!parsed) {
-    lines.push(`${indent}// TODO: ${step.action}`);
+    lines.push(...commentLines('TODO: ' + step.action, indent));
     return lines;
   }
 
   const { verb, rest } = parsed;
+  const locator = "page.locator('" + escapeJsString(rest) + "')";
   switch (verb) {
     case 'navigate':
     case 'goto':
@@ -71,6 +84,23 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
       break;
     case 'click':
       lines.push(`${indent}await page.locator('${escapeJsString(rest)}').click();`);
+      break;
+    case 'click-text':
+      lines.push(`${indent}await page.getByText('${escapeJsString(rest)}', { exact: true }).click();`);
+      break;
+    case 'fill-label':
+      lines.push(`${indent}await page.getByLabel('${escapeJsString(rest)}', { exact: true }).fill('${escapeJsString(step.data ?? '')}');`);
+      break;
+    case 'check':
+    case 'uncheck':
+      lines.push(`${indent}await ${locator}.${verb}();`);
+      break;
+    case 'expect-visible':
+    case 'expect-hidden':
+      lines.push(`${indent}await expect(${locator}).${verb === 'expect-visible' ? 'toBeVisible' : 'toBeHidden'}();`);
+      break;
+    case 'expect-checked':
+      lines.push(`${indent}await expect(${locator}).toBeChecked();`);
       break;
     case 'fill':
       lines.push(`${indent}await page.locator('${escapeJsString(rest)}').fill('${escapeJsString(step.data ?? '')}');`);
@@ -88,7 +118,7 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
       lines.push(`${indent}await expect(page).toHaveURL('${escapeJsString(rest)}');`);
       break;
     default:
-      lines.push(`${indent}// TODO (verbo "${verb}" no reconocido): ${step.action}`);
+      lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
   }
   return lines;
 }

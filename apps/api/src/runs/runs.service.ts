@@ -1,4 +1,5 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AiRouter } from '../ai/ai-router';
 import { UsageService } from '../commerce/usage.service';
@@ -6,6 +7,7 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
+import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { CreateRunDto } from './dto/create-run.dto';
 
@@ -156,9 +158,16 @@ export class RunsService {
 
   async create(projectId: string, scenarioId: string, dto: CreateRunDto, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
-    const scenario = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId }, select: { id: true, tags: true } });
+    const scenario = await this.prisma.testScenario.findFirst({
+      where: { id: scenarioId, projectId },
+      select: { id: true, tags: true, title: true, expectedResult: true, steps: true, automation: true },
+    });
     if (!scenario) throw new NotFoundException('Escenario no encontrado.');
     if (isManualScenario(scenario)) throw new BadRequestException(MANUAL_SCENARIO_MESSAGE);
+    const prepared = currentAutomation(scenario);
+    if (dto.automationId !== undefined && dto.automationId !== (prepared?.id ?? null)) {
+      throw new ConflictException('La automatización cambió. Actualiza el código antes de ejecutar.');
+    }
 
     const environment = await this.prisma.environment.findFirst({
       where: { id: dto.environmentId, projectId },
@@ -188,6 +197,7 @@ export class RunsService {
         status: 'QUEUED',
         runKey,
         createdByUserId: workspace.userId ?? null,
+        automation: prepared ? (prepared as unknown as Prisma.InputJsonValue) : undefined,
         targetBrowser: dto.targetBrowser ?? null,
         targetDevice: dto.targetDevice ?? null,
         targetProvider: dto.targetProvider ?? null,

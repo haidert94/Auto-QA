@@ -2,7 +2,7 @@ import type { ScenarioListItem } from './scenario-card';
 
 export type GeneratedSpec = {
   scenarioId: string; title: string; filename: string; code: string; signature: string;
-  review: string[]; error?: string;
+  review: string[]; error?: string; automationId?: string | null; notice?: string;
 };
 
 export function scenarioSpecSignature(scenario: ScenarioListItem) {

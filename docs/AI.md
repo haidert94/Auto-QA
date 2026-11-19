@@ -12,6 +12,7 @@ funcionan; las complementa cuando el plan del cliente la incluye.
 | Análisis semántico de documentos | `AI_DOCUMENT_ANALYSIS` | El usuario pide "Analizar con IA" sobre una versión de documento |
 | Clasificación automática de documentos | `AI_DOCUMENT_ANALYSIS` | Detrás de escena cuando sube un documento |
 | Generación de escenarios desde requisitos | `AI_SCENARIO_GENERATION` | Botón "Sugerir escenarios" en un requisito |
+| Preparación de código Playwright | `AI_SCENARIO_GENERATION` | **Generar seleccionados** en Automatización, sobre los escenarios guardados |
 | Explicación de un fallo | `AI_FAILURE_EXPLANATION` | Botón "¿Por qué falló?" en un TestResult con status FAILED |
 
 ## Proveedores soportados

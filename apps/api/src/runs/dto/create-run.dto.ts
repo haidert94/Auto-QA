@@ -4,6 +4,8 @@ import { SUPPORTED_BROWSERS, SUPPORTED_DEVICES, SUPPORTED_PROVIDERS } from '../.
 export class CreateRunDto {
   @IsUUID() environmentId!: string;
 
+  @IsOptional() @IsUUID() automationId?: string | null;
+
   // Motor de Playwright. Default CHROMIUM si se omite.
   @IsOptional() @IsIn(SUPPORTED_BROWSERS) targetBrowser?: typeof SUPPORTED_BROWSERS[number];
 

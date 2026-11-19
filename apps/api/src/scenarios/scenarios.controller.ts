@@ -63,6 +63,16 @@ export class ScenariosController {
     return this.service.generatePlaywright(projectId, id, workspace);
   }
 
+  @Post(':id/playwright')
+  @RequiresRole('EDITOR')
+  preparePlaywright(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.preparePlaywright(projectId, id, workspace);
+  }
+
   @Patch(':id')
   @RequiresRole('EDITOR')
   update(

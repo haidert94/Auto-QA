@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { environmentTypes, type Environment } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
+import type { GeneratedSpec } from './automation-export';
 
-export function ScenarioRunDialog({ projectId, scenarios, environments, onClose, onQueued }: {
+export function ScenarioRunDialog({ projectId, scenarios, environments, specs, onClose, onQueued }: {
   projectId: string; scenarios: ScenarioListItem[]; environments: Environment[];
+  specs?: Record<string, GeneratedSpec>;
   onClose: () => void; onQueued: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -23,7 +25,7 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, onClose,
     for (const scenario of scenarios) {
       try {
         const response = await fetch(`/api/projects/${projectId}/scenarios/${scenario.id}/runs`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ environmentId }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ environmentId, automationId: specs?.[scenario.id]?.automationId }),
           signal: AbortSignal.timeout(15000),
         });
         const payload = await response.json().catch(() => ({}));

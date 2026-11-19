@@ -69,31 +69,53 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     return () => controller.abort();
   }, [project.id, header?.active, refresh, setSpecs]);
 
-  const generateOne = useCallback((scenario: ScenarioListItem, retry = false): Promise<GeneratedSpec> => {
+  const generateOne = useCallback((scenario: ScenarioListItem, mode: 'preview' | 'prepare' | 'download' = 'preview'): Promise<GeneratedSpec> => {
     const currentSignature = scenarioSpecSignature(scenario);
     const cached = specsRef.current[scenario.id];
-    if (cached?.signature === currentSignature && !(retry && cached.error)) return Promise.resolve(cached);
-    const pending = requests.current.get(scenario.id);
+    const useAgent = mode === 'prepare';
+    if (cached?.signature === currentSignature && (mode === 'preview' || (!cached.error && (!useAgent || cached.automationId)))) {
+      return Promise.resolve(cached);
+    }
+    const requestKey = scenario.id + ':' + useAgent;
+    const pending = requests.current.get(requestKey);
     if (pending) return pending;
     setGenerating(previous => new Set(previous).add(scenario.id));
     const task = (async () => {
       let result: GeneratedSpec = { scenarioId: scenario.id, title: scenario.title, filename: '', code: '', signature: currentSignature, review: [] };
       try {
-        const response = await fetch(`/api/projects/${project.id}/scenarios/${scenario.id}/playwright`, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+        const response = await fetch(`/api/projects/${project.id}/scenarios/${scenario.id}/playwright`, {
+          method: useAgent ? 'POST' : 'GET', cache: 'no-store',
+          signal: AbortSignal.timeout(useAgent ? 65000 : 15000),
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message ?? 'No se pudo generar este archivo.');
         if (typeof payload.code !== 'string' || !payload.code.trim() || typeof payload.filename !== 'string') throw new Error('La API no devolvió un archivo de código válido.');
-        result = { ...result, code: payload.code, filename: specFilename(payload.filename, scenario.id), review: reviewCode(scenario, payload.code) };
+        result = {
+          ...result,
+          code: payload.code,
+          filename: specFilename(payload.filename, scenario.id),
+          review: reviewCode(scenario, payload.code),
+          automationId: typeof payload.automationId === 'string' || payload.automationId === null ? payload.automationId : undefined,
+          notice: typeof payload.notice === 'string' ? payload.notice : undefined,
+        };
       } catch (reason) { result.error = reason instanceof Error ? reason.message : 'No se pudo generar este archivo.'; }
       if (mounted.current && listRef.current.some(item => item.id === scenario.id && scenarioSpecSignature(item) === currentSignature)) {
-        specsRef.current = { ...specsRef.current, [scenario.id]: result }; setSpecs?.(specsRef.current);
+        const current = specsRef.current[scenario.id];
+        if (useAgent || !current?.automationId || current.signature !== currentSignature) {
+          specsRef.current = { ...specsRef.current, [scenario.id]: result };
+          setSpecs?.(specsRef.current);
+        } else {
+          return current;
+        }
       }
       return result;
     })().finally(() => {
-      requests.current.delete(scenario.id);
-      if (mounted.current) setGenerating(previous => { const next = new Set(previous); next.delete(scenario.id); return next; });
+      requests.current.delete(requestKey);
+      if (mounted.current && !requests.current.has(scenario.id + ':' + String(!useAgent))) {
+        setGenerating(previous => { const next = new Set(previous); next.delete(scenario.id); return next; });
+      }
     });
-    requests.current.set(scenario.id, task);
+    requests.current.set(requestKey, task);
     return task;
   }, [project.id, setSpecs]);
 
@@ -116,13 +138,13 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     setBusy(true); setError(''); setNotice('');
     try {
       const results = [];
-      for (const scenario of selectedScenarios) { if (!mounted.current) return; results.push(await generateOne(scenario, true)); }
+      for (const scenario of selectedScenarios) { if (!mounted.current) return; results.push(await generateOne(scenario, download ? 'download' : 'prepare')); }
       if (results.some(spec => spec.error)) {
         setError('Algunos archivos no se pudieron generar. Revisa los errores por escenario; no se descargó un ZIP incompleto.'); return;
       }
       if (download) await downloadSpecs(project.name, results);
       setNotice(download ? `ZIP preparado con ${results.length} archivos .spec.ts, configuración y notas de revisión.` : `${results.length} archivos generados. Revisa los pendientes antes de ejecutar.`);
-    } catch { setError('No se pudo preparar la descarga. Vuelve a intentarlo.'); }
+    } catch { setError('No se pudo preparar el código. Vuelve a intentarlo.'); }
     finally { if (mounted.current) setBusy(false); }
   }
 
@@ -153,21 +175,22 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
                 <h3><button type="button" aria-pressed={activeId === scenario.id} onClick={() => setActiveId(scenario.id)}>{scenario.title}</button></h3>
                 <p className="automation-pick-path" title={spec && !spec.error ? specPath(spec) : undefined}>{spec && !spec.error ? specPath(spec) : 'Código pendiente de generación'}</p>
                 {spec?.error && <p className="error" role="alert">{spec.error}</p>}
+                {spec?.notice && <p className="automation-review-reasons">{spec.notice}</p>}
                 {spec?.review.length ? <p className="automation-review-reasons">{spec.review.join(' · ')}</p> : null}
               </div>
             </li>;
           })}</ul>}
         <footer className="automation-scenarios__footer">{canGenerate && <button type="button" disabled={busy || !selected.size || !!listError} onClick={() => void prepare()}><Play size={13} />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}</button>}
           {notice && <p className="automation-operation-notice" role="status">{notice}</p>}
-          <p>Generación determinística. «Generado» no implica compilación ni ejecución aprobada.</p></footer>
+          <p>El agente convierte los escenarios en código Playwright. Revisa el código antes de ejecutarlo.</p></footer>
       </section>
       <div className="automation-preview-column"><AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} generating={generating.size > 0} />
-        {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, true); }}>Reintentar archivo</button></div>}
+        {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}
         {selectedSpec?.review.length ? <p className="automation-preview-note">Pendientes detectados: {selectedSpec.review.join(' · ')}. Se incluye el código en la descarga para su revisión, pero no en la solicitud de ejecución.</p> : null}
         {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}
       </div>
     </div>
-    {runSelection && <ScenarioRunDialog projectId={project.id} scenarios={runSelection} environments={environments} onClose={() => setRunSelection(null)}
+    {runSelection && <ScenarioRunDialog projectId={project.id} scenarios={runSelection} environments={environments} specs={specs} onClose={() => setRunSelection(null)}
       onQueued={() => setNotice('Consulta las respuestas de encolado y el reporte para conocer el estado real de las ejecuciones.')} />}
   </section>;
 }

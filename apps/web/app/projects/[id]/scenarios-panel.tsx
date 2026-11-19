@@ -384,7 +384,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}
-    {runSelection && <ScenarioRunDialog projectId={projectId} scenarios={runSelection} environments={environments}
+    {runSelection && <ScenarioRunDialog projectId={projectId} scenarios={runSelection} environments={environments} specs={header?.specs}
       onClose={() => setRunSelection(null)} onQueued={() => { void loadRuns(); void load(); }} />}
 
     {/* El bloque "Generar y sugerir escenarios con IA" se removió: ahora
