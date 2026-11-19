@@ -23,9 +23,14 @@ type Props = {
   setPending: Dispatch<SetStateAction<PendingDocument[]>>;
   upload: () => void;
   role?: OrgRole;
+  // El padre (DocumentsDialog en el tab Datos) necesita enterarse cuando
+  // validamos o borramos para recargar el card "Análisis documental". Si
+  // este prop no viaja (uso dentro de ProjectForm), el componente sigue
+  // comportándose como antes.
+  onChanged?: () => void;
 };
 
-export function DocumentPanel({ projectId, disabled, uploading, revision, pending, setPending, upload, role }: Props) {
+export function DocumentPanel({ projectId, disabled, uploading, revision, pending, setPending, upload, role, onChanged }: Props) {
   const canUpload = can(role, 'document.upload');
   const canAnalyze = can(role, 'document.analyze');
   const canValidate = can(role, 'document.validate');
@@ -79,6 +84,7 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
     try {
       await documentRequest(projectId, suffix, options);
       setRefresh(value => value + 1);
+      onChanged?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudo completar la operación documental.');
     } finally {

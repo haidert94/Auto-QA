@@ -243,6 +243,7 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
         setPending={setPending}
         upload={() => void uploadPending()}
         role={role}
+        onChanged={onChanged}
       />
       <div className="actions">
         <button type="button" className="secondary" onClick={close} disabled={uploading}>Cerrar</button>
