@@ -7,7 +7,8 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
 import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
-import { generateSpec, readGeneratorSteps, suggestedFilename } from './playwright-generator';
+import { ASSERTION_INSTRUCTION } from '../automation/agents/agent-types';
+import { generateSpec, hasPlaywrightAssertion, readGeneratorSteps, suggestedFilename } from './playwright-generator';
 
 type ScenarioForAutomation = Parameters<typeof currentAutomation>[0] & { id: string };
 
@@ -51,7 +52,7 @@ function parseSuggestions(text: string): SuggestedScenario[] {
             .filter(step => step.action.length > 0)
           : [],
       }))
-      .filter(s => s.steps.length > 0);
+      .filter(s => hasPlaywrightAssertion(s.steps));
   } catch { return []; }
 }
 
@@ -101,14 +102,14 @@ export class ScenariosService {
       ? requirement.acceptanceCriteria.filter((c): c is string => typeof c === 'string').join('\n- ')
       : '';
     const prompt = [
-      'Genera entre 2 y 4 escenarios de prueba manuales para el siguiente requisito.',
+      'Genera entre 2 y 4 propuestas de escenarios para revisar antes de guardar, a partir del siguiente requisito.',
       requirement.externalKey ? `Clave: ${requirement.externalKey}` : '',
       `Título: ${requirement.title}`,
       requirement.description ? `Descripción: ${requirement.description}` : '',
       acceptance ? `Criterios de aceptación:\n- ${acceptance}` : '',
       '',
       'Devuelve SOLO JSON válido con esta estructura, nada más:',
-      '{"scenarios":[{"title":"...","expectedResult":"...","steps":[{"action":"navigate: /ruta"}, ...]}]}',
+      '{"scenarios":[{"title":"Consultar resumen","expectedResult":"Se muestra Resumen","steps":[{"action":"navigate: /resumen"},{"action":"expect-text: Resumen"}]}]}',
       '',
       'Vocabulario de acciones permitido (prefijos reconocidos por el worker):',
       '- navigate: <url relativa o absoluta>',
@@ -116,7 +117,8 @@ export class ScenariosService {
       '- fill: <selector css>   (con "data" en el mismo paso para el valor)',
       '- press: <tecla>',
       '- expect-text: <texto visible>',
-      '- expect-url: <patrón>',
+      '- expect-url: <ruta exacta>',
+    ASSERTION_INSTRUCTION,
     ].filter(Boolean).join('\n');
 
     const response = await this.ai.dispatch({

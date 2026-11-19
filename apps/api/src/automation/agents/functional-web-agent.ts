@@ -1,7 +1,8 @@
 // Genera escenarios web con pasos de Playwright o instrucciones de ejecución manual.
 
 import type { Prisma } from '@prisma/client';
-import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -18,19 +19,20 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
     '- fill: <selector css>   (+ "data": valor a escribir)',
     '- press: <tecla>',
     '- expect-text: <texto visible>',
-    '- expect-url: <patrón>',
+    '- expect-url: <ruta exacta>',
     '',
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" cuando sea el camino feliz principal de una historia.',
     '- "flow": "alterno" para variantes, validaciones, errores o caminos secundarios.',
     'Mezcla básicos y alternos: un flujo alterno suele acompañar a uno básico de la misma historia.',
     '',
+    ASSERTION_INSTRUCTION,
     MANUAL_SCENARIO_INSTRUCTION,
     REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ y sin espacios (ej: @smoke, @critico, @login).',
     '',
     'Responde SOLO JSON válido con la estructura:',
-    '{ "scenarios": [ { "title": "...", "expectedResult": "...", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@login"], "steps": [ { "action": "navigate: /login" }, ... ] } ] }',
+    '{ "scenarios": [ { "title": "Consultar resumen", "expectedResult": "Se muestra Resumen", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@resumen"], "steps": [ { "action": "navigate: /resumen" }, { "action": "expect-text: Resumen" } ] } ] }',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -65,6 +67,8 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
     const manual = s.mode === 'manual';
     const expectedResult = typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null;
     if (manual && !expectedResult?.trim()) { errors.push('scenario-' + index + '-sin-resultado-esperado'); continue; }
+    const hasAssertion = manual ? normalized.some(step => step.expected?.trim()) : hasPlaywrightAssertion(normalized);
+    if (!hasAssertion) { errors.push('scenario-' + index + '-sin-asercion'); continue; }
     const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
     const tags = buildTags('@funcional', s.flow, s.tags, s.regression, manual);
     try {

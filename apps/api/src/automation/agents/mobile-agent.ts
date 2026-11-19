@@ -3,7 +3,8 @@
 // elegir el dispositivo en el panel de runs.
 
 import type { Prisma } from '@prisma/client';
-import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -20,11 +21,12 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" para el camino feliz de la historia en móvil.',
     '- "flow": "alterno" para errores, validaciones o variantes.',
+    ASSERTION_INSTRUCTION,
     MANUAL_SCENARIO_INSTRUCTION,
     REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ (ej: @menu, @formulario).',
     '',
-    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] ...", "expectedResult": "...", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@menu"], "steps": [...] }] }.',
+    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] Abrir menú", "expectedResult": "Se muestra la opción Productos", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@menu"], "steps": [{ "action": "click: #menu" }, { "action": "expect-text: Productos" }] }] }.',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -55,6 +57,8 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     const manual = s.mode === 'manual';
     const expectedResult = typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null;
     if (manual && !expectedResult?.trim()) { errors.push('mobile-' + index + '-sin-resultado-esperado'); continue; }
+    const hasAssertion = manual ? steps.some(step => step.expected?.trim()) : hasPlaywrightAssertion(steps);
+    if (!hasAssertion) { errors.push('mobile-' + index + '-sin-asercion'); continue; }
     const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
     const tags = buildTags('@mobile', s.flow, s.tags, s.regression, manual);
     try {

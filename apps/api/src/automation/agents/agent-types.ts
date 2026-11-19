@@ -84,8 +84,15 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
 export const MANUAL_SCENARIO_INSTRUCTION = [
   'Para cada caso indica "mode": "playwright" si sus verificaciones se pueden expresar con el vocabulario indicado.',
   'Añade hasta 2 casos con "mode": "manual" si el análisis identifica verificaciones que requieren criterio humano, un dispositivo físico o una acción externa al navegador.',
-  'Para el modo manual escribe cada "action" en español natural, sin comandos ni selectores, e incluye un "expectedResult" observable.',
+  'Para el modo manual escribe cada "action" en español natural e incluye un "expectedResult" observable. Añade un paso de comprobación manual con su resultado observable en "expected".',
   'Genera casos manuales solo si el análisis aporta una base concreta. Usa "requirementId" si puedes asociar el escenario a uno de los requisitos analizados con identificador.',
+].join('\n');
+
+export const ASSERTION_INSTRUCTION = [
+  'Cada escenario automatizable debe incluir un paso de aserción explícita que compruebe su resultado esperado.',
+  'Usa expect-text para texto visible, expect-url para una ruta exacta esperada o expect-visible, expect-hidden y expect-checked para estados de un selector CSS.',
+  'Usa expect-http-ok solo si el objetivo del caso es comprobar que una página responde correctamente. Su argumento es la ruta de la página.',
+  'Una navegación, un clic y la descripción del resultado esperado por sí solos no constituyen una aserción. Para flujos positivos y negativos verifica el efecto observable correspondiente. Omite el caso si no puedes identificar una comprobación sustentada.',
 ].join('\n');
 
 export const REGRESSION_INSTRUCTION = 'Para cada escenario indica "regression": true si debe volver a ejecutarse después de cambios para comprobar que un comportamiento existente identificado en el análisis sigue funcionando. Usa false en los demás casos. Decide de forma independiente del flujo y usa este campo para la clasificación de regresión.';

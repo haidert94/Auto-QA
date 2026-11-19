@@ -8,6 +8,7 @@
 // "compatibilidad" no quede vacía.
 
 import type { Prisma } from '@prisma/client';
+import { hasPlaywrightAssertion, readGeneratorSteps } from '../../scenarios/playwright-generator';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { type AgentContext, type AgentDeps, type AgentOutcome } from './agent-types';
 
@@ -21,22 +22,24 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
   const existing = await deps.prisma.testScenario.findMany({
     where: {
       projectId: ctx.projectId,
-      NOT: { OR: [{ title: { startsWith: '[COMPAT]' } }, { tags: { has: MANUAL_SCENARIO_TAG } }] },
+      NOT: { OR: [
+        { title: { startsWith: '[COMPAT]' } },
+        { title: { startsWith: '[COMPAT:' } },
+        { tags: { hasSome: [MANUAL_SCENARIO_TAG, '@compatibility'] } },
+      ] },
     },
-    take: 5,
+    take: 25,
     orderBy: { title: 'asc' },
     select: { title: true, steps: true, expectedResult: true, tags: true } as const,
   });
 
-  type Base = { title: string; steps: Prisma.JsonValue; expectedResult: string | null; tags: string[] };
-  const base: Base[] = existing.length
-    ? (existing as unknown as Base[])
-    : [{
-        title: 'Página de inicio accesible',
-        steps: [{ ordinal: 1, action: 'navigate: ' + ctx.url }] as unknown as Prisma.JsonValue,
-        expectedResult: 'La página de inicio carga sin errores.',
-        tags: ['@funcional', '@flujoBasico'],
-      }];
+  const verified = existing.filter(scenario => hasPlaywrightAssertion(readGeneratorSteps(scenario.steps))).slice(0, 5);
+  const base = verified.length ? verified : [{
+    title: 'Página de inicio accesible',
+    steps: [{ ordinal: 1, action: 'expect-http-ok: ' + ctx.url }],
+    expectedResult: 'La página de inicio responde con un estado HTTP exitoso (2xx).',
+    tags: ['@funcional', '@flujoBasico'],
+  }];
 
   const errors: string[] = [];
   let created = 0;

@@ -45,6 +45,18 @@ function splitAction(raw: string): { verb: string; rest: string } | null {
   return { verb, rest };
 }
 
+const ASSERTION_VERBS = new Set([
+  'expect-text', 'expect text', 'expect-url', 'expect url',
+  'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
+]);
+
+export function hasPlaywrightAssertion(steps: ReadonlyArray<Pick<GeneratorStep, 'action'>>): boolean {
+  return steps.some(step => {
+    const parsed = splitAction(step.action);
+    return parsed !== null && ASSERTION_VERBS.has(parsed.verb);
+  });
+}
+
 function commentLines(text: string, indent: string): string[] {
   return text.split(/[\r\n\u2028\u2029]+/).map(line => indent + '// ' + line);
 }
@@ -112,6 +124,9 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
     case 'expect-text':
     case 'expect text':
       lines.push(`${indent}await expect(page.getByText('${escapeJsString(rest)}')).toBeVisible();`);
+      break;
+    case 'expect-http-ok':
+      lines.push(`${indent}expect((await page.goto('${escapeJsString(rest)}'))?.ok()).toBe(true);`);
       break;
     case 'expect-url':
     case 'expect url':

@@ -8,6 +8,7 @@ const { runMobileAgent } = require('../dist/automation/agents/mobile-agent');
 const { runAutomation } = require('../dist/automation/pipeline-runner');
 const { RunsService } = require('../dist/runs/runs.service');
 const { ScenariosService } = require('../dist/scenarios/scenarios.service');
+const { generateSpec } = require('../dist/scenarios/playwright-generator');
 
 const context = {
   projectId: 'project',
@@ -20,7 +21,7 @@ const context = {
   review: { stories: [{ title: 'Inicio de sesión', coverage: 'completa', notes: 'La ayuda de acceso debe ser comprensible.' }] },
   requirements: [{ id: 'requirement-id', title: 'Información de errores', criteria: [{ text: 'El mensaje debe indicar cómo volver a intentar.' }] }],
 };
-const steps = [{ action: 'navigate: /login' }];
+const steps = [{ action: 'navigate: /login' }, { action: 'expect-text: Iniciar sesión' }];
 
 for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobileAgent, '@mobile']]) {
   test(agent.name + ' guarda la clasificación de regresión y ejecución manual por escenario', async () => {
@@ -30,6 +31,7 @@ for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobil
         async dispatch({ prompt }) {
           assert.match(prompt, /"regression": true/);
           assert.match(prompt, /"mode": "manual"/);
+          assert.match(prompt, /aserción explícita/);
           assert.ok(prompt.includes(context.review.stories[0].notes));
           assert.ok(prompt.includes(context.requirements[0].criteria[0].text));
           assert.ok(prompt.includes(context.review.stories[0].title));
@@ -50,9 +52,10 @@ for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobil
                   requirementId: context.requirements[0].id,
                   tags: ['@manual'],
                   expectedResult: 'La ayuda indica cómo recuperar el acceso.',
-                  steps: [{ action: 'Lee el mensaje de ayuda y comprueba si indica cómo recuperar el acceso.' }],
+                  steps: [{ action: 'Lee el mensaje de ayuda y comprueba si indica cómo recuperar el acceso.', expected: 'Indica cómo recuperar el acceso.' }],
                 },
                 { title: 'Manual incompleto', mode: 'manual', expectedResult: '  ', steps },
+                { title: 'Solo navegación', expectedResult: 'Abre Inicio', steps: [steps[0], { action: 'expect-text: ' }] },
               ],
             }),
           };
@@ -62,8 +65,9 @@ for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobil
     });
 
     assert.equal(outcomes.created, 6);
-    assert.equal(outcomes.errors.length, 1);
+    assert.equal(outcomes.errors.length, 2);
     assert.match(outcomes.errors[0], /-6-sin-resultado-esperado$/);
+    assert.match(outcomes.errors[1], /-7-sin-asercion$/);
     assert.deepEqual(created[0].tags, [typeTag, '@flujoAlterno', '@regresion', '@login']);
     assert.deepEqual(created[1].tags, [typeTag, '@flujoBasico', '@regresion']);
     assert.deepEqual(created[2].tags, [typeTag, '@flujoBasico', '@nuevo']);
@@ -114,7 +118,7 @@ test('la generación usa los requisitos de la versión documental vigente del pr
       return {
         model: 'test', text: JSON.stringify({ scenarios: [{
           title: 'Revisión manual del mensaje', mode: 'manual', requirementId: 'requirement-id',
-          steps: [{ action: 'Revisa si el mensaje explica cómo volver a intentar.' }],
+          steps: [{ action: 'Revisa si el mensaje explica cómo volver a intentar.', expected: 'El mensaje incluye instrucciones.' }],
           expectedResult: 'La persona sabe cómo continuar.',
         }] }),
       };
@@ -138,17 +142,57 @@ test('la API rechaza generar código o encolar Playwright para un caso manual', 
   await assert.rejects(runs.create('project', 'scenario', { environmentId: 'environment' }, workspace), /requiere ejecución manual/);
 });
 
+test('compatibilidad crea una comprobación HTTP activa cuando falta un escenario base con aserciones', async () => {
+  const created = [];
+  const outcome = await runCompatibilityAgent(context, {
+    prisma: {
+      testScenario: {
+        async findMany() { return []; },
+        async create({ data }) { created.push(data); },
+      },
+    },
+  });
+  assert.equal(outcome.created, 3);
+  assert.deepEqual(outcome.errors, []);
+  for (const scenario of created) {
+    assert.deepEqual(scenario.steps, [{ ordinal: 1, action: 'expect-http-ok: ' + context.url }]);
+    assert.match(generateSpec({ id: 'fixture', ...scenario }), /expect\(\(await page\.goto\('[^']+'\)\)\?\.ok\(\)\)\.toBe\(true\)/);
+  }
+});
+
+test('el asistente de requisitos solo devuelve propuestas con aserciones', async () => {
+  const service = new ScenariosService({
+    project: { async findFirst() { return { id: 'project' }; } },
+    requirement: { async findFirst() { return { title: 'Inicio' }; } },
+  }, {
+    async dispatch({ prompt }) {
+      assert.match(prompt, /aserción explícita/);
+      return {
+        model: 'test',
+        text: JSON.stringify({ scenarios: [
+          { title: 'Verificar inicio', steps },
+          { title: 'Solo abrir inicio', steps: [steps[0]], expectedResult: 'Abre Inicio' },
+        ] }),
+      };
+    },
+  });
+  const result = await service.suggest('project', 'requirement', { organizationId: null });
+  assert.deepEqual(result.scenarios.map(scenario => scenario.title), ['Verificar inicio']);
+});
+
 test('las variantes de compatibilidad heredan la regresión de su escenario base', async () => {
   const created = [];
   const base = [
     { title: 'Caso de regresión', steps, expectedResult: null, tags: ['@funcional', '@regresion'] },
     { title: 'Caso nuevo', steps, expectedResult: null, tags: ['@funcional'] },
+    { title: 'Caso antiguo incompleto', steps: [steps[0]], expectedResult: 'Abre el acceso', tags: ['@funcional'] },
   ];
   const outcome = await runCompatibilityAgent(context, {
     prisma: {
       testScenario: {
         async findMany({ where }) {
-          assert.ok(where.NOT.OR.some(filter => filter.tags?.has === '@manual'));
+          assert.ok(where.NOT.OR.some(filter => filter.tags?.hasSome.includes('@manual')));
+          assert.ok(where.NOT.OR.some(filter => filter.title?.startsWith === '[COMPAT:'));
           return base;
         },
         async create({ data }) { created.push(data); },
@@ -159,6 +203,7 @@ test('las variantes de compatibilidad heredan la regresión de su escenario base
   assert.equal(outcome.created, 6);
   for (const [index, browser] of ['@chromium', '@firefox', '@webkit'].entries()) {
     assert.deepEqual(created[index].tags, ['@funcional', '@regresion', '@compatibility', browser]);
+    assert.deepEqual(created[index].steps, steps);
     assert.deepEqual(created[index + 3].tags, ['@funcional', '@compatibility', browser]);
   }
 });

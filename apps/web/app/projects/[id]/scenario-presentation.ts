@@ -87,6 +87,8 @@ export function scenarioStepText(step: ScenarioStep) {
     case 'expect-text':
     case 'expect text':
       return `Comprueba que aparece «${target}» en la página.`;
+    case 'expect-http-ok':
+      return `Abre ${page} y comprueba que responde correctamente (HTTP 2xx).`;
     case 'expect-url':
     case 'expect url':
       return `Comprueba que se abrió ${page}.`;

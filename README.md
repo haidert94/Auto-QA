@@ -43,7 +43,7 @@ En **Escenarios**, la lista permite buscar por título, ID, requisito o paso (at
 
 **Generar casos de prueba** guarda `@regresion` en los nuevos escenarios web o móviles que el agente identifica para volver a comprobar un comportamiento existente después de cambios. Los casos de compatibilidad heredan las etiquetas del escenario base y el filtro de Escenarios muestra `@regresion` cuando hay casos con esa etiqueta.
 
-**Generar casos de prueba** también guarda como `@manual` las comprobaciones web o móviles que el agente fundamenta en el análisis y que requieren intervención humana. Usa los requisitos del análisis vigente cuando están disponibles. El caso queda visible en Escenarios con instrucciones en español y resultado esperado. La etiqueta permite filtrar esos casos y los excluye de Playwright.
+Los escenarios generados para Playwright incluyen al menos una aserción ejecutable. El caso base de compatibilidad verifica que la página responda con HTTP 2xx. **Generar casos de prueba** también guarda como `@manual` las comprobaciones web o móviles que el agente fundamenta en el análisis y que requieren intervención humana. Usa los requisitos del análisis vigente cuando están disponibles. El caso queda visible en Escenarios con instrucciones en español y resultado esperado. La etiqueta permite filtrar esos casos y los excluye de Playwright.
 
 Datos y Escenarios comparten el mismo contenedor, márgenes, tipografía y cabecera sobre el fondo marfil. Cambiar de pestaña conserva la alineación del nombre y del contenido; solamente cambian las acciones y la información de la sección.
 

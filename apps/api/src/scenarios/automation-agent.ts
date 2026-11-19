@@ -5,7 +5,7 @@ import { readGeneratorSteps, type GeneratorStep } from './playwright-generator';
 
 const OPERATIONS = [
   'navigate', 'click', 'click-text', 'fill', 'fill-label', 'press', 'check', 'uncheck',
-  'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked',
+  'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
 ] as const;
 const MAX_SOURCE_STEPS = 50;
 const MAX_ACTIONS = 100;
@@ -66,7 +66,7 @@ function buildAgentPrompt(scenario: ScenarioSource, source: GeneratorStep[]): st
     'Cubre cada número de paso. Puedes emitir varias acciones para un paso, usando el mismo número.',
     'Incluye al menos una aserción que verifique el resultado descrito. Usa solo etiquetas visibles, selectores y rutas sustentados por el escenario.',
     'Prefiere click-text para texto exacto visible y fill-label para etiquetas de campos. Usa fill o fill-label solo con hasInput en el mismo paso. El sistema insertará el dato original.',
-    'Usa rutas relativas a la raíz en navigate y expect-url. No introduzcas tráfico externo, acciones destructivas, credenciales, ni valores nuevos.',
+    'Usa rutas relativas a la raíz en navigate, expect-url y expect-http-ok. Conserva expect-http-ok como verificación de respuesta HTTP exitosa. Evita tráfico externo, acciones destructivas, credenciales y valores nuevos.',
     'Si falta información para cubrir el caso completo, devuelve {"actions":[]}.',
     'Operaciones permitidas: ' + OPERATIONS.join(', ') + '. Los targets de click/fill/check/uncheck/expect-visible/expect-hidden/expect-checked son selectores CSS. El target de press es una sola tecla.',
     'Devuelve únicamente JSON. Ejemplo de formato: {"actions":[{"step":1,"kind":"click-text","target":"Continuar"},{"step":2,"kind":"expect-text","target":"Resumen"}]}.',
@@ -81,7 +81,7 @@ function isFill(kind: string) {
 function isValidTarget(kind: string, target: string): boolean {
   if (!(OPERATIONS as readonly string[]).includes(kind) || !target.trim() || target.length > 1000
     || UNSAFE_TARGET.test(target) || /\[(?:dato del escenario|correo)\]/i.test(target)) return false;
-  if (kind === 'navigate' || kind === 'expect-url') return RELATIVE_PATH.test(target.trim());
+  if (kind === 'navigate' || kind === 'expect-url' || kind === 'expect-http-ok') return RELATIVE_PATH.test(target.trim());
   if (kind === 'press') return /^(Enter|Escape|Tab|Space|Arrow(?:Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/u.test(target.trim());
   return true;
 }
@@ -89,6 +89,9 @@ function isValidTarget(kind: string, target: string): boolean {
 export function translateAgentActions(raw: unknown, source: GeneratorStep[]): GeneratorStep[] | null {
   if (!Array.isArray(raw) || !raw.length || raw.length > MAX_ACTIONS) return null;
   const compiled: GeneratorStep[] = [];
+  const pendingHttpChecks = new Set(source.flatMap((step, index) =>
+    /^expect-http-ok\s*:/i.test(step.action.trim()) ? [index + 1] : [],
+  ));
   let covered = 0;
   let hasAssertion = false;
   for (const value of raw) {
@@ -102,8 +105,9 @@ export function translateAgentActions(raw: unknown, source: GeneratorStep[]): Ge
     compiled.push({ ordinal: compiled.length + 1, action: kind + ': ' + clean, data: input });
     covered = step;
     if (kind.startsWith('expect-')) hasAssertion = true;
+    if (kind === 'expect-http-ok') pendingHttpChecks.delete(step);
   }
-  return covered === source.length && hasAssertion ? compiled : null;
+  return covered === source.length && hasAssertion && !pendingHttpChecks.size ? compiled : null;
 }
 
 export async function prepareWithAgent(

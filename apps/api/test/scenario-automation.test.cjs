@@ -120,6 +120,15 @@ test('valida el orden, la cobertura, las aserciones, los destinos y los datos de
   assert.equal(readPreparedAutomation({ id: 'run', signature: 'signature', title: 'Title', steps: sample.steps }), null);
 });
 
+test('la automatización conserva la comprobación HTTP explícita del escenario', () => {
+  const source = [{ ordinal: 1, action: 'expect-http-ok: https://example.test/' }];
+  assert.equal(translateAgentActions([{ step: 1, kind: 'expect-url', target: '/' }], source), null);
+  assert.deepEqual(
+    translateAgentActions([{ step: 1, kind: 'expect-http-ok', target: '/' }], source).map(step => step.action),
+    ['expect-http-ok: /'],
+  );
+});
+
 test('las instrucciones sin traducir se conservan como comentarios de revisión', () => {
   const spec = generateSpec({ id: 'scenario', title: 'Caso', steps: [{ ordinal: 1, action: 'Primera línea\u2028Segunda línea' }] });
   assert.match(spec, /\/\/ TODO: Primera línea\n\s*\/\/ Segunda línea/);
