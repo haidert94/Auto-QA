@@ -17,9 +17,10 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import type { PrismaClient } from '@prisma/client';
 import { AiRouter } from '../ai/ai-router';
 import { PrismaService } from '../prisma.service';
-// Importa el runner existente del worker externo. Compartir el mismo código
-// evita que inline y externo diverjan.
-import { runAutomation, type AutomationClaim } from '../../../explorer/src/automation-runner';
+// Runner copiado al workspace de api para que el tsc no mueva el rootDir al
+// common parent y rompa la ruta dist/app.js. Mantener sincronizado con
+// apps/explorer/src/automation-runner.ts (ver nota abajo).
+import { runAutomation, type AutomationClaim } from './pipeline-runner';
 
 const POLL_MS = 3000;
 
