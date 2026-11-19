@@ -70,10 +70,10 @@ export class RunsService {
     };
   }
 
-  async list(projectId: string, workspace: Workspace, runIds?: string[]) {
+  async list(projectId: string, workspace: Workspace, runIds?: string[], forReport = false) {
     await this.ensureProject(projectId, workspace);
     return this.prisma.testRun.findMany({
-      where: { projectId, id: runIds ? { in: runIds } : undefined },
+      where: { projectId, id: runIds ? { in: runIds } : undefined, ...(forReport ? { status: { not: 'CANCELED' } } : {}) },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, status: true, scenarioId: true, environmentId: true,

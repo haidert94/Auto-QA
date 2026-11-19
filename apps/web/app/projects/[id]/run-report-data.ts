@@ -1,4 +1,4 @@
-import { isFinalRunStatus } from '../../../../api/src/runs/run-report-policy';
+import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { runPresentation } from './scenario-presentation';
 
 export type RunResult = {
@@ -33,7 +33,7 @@ export function resultDuration(run: ReportRun) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
 }
 export function reportStatistics(runs: ReportRun[]) {
-  const results = runs.filter(run => isFinalRunStatus(run.status)).flatMap(run => run.results);
+  const results = runs.filter(run => isReportableRunStatus(run.status)).flatMap(run => run.results);
   const counts = Object.fromEntries(Object.keys(resultLabels).map(key => [key, results.filter(result => result.status === key).length])) as Record<RunResult['status'], number>;
   const durations = results.map(result => result.durationMs).filter((value): value is number => value !== null);
   return { counts, results: results.length, rate: results.length ? 100 * counts.PASSED / results.length : null,
@@ -70,7 +70,7 @@ export function junitXml(projectId: string, runs: ReportRun[]) {
 }
 
 export function downloadRunReport(projectId: string, runs: ReportRun[], format: 'xml' | 'json') {
-  const finalized = runs.filter(run => isFinalRunStatus(run.status));
+  const finalized = runs.filter(run => isReportableRunStatus(run.status));
   if (!finalized.length) return;
   const content = format === 'xml' ? junitXml(projectId, finalized) : JSON.stringify({ projectId, exportedAt: new Date().toISOString(),
     scope: 'Ejecuciones finalizadas visibles del historial disponible (máximo 100)', runs: finalized.map(run => ({

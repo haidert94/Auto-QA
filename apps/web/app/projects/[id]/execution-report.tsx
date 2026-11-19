@@ -6,7 +6,7 @@ import { Activity, Clock, Download, HelpCircle, Play, RefreshCw, Search, ShieldC
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
-import { isFinalRunStatus, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
+import { isReportableRunStatus, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
 import { ProjectHeading } from './project-heading';
 import { useReportHeader } from './project-tabs';
 import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
@@ -16,6 +16,7 @@ import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, t
 export function ExecutionReport({ project }: { project: Project }) {
   const header = useReportHeader();
   const activity = useReportActivity(project.id, !!header?.active);
+  const { queued, running, stopping } = activity.counts ?? {};
   const [runs, setRuns] = useState<ReportRun[] | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [error, setError] = useState('');
@@ -38,15 +39,17 @@ export function ExecutionReport({ project }: { project: Project }) {
     const options = { cache: 'no-store' as const, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) };
     setLoading(true); setError(''); setTagsWarning('');
     Promise.allSettled([
-      fetch(`/api/projects/${project.id}/runs`, options), fetch(`/api/projects/${project.id}/scenarios`, options),
+      fetch(`/api/projects/${project.id}/runs?view=report`, options), fetch(`/api/projects/${project.id}/scenarios`, options),
     ]).then(async ([history, catalog]) => {
       if (history.status !== 'fulfilled') throw new Error('No se pudo consultar el historial de ejecuciones.');
       if (!history.value.ok) throw new Error(history.value.status === 403
         ? 'No tienes permiso para consultar este historial o tu plan no lo permite.' : 'No se pudo consultar el historial de ejecuciones.');
       const data: ReportRun[] = await history.value.json();
       if (controller.signal.aborted) return;
-      setRuns([...data].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
-      setScope(previous => previous === 'all' || data.some(run => run.id === previous) ? previous : 'all');
+      const historyRuns = data.filter(run => run.status !== 'CANCELED');
+      setRuns(historyRuns.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
+      setScope(previous => previous === 'all' || historyRuns.some(run => run.id === previous) ? previous : 'all');
+      setDetailId(previous => historyRuns.some(run => run.id === previous) ? previous : null);
       if (catalog.status === 'fulfilled' && catalog.value.ok) {
         const list: ScenarioListItem[] = await catalog.value.json();
         if (!controller.signal.aborted) setScenarios(list);
@@ -57,7 +60,7 @@ export function ExecutionReport({ project }: { project: Project }) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No se pudo cargar el reporte.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion]);
+  }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion, queued, running, stopping]);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
       if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'k' || !search.current?.getClientRects().length) return;
@@ -81,9 +84,9 @@ export function ExecutionReport({ project }: { project: Project }) {
   const selectedState = selectedRun ? outcome(selectedRun) : null;
   const detail = (runs ?? []).find(run => run.id === detailId);
   const filters = Object.keys(filterLabels) as RunFilter[];
-  const finalized = visible.filter(run => isFinalRunStatus(run.status));
-  const hasFinalized = !!runs?.some(run => isFinalRunStatus(run.status));
-  const waiting = activity.waiting || !!runs?.some(run => !isFinalRunStatus(run.status));
+  const finalized = visible.filter(run => isReportableRunStatus(run.status));
+  const hasFinalized = !!runs?.some(run => isReportableRunStatus(run.status));
+  const waiting = activity.waiting || !!runs?.some(run => !isReportableRunStatus(run.status));
   const canGenerate = activity.verified && !waiting && !loading && !error && hasFinalized;
   const downloadDisabled = exporting || !canGenerate || !finalized.length;
   const exportNotice = waiting ? REPORT_WHILE_RUNNING

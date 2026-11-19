@@ -106,9 +106,9 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.equal(calls, 2);
 });
 
-test('el reporte consolidado espera la primera ejecución finalizada y el cierre de la cola', async () => {
+test('el reporte consolidado espera la primera ejecución finalizada e ignora las canceladas', async () => {
   let active = { id: 'active-run' };
-  let finished = [];
+  const runs = [{ id: 'canceled', scenarioId: 'scenario', status: 'CANCELED', createdAt: new Date(), results: [] }];
   let documentReads = 0;
   const prisma = {
     project: { async findFirst({ where }) {
@@ -123,8 +123,8 @@ test('el reporte consolidado espera la primera ejecución finalizada y el cierre
         return active;
       },
       async findMany({ where }) {
-        assert.deepEqual(where, { projectId: 'project', status: { in: ['COMPLETED', 'FAILED', 'CANCELED'] } });
-        return finished;
+        assert.deepEqual(where, { projectId: 'project', status: { in: ['COMPLETED', 'FAILED'] } });
+        return runs.filter(run => where.status.in.includes(run.status));
       },
     },
   };
@@ -134,7 +134,7 @@ test('el reporte consolidado espera la primera ejecución finalizada y el cierre
   active = null;
   await assert.rejects(reports.export('project', workspace), /primera ejecución finalizada/);
   assert.equal(documentReads, 0);
-  finished = [{ id: 'done', scenarioId: 'scenario', status: 'FAILED', createdAt: new Date(), results: [] }];
+  runs.push({ id: 'done', scenarioId: 'scenario', status: 'FAILED', createdAt: new Date(), results: [] });
   const report = await reports.export('project', workspace);
   assert.equal(report.icsp.counts.runs, 1);
   assert.equal(report.traceability[0].scenarios[0].lastRun.id, 'done');
@@ -229,6 +229,29 @@ test('consulta las ejecuciones pedidas sin salir del alcance del proyecto', asyn
   assert.deepEqual(await controller.list('project', [first, second].join(','), workspace), [{ id: first, status: 'RUNNING' }]);
   assert.throws(() => controller.list('project', 'invalid', workspace), /identificadores válidos/);
   assert.throws(() => controller.list('project', Array(101).fill(first).join(','), workspace), /identificadores válidos/);
+});
+
+test('el historial del reporte omite canceladas antes del límite y conserva ejecuciones activas', async () => {
+  const runs = [
+    { id: 'canceled', status: 'CANCELED' },
+    { id: 'waiting', status: 'QUEUED' },
+    { id: 'running', status: 'RUNNING' },
+    { id: 'completed', status: 'COMPLETED' },
+  ];
+  const prisma = {
+    project: { async findFirst({ where }) {
+      assert.deepEqual(where, { id: 'project', organizationId: workspace.organizationId });
+      return { id: 'project' };
+    } },
+    testRun: { async findMany({ where, take }) {
+      assert.equal(where.projectId, 'project');
+      assert.equal(take, 100);
+      return runs.filter(run => run.status !== where.status?.not).slice(0, take);
+    } },
+  };
+  const controller = new RunsController(new RunsService(prisma, {}, {}, {}));
+  assert.deepEqual(await controller.list('project', undefined, workspace, 'report'), runs.slice(1));
+  assert.deepEqual(await controller.list('project', undefined, workspace), runs);
 });
 
 test('Enterprise muestra minutos sin límite y reserva navegador respetando la simultaneidad', async () => {

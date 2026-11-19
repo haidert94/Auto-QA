@@ -56,6 +56,7 @@ export function useReportActivity(projectId: string, enabled: boolean) {
   const counts = activity && activity !== 'unavailable' ? activity : null;
   return {
     historyVersion,
+    counts,
     verified: counts !== null,
     statusMessage: activity === null ? 'Consultando el estado de las ejecuciones…'
       : activity === 'unavailable' ? 'No se pudo confirmar el estado de las ejecuciones.' : '',

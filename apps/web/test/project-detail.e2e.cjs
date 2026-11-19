@@ -236,7 +236,9 @@ const api = createServer(async (request, response) => {
       }
       return send(scenarioRuns.filter(run => ids.includes(run.id)));
     }
-    return reportForbidden ? send({ message: 'Sin permisos' }, 403) : historyFail ? send({ message: 'Historial no disponible' }, 503) : send(reportMode ? reportRuns : scenarioRuns);
+    const runs = reportMode ? reportRuns : scenarioRuns;
+    const history = requestUrl.searchParams.get('view') === 'report' ? runs.filter(run => run.status !== 'CANCELED') : runs;
+    return reportForbidden ? send({ message: 'Sin permisos' }, 403) : historyFail ? send({ message: 'Historial no disponible' }, 503) : send(history);
   }
   if (path === `${base}/runs/${reportRuns[0].id}/trace/${reportRuns[0].results[0].id}`) {
     response.setHeader('Content-Type', 'application/zip'); response.setHeader('Content-Disposition', 'attachment; filename="trace.zip"');
@@ -275,6 +277,9 @@ const api = createServer(async (request, response) => {
   }
   if (path === base + '/report/export' && (reportMode ? reportRuns : scenarioRuns).some(run => ['QUEUED', 'RUNNING'].includes(run.status))) {
     return send({ message: 'El reporte estará disponible cuando finalicen las ejecuciones del proyecto.' }, 409);
+  }
+  if (path === base + '/report/export' && reportMode && !reportRuns.some(run => ['COMPLETED', 'FAILED'].includes(run.status))) {
+    return send({ message: 'El reporte estará disponible después de la primera ejecución finalizada.' }, 409);
   }
   if (path === base + '/report/export') return qualityExportFail ? send({ message: 'Exportación no disponible' }, 503) : send({
     project: { id: project.id, name: project.name, status: project.status }, ipa, icsp: qualityIcsp, traceability: [], generatedAt: '2026-11-18T12:00:00Z',
@@ -1115,10 +1120,24 @@ async function verifyRunReport(page, screenshots) {
   } finally {
     await consolidated.close();
   }
-  reportRuns[4].status = 'CANCELED';
+  const firstCanceled = reportRuns[4];
+  const secondCanceled = reportRuns[5];
+  const selector = page.getByLabel('Ejecución del reporte', { exact: true });
+  const firstHistoryItem = section.getByRole('button', { name: 'Seleccionar ejecución ' + firstCanceled.id.slice(0, 8), exact: true });
+  await firstHistoryItem.click();
+  await expect(detail).toBeVisible();
+  firstCanceled.status = 'CANCELED';
+  firstCanceled.errorCode = 'canceled-by-user';
+  await expect(firstHistoryItem).toHaveCount(0, { timeout: 12000 });
+  await expect(selector).toHaveValue('all');
+  await expect(selector.locator('option').filter({ hasText: firstCanceled.id.slice(0, 8) })).toHaveCount(0);
+  await expect(detail).toHaveCount(0);
+  await expect(table.getByText(firstCanceled.id.slice(0, 8), { exact: true })).toHaveCount(0);
+  await expect(table.getByText(secondCanceled.id.slice(0, 8), { exact: true })).toBeVisible();
   await expect(xmlButton).toBeDisabled();
-  reportRuns[5].status = 'CANCELED';
-  await expect(xmlButton).toBeEnabled({ timeout: 10000 });
+  secondCanceled.status = 'CANCELED';
+  await expect(xmlButton).toBeEnabled({ timeout: 12000 });
+  await expect(table.getByRole('row')).toHaveCount(6);
   const xmlDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exportar JUnit XML', exact: true }).click();
   const xmlFile = await xmlDownload;
@@ -1129,21 +1148,23 @@ async function verifyRunReport(page, screenshots) {
     return { invalid: doc.querySelectorAll('parsererror').length, tests: doc.documentElement.getAttribute('tests'), failures: doc.documentElement.getAttribute('failures'),
       skipped: doc.documentElement.getAttribute('skipped'), errors: doc.documentElement.getAttribute('errors'), cases: doc.querySelectorAll('testcase').length, evil: doc.querySelectorAll('evil').length };
   }, xmlText);
-  assert.deepEqual(xmlResult, { invalid: 0, tests: '7', failures: '1', skipped: '4', errors: '1', cases: 7, evil: 0 });
+  assert.deepEqual(xmlResult, { invalid: 0, tests: '5', failures: '1', skipped: '2', errors: '1', cases: 5, evil: 0 });
+  assert.ok(!xmlText.includes(firstCanceled.id) && !xmlText.includes(secondCanceled.id));
   await page.getByText('Exportar resultados', { exact: true }).click();
   const jsonDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exportar JSON', exact: true }).click();
   const jsonFile = await jsonDownload;
   const jsonText = await readFile(await jsonFile.path(), 'utf8'); const json = JSON.parse(jsonText);
-  assert.equal(json.runs.length, 7);
-  assert.ok(json.runs.every(run => ['COMPLETED', 'FAILED', 'CANCELED'].includes(run.status)));
+  assert.equal(json.runs.length, 5);
+  assert.ok(json.runs.every(run => ['COMPLETED', 'FAILED'].includes(run.status)));
+  assert.ok(!jsonText.includes(firstCanceled.id) && !jsonText.includes(secondCanceled.id));
   assert.ok(!jsonText.includes('private-internal-key'));
   for (const width of [1920, 1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
     const before = await page.locator('.app-shell-body').boundingBox();
     await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
-    await expect(table.getByRole('row')).toHaveCount(8);
+    await expect(table.getByRole('row')).toHaveCount(6);
     const after = await page.locator('.app-shell-body').boundingBox();
     assert.equal(before.x, after.x); assert.equal(before.width, after.width);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Reporte sin desbordamiento a ${width}px.`);
@@ -1159,17 +1180,18 @@ async function verifyRunReport(page, screenshots) {
   await expect(section.getByText('No se pudo consultar el historial de ejecuciones.', { exact: true })).toBeVisible();
   historyFail = false;
   await section.getByRole('button', { name: 'Reintentar reporte', exact: true }).click();
-  await expect(table.getByRole('row')).toHaveCount(8);
+  await expect(table.getByRole('row')).toHaveCount(6);
   reportForbidden = true;
   await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
   await expect(section.getByText('No tienes permiso para consultar este historial o tu plan no lo permite.', { exact: true })).toBeVisible();
   reportForbidden = false;
-  const saved = reportRuns.splice(0);
+  const saved = reportRuns.splice(0, reportRuns.length, firstCanceled, secondCanceled);
   await section.getByRole('button', { name: 'Reintentar reporte', exact: true }).click();
   await expect(section.getByRole('heading', { name: 'Aún no hay ejecuciones registradas', exact: true })).toBeVisible();
   await page.getByText('Exportar resultados', { exact: true }).click();
   await expect(jsonButton).toBeDisabled();
-  reportRuns.push(...saved); reportMode = false;
+  await expect(page.getByRole('link', { name: /Abrir reporte consolidado/ })).toHaveCount(0);
+  reportRuns.splice(0, reportRuns.length, ...saved); reportMode = false;
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   console.log('PASS reporte: métricas y denominadores, duración cero/ausente, selector/filtros, error seguro, trazas autorizadas, JUnit XML válido, JSON sin claves privadas, matriz/cronología, móvil, permisos y reintentos. API simulada.');
 }

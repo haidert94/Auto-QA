@@ -6,6 +6,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type FormEvent, type 
 import { environmentTypes, scenarioRunEnvironmentError, supportsScenarioWrites, type Project } from '../onboarding';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
+import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { EnvironmentsDialog } from './environments-dialog';
 import type { ScenarioListItem } from './scenario-card';
 import type { GeneratedSpec } from './automation-export';
@@ -47,6 +48,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
   const [results, setResults] = useState<SuiteResult[] | null>(null);
   const [trackingWarning, setTrackingWarning] = useState('');
   const finished = results?.filter(({ state }) => state.kind === 'finished').length ?? 0;
+  const hasReportableRun = results?.some(({ state }) => state.kind === 'finished' && isReportableRunStatus(state.run.status));
   const pending = results?.filter(({ state }) => state.kind === 'active' || state.kind === 'waiting').length ?? 0;
   const hasUnknown = results?.some(({ state }) => state.kind === 'unknown');
   const environment = environments.find(item => item.id === environmentId);
@@ -157,7 +159,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
         </li>;
       })}</ul>
       <div className="actions">
-        {busy || pending > 0 || !finished || hasUnknown ? <button type="button" disabled>Ver reporte</button>
+        {busy || pending > 0 || !hasReportableRun || hasUnknown ? <button type="button" disabled>Ver reporte</button>
           : <Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>}
         <button type="button" className="secondary" onClick={close}>Cerrar</button>
       </div>
