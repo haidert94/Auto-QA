@@ -17,6 +17,7 @@ import { AiRouter } from './ai/ai-router';
 import { BudgetService } from './ai/budget.service';
 import { AutomationController } from './automation/automation.controller';
 import { AutomationService } from './automation/automation.service';
+import { InlineWorkerService } from './automation/inline-worker.service';
 import { LoadController } from './load/load.controller';
 import { LoadService } from './load/load.service';
 import { MonitorsController } from './monitors/monitors.controller';
@@ -47,6 +48,10 @@ import { ScenariosService } from './scenarios/scenarios.service';
     AiRouter,
     BudgetService,
     AutomationService,
+    // El servicio se instancia siempre; el loop solo arranca cuando
+    // AUTOQA_INLINE_WORKER=true. En Hostinger activamos este flag; en
+    // local, se deja apagado y se corre el worker externo con `pnpm dev`.
+    InlineWorkerService,
     { provide: SCREENSHOT_READER, useFactory: () => createScreenshotReader() },
   ],
 })
