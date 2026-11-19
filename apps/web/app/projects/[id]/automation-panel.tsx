@@ -262,7 +262,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
       </div>
     </div>
-    {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs} onClose={() => setRunSelection(null)}
-      onQueued={() => setNotice('Consulta las respuestas de encolado y el reporte para conocer el estado real de las ejecuciones.')} />}
+    {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs} onClose={() => setRunSelection(null)} />}
   </section>;
 }

@@ -118,7 +118,7 @@
 .scenario-run-targets { padding-left: 18px; font-size: 12px; line-height: 1.7; max-height: 160px; overflow: auto; }
 .scenario-run-dialog label.check { margin-top: 18px; align-items: flex-start; font-size: 12px; line-height: 1.65; }
 .scenario-run-dialog .check input { flex-shrink: 0; margin-top: 3px; accent-color: var(--blue); }
-.scenario-queue-results { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; font-size: 12px; }
+.scenario-queue-results { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; font-size: 12px; max-height: 45vh; overflow: auto; }
 .scenario-queue-results li { display: grid; gap: 5px; overflow-wrap: anywhere; }
 .environments-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid #e9e7e1; padding: 0; border-radius: 4px; color: var(--ink); background: var(--surface); }
 .environments-dialog::backdrop { background: #10142180; }

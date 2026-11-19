@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const ts = require('typescript');
 const { ScenariosService } = require('../dist/scenarios/scenarios.service');
 const { RunsService } = require('../dist/runs/runs.service');
+const { RunsController } = require('../dist/runs/runs.controller');
 const { translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
 const { generateHarnessedSpec, generateSpec } = require('../dist/scenarios/playwright-generator');
 
@@ -100,6 +101,25 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.equal(snapshot.title, sample.title);
   assert.notEqual((await service.preparePlaywright('project', 'scenario', workspace)).automationId, prepared.automationId);
   assert.equal(calls, 2);
+});
+
+test('consulta las ejecuciones pedidas sin salir del alcance del proyecto', async () => {
+  const first = '10000000-0000-4000-8000-000000000001';
+  const second = '10000000-0000-4000-8000-000000000002';
+  const prisma = {
+    project: { async findFirst({ where }) {
+      assert.deepEqual(where, { id: 'project', organizationId: workspace.organizationId });
+      return { id: 'project' };
+    } },
+    testRun: { async findMany({ where }) {
+      assert.deepEqual(where, { projectId: 'project', id: { in: [first, second] } });
+      return [{ id: first, status: 'RUNNING' }];
+    } },
+  };
+  const controller = new RunsController(new RunsService(prisma, {}, {}, {}));
+  assert.deepEqual(await controller.list('project', [first, second].join(','), workspace), [{ id: first, status: 'RUNNING' }]);
+  assert.throws(() => controller.list('project', 'invalid', workspace), /identificadores válidos/);
+  assert.throws(() => controller.list('project', Array(101).fill(first).join(','), workspace), /identificadores válidos/);
 });
 
 test('exige una confirmación vigente para encolar cambios con datos de prueba', async () => {

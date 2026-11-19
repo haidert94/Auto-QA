@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateRunDto } from './dto/create-run.dto';
 import { RunsService } from './runs.service';
@@ -12,8 +13,17 @@ export class RunsController {
 
   @Get('projects/:projectId/runs')
   @RequiresPlanCapability('BROWSER_TESTS')
-  list(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
-    return this.service.list(projectId, workspace);
+  list(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Query('ids') ids: string | undefined,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    if (ids === undefined) return this.service.list(projectId, workspace);
+    const runIds = typeof ids === 'string' ? ids.split(',') : [];
+    if (!runIds.length || runIds.length > 100 || runIds.some(id => !isUUID(id))) {
+      throw new BadRequestException('Especifica entre 1 y 100 identificadores válidos de ejecuciones.');
+    }
+    return this.service.list(projectId, workspace, runIds);
   }
 
   @Get('projects/:projectId/runs/:runId')

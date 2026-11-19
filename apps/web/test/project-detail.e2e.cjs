@@ -106,6 +106,8 @@ const reportRuns = ['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED', 'QUEUED', 'RUNNING
 
 const savedPlaywright = new Map();
 const previewRequests = [];
+const trackedRunRequests = [];
+let trackingFailures = 0;
 const scenarioVersion = scenario => JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
 
 function persistFixtureSpec(scenario) {
@@ -138,7 +140,8 @@ const api = createServer(async (request, response) => {
   response.setHeader('Content-Type', 'application/json');
   const send = (data, status = 200) => { response.statusCode = status; response.end(JSON.stringify(data)); };
   if (request.headers.authorization !== `Bearer ${session}`) return send({ message: 'Sesión requerida' }, 401);
-  const path = new URL(request.url, 'http://localhost').pathname;
+  const requestUrl = new URL(request.url, 'http://localhost');
+  const path = requestUrl.pathname;
   if (path === '/api/commerce/me') return send(account);
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
@@ -176,12 +179,23 @@ const api = createServer(async (request, response) => {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString()); queuedRequests.push({ scenarioId: scenario.id, ...payload });
       if (scenario.id === scenarioB) return send({ message: 'Cuota de ejecuciones alcanzada.' }, 403);
-      const run = { id: '50000000-0000-4000-8000-000000000099', scenarioId: scenario.id, scenario: { id: scenario.id, title: scenario.title },
+      const run = { id: randomUUID(), scenarioId: scenario.id, scenario: { id: scenario.id, title: scenario.title },
         status: 'QUEUED', createdAt: '2026-11-18T12:00:00Z', completedAt: null, startedAt: null, errorCode: null, environmentId: payload.environmentId, results: [] };
       scenarioRuns.push(run); return send(run, 201);
     }
   }
-  if (path === base + '/runs') return reportForbidden ? send({ message: 'Sin permisos' }, 403) : historyFail ? send({ message: 'Historial no disponible' }, 503) : send(reportMode ? reportRuns : scenarioRuns);
+  if (path === base + '/runs') {
+    const ids = requestUrl.searchParams.get('ids')?.split(',');
+    if (ids) {
+      trackedRunRequests.push(ids);
+      if (trackingFailures > 0) {
+        trackingFailures--;
+        return send({ message: 'Seguimiento temporalmente no disponible.' }, 503);
+      }
+      return send(scenarioRuns.filter(run => ids.includes(run.id)));
+    }
+    return reportForbidden ? send({ message: 'Sin permisos' }, 403) : historyFail ? send({ message: 'Historial no disponible' }, 503) : send(reportMode ? reportRuns : scenarioRuns);
+  }
   if (path === `${base}/runs/${reportRuns[0].id}/trace/${reportRuns[0].results[0].id}`) {
     response.setHeader('Content-Type', 'application/zip'); response.setHeader('Content-Disposition', 'attachment; filename="trace.zip"');
     const archive = new JSZip(); archive.file('trace.fixture.json', '{"synthetic":true}');
@@ -417,7 +431,7 @@ async function verifyScenarios(page, screenshots) {
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
-  await expect(dialog.getByText(/En cola ·/)).toBeVisible();
+  await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
   assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id, automationId: fixtureSpec(scenarios[0]).automationId }]);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await expect(list.locator('.scenario-result').filter({ hasText: 'Pago sandbox editado' }).getByText('En cola', { exact: true })).toBeVisible();
@@ -428,6 +442,7 @@ async function verifyScenarios(page, screenshots) {
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('status')).toHaveText('La suite no se inició.');
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   scenariosFail = true;
   await page.reload();
@@ -552,6 +567,58 @@ async function verifySavedAutomationAfterReload(page) {
   console.log('PASS los estados de código guardado se mantienen al recargar y al filtrar sin abrir cada caso.');
 }
 
+async function verifySuiteProgress(page) {
+  const initialQueues = queuedRequests.length;
+  const initialRuns = scenarioRuns.length;
+  const firstPoll = trackedRunRequests.length;
+  const extra = { ...scenarios[0], id: randomUUID(), title: 'Compra con código promocional' };
+
+  try {
+    scenarios.push(extra);
+    [scenarios[0], scenarios[1], extra].forEach(persistFixtureSpec);
+    trackingFailures = 1;
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar en runners (3)', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (3)', exact: true });
+    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('button', { name: 'Confirmar ejecución' }).click();
+    const rows = dialog.getByRole('listitem');
+    const first = rows.filter({ hasText: scenarios[0].title });
+    const last = rows.filter({ hasText: extra.title });
+    await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('No ejecutado', { exact: true })).toHaveCount(1);
+    await expect(dialog.getByText(/^Procesando… 1 de 3/)).toBeVisible();
+    await expect(dialog.getByText(/No se pudo actualizar el estado/)).toBeVisible();
+
+    const [passed, failed] = scenarioRuns.slice(initialRuns);
+    assert.deepEqual(trackedRunRequests[firstPoll], [passed.id, failed.id]);
+    passed.status = 'COMPLETED';
+    passed.results = [{ status: 'PASSED', durationMs: 450 }];
+    failed.status = 'RUNNING';
+    await expect(first.getByText('Pasó', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(last.getByText('Procesando…', { exact: true })).toBeVisible();
+    await expect(dialog.getByText(/^Procesando… 2 de 3/)).toBeVisible();
+    await expect(dialog.getByText(/No se pudo actualizar el estado/)).toHaveCount(0);
+
+    failed.status = 'FAILED';
+    await expect(last.getByText('Falló', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(dialog.getByRole('status')).toHaveText('Ejecuciones finalizadas (2/3).');
+    await expect(dialog.getByText('En cola', { exact: false })).toHaveCount(0);
+    assert.equal(queuedRequests.length - initialQueues, 3);
+    assert.deepEqual(trackedRunRequests.at(-1), [failed.id]);
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  } finally {
+    trackingFailures = 0;
+    queuedRequests.length = initialQueues;
+    scenarioRuns.length = initialRuns;
+    [scenarioA, scenarioB, extra.id].forEach(id => savedPlaywright.delete(id));
+    scenarios = scenarios.filter(scenario => scenario.id !== extra.id);
+  }
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS seguimiento de suite con éxito, fallo, rechazo de cuota y reintento de consulta.');
+}
+
 async function verifyAutomationToolbar(page) {
   persistFixtureSpec(scenarios[0]);
   await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
@@ -661,7 +728,7 @@ async function verifyWritableExecution(page) {
     await expect(confirm).toBeDisabled();
     await dialog.getByRole('checkbox', { name: /cambios en los datos de prueba/ }).check();
     await confirm.click();
-    await expect(dialog.getByText(/En cola ·/)).toBeVisible();
+    await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
     assert.deepEqual(queuedRequests.at(-1), {
       scenarioId: scenarioA,
       environmentId: qa.id,
@@ -776,7 +843,7 @@ async function verifyAutomation(page, screenshots) {
   await execute.click(); dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
-  await expect(dialog.getByText(/En cola ·/)).toBeVisible();
+  await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
   assert.equal(queuedRequests.at(-1).environmentId, environment.id);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).uncheck();
@@ -1059,6 +1126,7 @@ async function run() {
     await verifySavedAutomationAfterReload(page);
     await verifyAutomationToolbar(page);
     await verifyWritableExecution(page);
+    await verifySuiteProgress(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();
