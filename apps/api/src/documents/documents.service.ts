@@ -8,7 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { convertDocument } from '../automation/document-converter';
 import { analyzeFindings, classifyDocument, type DocumentAnalysisProvider, type Finding } from './document-analysis';
 import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-files';
-import { analysisSelect, describeAnalysis, documentSelect, metadata, persistFindings } from './document-records';
+import { analysisSelect, describeAnalysis, documentAnalysisSignature, documentSelect, metadata, persistFindings, readDocumentSnapshot } from './document-records';
 import { DOCUMENT_STORAGE, type DocumentStorage } from './document-storage';
 import { readiness, type ReadinessFinding } from './readiness';
 
@@ -40,7 +40,7 @@ type Transaction = Prisma.TransactionClient;
 const active = { removedAt: null };
 const projectRelations = { environments: true, roles: true } satisfies Prisma.ProjectInclude;
 
-function digest(bytes: Buffer | string) {
+function digest(bytes: Buffer) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
@@ -211,22 +211,11 @@ export class DocumentsService {
     }
   }
 
-  private snapshot(projectId: string, tx: Transaction = this.prisma) {
-    return tx.document.findMany({
-      where: { projectId, ...active }, orderBy: { id: 'asc' },
-      include: { versions: { orderBy: { number: 'desc' }, take: 1 } },
-    });
-  }
-
-  private signature(snapshot: Awaited<ReturnType<DocumentsService['snapshot']>>) {
-    return digest(JSON.stringify(['rules-v1', snapshot.map(document => [document.id, document.versions[0]?.id])]));
-  }
-
   async report(projectId: string) {
     return this.prisma.$transaction(async tx => {
       const project = await this.project(projectId, false, tx);
       const documents = await this.rows(projectId, tx);
-      const signature = this.signature(await this.snapshot(projectId, tx));
+      const signature = documentAnalysisSignature(await readDocumentSnapshot(tx, projectId));
       const record = await tx.documentAnalysis.findUnique({
         where: { projectId_signature: { projectId, signature } }, select: analysisSelect,
       });
@@ -244,8 +233,8 @@ export class DocumentsService {
     const runKey = `doc-analysis:${randomBytes(8).toString('hex')}`;
     const context = { organizationId: project.organizationId, projectId, runKey };
     try {
-      const snapshot = await this.snapshot(projectId);
-      const signature = this.signature(snapshot);
+      const snapshot = await readDocumentSnapshot(this.prisma, projectId);
+      const signature = documentAnalysisSignature(snapshot);
       if (await this.prisma.documentAnalysis.findUnique({
         where: { projectId_signature: { projectId, signature } }, select: { id: true },
       })) return this.report(projectId);
@@ -298,7 +287,7 @@ export class DocumentsService {
       const findings = analyzeFindings(facts);
       await this.prisma.$transaction(async tx => {
         await this.lockProject(tx, projectId);
-        if (signature !== this.signature(await this.snapshot(projectId, tx))) {
+        if (signature !== documentAnalysisSignature(await readDocumentSnapshot(tx, projectId))) {
           throw new ConflictException('Los documentos cambiaron durante el análisis. Solicítalo de nuevo.');
         }
         if (await tx.documentAnalysis.findUnique({

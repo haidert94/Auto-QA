@@ -6,6 +6,7 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
+import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { CreateRunDto } from './dto/create-run.dto';
 
 @Injectable()
@@ -155,8 +156,9 @@ export class RunsService {
 
   async create(projectId: string, scenarioId: string, dto: CreateRunDto, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
-    const scenario = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId }, select: { id: true } });
+    const scenario = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId }, select: { id: true, tags: true } });
     if (!scenario) throw new NotFoundException('Escenario no encontrado.');
+    if (isManualScenario(scenario)) throw new BadRequestException(MANUAL_SCENARIO_MESSAGE);
 
     const environment = await this.prisma.environment.findFirst({
       where: { id: dto.environmentId, projectId },

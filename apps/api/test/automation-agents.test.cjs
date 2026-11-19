@@ -1,0 +1,164 @@
+const assert = require('node:assert/strict');
+const { test } = require('node:test');
+const { createHash } = require('node:crypto');
+
+const { runCompatibilityAgent } = require('../dist/automation/agents/compatibility-agent');
+const { runFunctionalWebAgent } = require('../dist/automation/agents/functional-web-agent');
+const { runMobileAgent } = require('../dist/automation/agents/mobile-agent');
+const { runAutomation } = require('../dist/automation/pipeline-runner');
+const { RunsService } = require('../dist/runs/runs.service');
+const { ScenariosService } = require('../dist/scenarios/scenarios.service');
+
+const context = {
+  projectId: 'project',
+  organizationId: null,
+  jobId: 'job',
+  runKey: null,
+  environmentId: null,
+  url: 'https://example.test',
+  description: null,
+  review: { stories: [{ title: 'Inicio de sesión', coverage: 'completa', notes: 'La ayuda de acceso debe ser comprensible.' }] },
+  requirements: [{ id: 'requirement-id', title: 'Información de errores', criteria: [{ text: 'El mensaje debe indicar cómo volver a intentar.' }] }],
+};
+const steps = [{ action: 'navigate: /login' }];
+
+for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobileAgent, '@mobile']]) {
+  test(agent.name + ' guarda la clasificación de regresión y ejecución manual por escenario', async () => {
+    const created = [];
+    const outcomes = await agent(context, {
+      router: {
+        async dispatch({ prompt }) {
+          assert.match(prompt, /"regression": true/);
+          assert.match(prompt, /"mode": "manual"/);
+          assert.ok(prompt.includes(context.review.stories[0].notes));
+          assert.ok(prompt.includes(context.requirements[0].criteria[0].text));
+          assert.ok(prompt.includes(context.review.stories[0].title));
+          return {
+            model: 'test',
+            text: JSON.stringify({
+              scenarios: [
+                { title: 'Validar credenciales incorrectas', flow: 'alterno', regression: true, tags: ['@regression', '@login'], steps },
+                { title: 'Omitir clasificación explícita nueva', flow: 'basico', tags: [' @Regresión '], steps },
+                { title: 'Primer acceso a un módulo nuevo', flow: 'basico', regression: false, tags: ['@regresion', '@nuevo'], steps },
+                { title: 'Caso sin clasificar', flow: 'basico', tags: ['@manual'], requirementId: 'unrelated', steps },
+                { title: 'Conservar regresión al limitar las etiquetas', regression: true, tags: Array.from({ length: 24 }, (_, i) => '@tag' + i), steps },
+                {
+                  title: 'Revisar la claridad de la ayuda de acceso',
+                  mode: 'manual',
+                  flow: 'alterno',
+                  regression: true,
+                  requirementId: context.requirements[0].id,
+                  tags: ['@manual'],
+                  expectedResult: 'La ayuda indica cómo recuperar el acceso.',
+                  steps: [{ action: 'Lee el mensaje de ayuda y comprueba si indica cómo recuperar el acceso.' }],
+                },
+                { title: 'Manual incompleto', mode: 'manual', expectedResult: '  ', steps },
+              ],
+            }),
+          };
+        },
+      },
+      prisma: { testScenario: { async create({ data }) { created.push(data); } } },
+    });
+
+    assert.equal(outcomes.created, 6);
+    assert.equal(outcomes.errors.length, 1);
+    assert.match(outcomes.errors[0], /-6-sin-resultado-esperado$/);
+    assert.deepEqual(created[0].tags, [typeTag, '@flujoAlterno', '@regresion', '@login']);
+    assert.deepEqual(created[1].tags, [typeTag, '@flujoBasico', '@regresion']);
+    assert.deepEqual(created[2].tags, [typeTag, '@flujoBasico', '@nuevo']);
+    assert.deepEqual(created[3].tags, [typeTag, '@flujoBasico']);
+    assert.equal(created[4].tags.length, 20);
+    assert.ok(created[4].tags.includes('@regresion'));
+    assert.equal(created[3].requirementId, undefined);
+    assert.deepEqual(created[5].tags, [typeTag, '@manual', '@flujoAlterno', '@regresion']);
+    assert.equal(created[5].requirementId, context.requirements[0].id);
+    assert.equal(created[5].steps[0].action, 'Lee el mensaje de ayuda y comprueba si indica cómo recuperar el acceso.');
+    assert.equal(created[5].expectedResult, 'La ayuda indica cómo recuperar el acceso.');
+  });
+}
+
+test('la generación usa los requisitos de la versión documental vigente del proyecto', async () => {
+  const saved = [];
+  const generationUpdates = [];
+  const signature = createHash('sha256').update(JSON.stringify(['rules-v1', [['document', 'version']]])).digest('hex');
+  const prisma = {
+    project: { async findUnique() { return { organizationId: null, environments: [] }; } },
+    automationJob: {
+      async findUnique() { return { result: { review: { stories: [] } }, steps: {} }; },
+      async update({ data }) {
+        if (data.stage === 'generated') generationUpdates.push(data.result.generation.totalCreated);
+      },
+    },
+    document: {
+      async findMany({ where }) {
+        assert.deepEqual(where, { projectId: 'project', removedAt: null });
+        return [{ id: 'document', versions: [{ id: 'version' }] }];
+      },
+    },
+    documentAnalysis: {
+      async findUnique({ where }) {
+        assert.deepEqual(where.projectId_signature, { projectId: 'project', signature });
+        return { requirements: context.requirements };
+      },
+    },
+    testScenario: { async create({ data }) { saved.push(data); } },
+  };
+  await runAutomation(prisma, {
+    id: 'job', projectId: 'project', priorStage: 'selection-done', runKey: null,
+    inputs: { url: context.url, selection: ['functional_web'] },
+  }, {
+    async dispatch({ prompt }) {
+      assert.match(prompt, /Información de errores/);
+      assert.ok(prompt.includes(context.requirements[0].criteria[0].text));
+      return {
+        model: 'test', text: JSON.stringify({ scenarios: [{
+          title: 'Revisión manual del mensaje', mode: 'manual', requirementId: 'requirement-id',
+          steps: [{ action: 'Revisa si el mensaje explica cómo volver a intentar.' }],
+          expectedResult: 'La persona sabe cómo continuar.',
+        }] }),
+      };
+    },
+  });
+  assert.deepEqual(generationUpdates, [1]);
+  assert.equal(saved.length, 1);
+  assert.deepEqual(saved[0].tags, ['@funcional', '@manual']);
+  assert.equal(saved[0].requirementId, 'requirement-id');
+});
+
+test('la API rechaza generar código o encolar Playwright para un caso manual', async () => {
+  const prisma = {
+    project: { async findFirst() { return { id: 'project' }; } },
+    testScenario: { async findFirst() { return { id: 'scenario', tags: ['@manual'] }; } },
+  };
+  const workspace = { organizationId: null };
+  const scenarios = new ScenariosService(prisma, {});
+  const runs = new RunsService(prisma, {}, {}, {});
+  await assert.rejects(scenarios.generatePlaywright('project', 'scenario', workspace), /requiere ejecución manual/);
+  await assert.rejects(runs.create('project', 'scenario', { environmentId: 'environment' }, workspace), /requiere ejecución manual/);
+});
+
+test('las variantes de compatibilidad heredan la regresión de su escenario base', async () => {
+  const created = [];
+  const base = [
+    { title: 'Caso de regresión', steps, expectedResult: null, tags: ['@funcional', '@regresion'] },
+    { title: 'Caso nuevo', steps, expectedResult: null, tags: ['@funcional'] },
+  ];
+  const outcome = await runCompatibilityAgent(context, {
+    prisma: {
+      testScenario: {
+        async findMany({ where }) {
+          assert.ok(where.NOT.OR.some(filter => filter.tags?.has === '@manual'));
+          return base;
+        },
+        async create({ data }) { created.push(data); },
+      },
+    },
+  });
+
+  assert.equal(outcome.created, 6);
+  for (const [index, browser] of ['@chromium', '@firefox', '@webkit'].entries()) {
+    assert.deepEqual(created[index].tags, ['@funcional', '@regresion', '@compatibility', browser]);
+    assert.deepEqual(created[index + 3].tags, ['@funcional', '@compatibility', browser]);
+  }
+});

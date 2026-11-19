@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Code2, ExternalLink, FileText, Pencil, PlayCircle, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ScenarioCard, type ScenarioListItem } from './scenario-card';
-import { durationLabel, gherkinKeyword, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
+import { durationLabel, gherkinKeyword, isManualScenario, MANUAL_SCENARIO_MESSAGE, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
@@ -114,7 +114,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
       {active && <aside className="scenario-detail" aria-label="Detalle del escenario seleccionado">
         <header className="scenario-detail__head"><div><span>{active.id.slice(0, 8)}</span><h2>Detalle del escenario</h2></div>
           <div className="scenario-detail__controls">
-            {onRun && <button type="button" aria-label="Ejecutar escenario seleccionado" disabled={!hasRunnableSpec(active)} onClick={() => onRun([active])}><PlayCircle size={16} /></button>}
+            {onRun && <button type="button" aria-label="Ejecutar escenario seleccionado" disabled={!hasRunnableSpec(active)} title={isManualScenario(active) ? MANUAL_SCENARIO_MESSAGE : undefined} onClick={() => onRun([active])}><PlayCircle size={16} /></button>}
             <button type="button" aria-label="Cerrar detalle del escenario" onClick={() => { setActiveId(null); setEditing(false); }}><X size={16} /></button>
           </div>
         </header>
@@ -122,6 +122,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
           {editing ? <ul className="scenario-editor-list"><ScenarioCard key={active.id} projectId={projectId} scenario={active} initialEditing
             onChange={onChange} onEditComplete={() => setEditing(false)} role={role} /></ul> : <>
             <h3>{active.title}</h3>
+            {isManualScenario(active) && <p className="scenario-derived-note">{MANUAL_SCENARIO_MESSAGE}</p>}
             <p className="scenario-detail__source"><FileText size={14} />{active.requirement ? `${active.requirement.externalKey ? active.requirement.externalKey + ' / ' : ''}${active.requirement.title}` : 'Sin requisito asociado'}</p>
             <div className="scenario-detail__section-label"><span>Especificación BDD (vista derivada)</span><Code2 size={14} /></div>
             <div className="scenario-gherkin"><ol>{(active.steps ?? []).map((step, i) => <li key={i}>

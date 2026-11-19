@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../api/src/scenarios/scenario-tags';
 import { type ScreenshotStorage } from './screenshot-storage';
 
 export type ExecutionClaim = {
@@ -69,10 +70,15 @@ export async function runTestRun(
 
   const scenario = await prisma.testScenario.findUnique({
     where: { id: claim.scenarioId },
-    select: { id: true, title: true, steps: true, expectedResult: true },
+    select: { id: true, title: true, steps: true, expectedResult: true, tags: true },
   });
   if (!scenario) {
     await failRun(prisma, claim, 'scenario-missing', 'El escenario fue borrado.');
+    return;
+  }
+
+  if (isManualScenario(scenario)) {
+    await failRun(prisma, claim, 'manual-scenario', MANUAL_SCENARIO_MESSAGE);
     return;
   }
 

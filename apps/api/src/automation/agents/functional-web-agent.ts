@@ -1,29 +1,18 @@
-// Agente funcional web: genera TestScenario con pasos en el vocabulario
-// controlado (navigate:, click:, fill:, press:, expect-text:, expect-url:).
+// Genera escenarios web con pasos de Playwright o instrucciones de ejecución manual.
 
 import type { Prisma } from '@prisma/client';
-import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
-
-type ScenarioPayload = {
-  scenarios?: Array<{
-    title?: string;
-    expectedResult?: string;
-    flow?: 'basico' | 'alterno' | string;
-    tags?: string[];
-    steps?: Array<{ action?: string; data?: string; expected?: string }>;
-  }>;
-};
+import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
-    'Genera entre 3 y 8 escenarios de prueba funcional web para la aplicación descrita.',
+    'Genera entre 3 y 8 escenarios automatizables de prueba funcional web para la aplicación descrita.',
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
-    'Historias de usuario detectadas:',
-    storiesContext(ctx.review),
+    'Historias y requisitos analizados:',
+    scenarioAnalysisContext(ctx),
     '',
-    'Vocabulario de pasos permitido (prefijos reconocidos por el worker Playwright):',
+    'Vocabulario de pasos para los casos automatizables:',
     '- navigate: <ruta relativa o URL>',
     '- click: <selector css>',
     '- fill: <selector css>   (+ "data": valor a escribir)',
@@ -36,10 +25,12 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
     '- "flow": "alterno" para variantes, validaciones, errores o caminos secundarios.',
     'Mezcla básicos y alternos: un flujo alterno suele acompañar a uno básico de la misma historia.',
     '',
+    MANUAL_SCENARIO_INSTRUCTION,
+    REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ y sin espacios (ej: @smoke, @critico, @login).',
     '',
     'Responde SOLO JSON válido con la estructura:',
-    '{ "scenarios": [ { "title": "...", "expectedResult": "...", "flow": "basico", "tags": ["@login"], "steps": [ { "action": "navigate: /login" }, ... ] } ] }',
+    '{ "scenarios": [ { "title": "...", "expectedResult": "...", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@login"], "steps": [ { "action": "navigate: /login" }, ... ] } ] }',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -58,7 +49,7 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
   let created = 0;
 
   for (const [index, s] of scenarios.entries()) {
-    const title = typeof s.title === 'string' ? s.title.trim() : '';
+    const title = typeof s?.title === 'string' ? s.title.trim() : '';
     if (!title) { errors.push('scenario-' + index + '-sin-titulo'); continue; }
     const steps = Array.isArray(s.steps) ? s.steps : [];
     const normalized = steps
@@ -71,13 +62,18 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
         expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
       }));
     if (!normalized.length) { errors.push('scenario-' + index + '-sin-pasos'); continue; }
-    const tags = buildTags('@funcional', s.flow, s.tags);
+    const manual = s.mode === 'manual';
+    const expectedResult = typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null;
+    if (manual && !expectedResult?.trim()) { errors.push('scenario-' + index + '-sin-resultado-esperado'); continue; }
+    const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
+    const tags = buildTags('@funcional', s.flow, s.tags, s.regression, manual);
     try {
       await deps.prisma.testScenario.create({
         data: {
           projectId: ctx.projectId,
           title: title.slice(0, 300),
-          expectedResult: typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null,
+          expectedResult,
+          requirementId,
           tags,
           steps: normalized as unknown as Prisma.InputJsonValue,
         } as Prisma.TestScenarioUncheckedCreateInput,

@@ -13,6 +13,7 @@ import { useAutomationHeader } from './project-tabs';
 import { AutomationCodeViewer } from './automation-code-viewer';
 import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { ScenarioRunDialog } from './scenario-run-dialog';
+import { isManualScenario } from './scenario-presentation';
 
 function reviewCode(scenario: ScenarioListItem, code: string) {
   const reasons = [];
@@ -54,7 +55,8 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     fetch(`/api/projects/${project.id}/scenarios`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })
       .then(async response => {
         if (!response.ok) throw new Error('No se pudo cargar la lista de automatización.');
-        const list: ScenarioListItem[] = await response.json();
+        const items: ScenarioListItem[] = await response.json();
+        const list = items.filter(item => !isManualScenario(item));
         if (controller.signal.aborted) return;
         const firstLoad = listRef.current.length === 0;
         listRef.current = list;

@@ -11,7 +11,7 @@ import { can } from '../../permissions';
 import { scenarioSpecSignature } from './automation-export';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader } from './project-tabs';
-import { featureText, type ScenarioRun } from './scenario-presentation';
+import { featureText, isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioRunDialog } from './scenario-run-dialog';
 import { ScenarioWorkspace } from './scenario-workspace';
 
@@ -332,12 +332,14 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   }
 
   function hasRunnableSpec(item: ScenarioListItem) {
+    if (isManualScenario(item)) return false;
     const spec = header?.specs[item.id];
     return spec?.signature === scenarioSpecSignature(item) && !spec.error && spec.review.length === 0;
   }
 
-  const suite = (items ?? []).filter(item => checked.has(item.id));
-  const suiteReady = suite.length > 0 && suite.length === checked.size && suite.every(hasRunnableSpec);
+  const selected = (items ?? []).filter(item => checked.has(item.id));
+  const suite = selected.filter(item => !isManualScenario(item));
+  const suiteReady = suite.length > 0 && selected.length === checked.size && suite.every(hasRunnableSpec);
 
   return <section className="scenarios-panel" aria-label="Gestión de escenarios">
     {header?.element && createPortal(<ProjectHeading project={project}
@@ -346,7 +348,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
         {canRun && <button type="button" disabled={!runnable || !suiteReady || !!listError} onClick={() => setRunSelection(suite)}>
-          Ejecutar suite ({checked.size})<ArrowRight size={14} />
+          Ejecutar suite ({suite.length})<ArrowRight size={14} />
         </button>}
       </>} />, header.element)}
 

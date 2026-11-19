@@ -19,12 +19,12 @@ export const TEST_TYPE_META: Record<AutomationTestType, {
 }> = {
   functional_web: {
     label: 'Funcional web',
-    description: 'Casos manuales con pasos navigate/click/fill ejecutables por Playwright en Chromium.',
+    description: 'Casos funcionales ejecutables por Playwright y comprobaciones que requieren revisión manual.',
     capability: 'BROWSER_TESTS',
   },
   mobile_emulated: {
     label: 'Mobile emulado',
-    description: 'Casos ejecutables en viewports y presets de dispositivos (iPhone, Pixel, iPad).',
+    description: 'Casos para navegadores móviles emulados y comprobaciones que requieren revisión manual.',
     capability: 'RESPONSIVE_TESTS',
   },
   compatibility: {

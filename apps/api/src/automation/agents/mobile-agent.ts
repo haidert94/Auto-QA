@@ -3,36 +3,28 @@
 // elegir el dispositivo en el panel de runs.
 
 import type { Prisma } from '@prisma/client';
-import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
-
-type Payload = {
-  scenarios?: Array<{
-    title?: string;
-    expectedResult?: string;
-    flow?: 'basico' | 'alterno' | string;
-    tags?: string[];
-    steps?: Array<{ action?: string; data?: string; expected?: string }>;
-  }>;
-};
+import { buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
-    'Genera entre 2 y 5 escenarios de prueba optimizados para navegadores móviles (viewport pequeño, interacciones táctiles).',
+    'Genera entre 2 y 5 escenarios automatizables para navegadores móviles (viewport pequeño, interacciones táctiles).',
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
-    'Historias relevantes:',
-    storiesContext(ctx.review),
+    'Historias y requisitos analizados:',
+    scenarioAnalysisContext(ctx),
     '',
     'Enfócate en: menús hamburguesa, formularios, scroll, botones grandes, gestos táctiles.',
-    'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: y marca los escenarios con el prefijo [MOBILE] en el título.',
+    'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
     '',
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" para el camino feliz de la historia en móvil.',
     '- "flow": "alterno" para errores, validaciones o variantes.',
+    MANUAL_SCENARIO_INSTRUCTION,
+    REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ (ej: @menu, @formulario).',
     '',
-    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] ...", "expectedResult": "...", "flow": "basico", "tags": ["@menu"], "steps": [...] }] }.',
+    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] ...", "expectedResult": "...", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@menu"], "steps": [...] }] }.',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -42,13 +34,13 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     maxOutputTokens: 2000,
   });
 
-  const parsed = extractJson<Payload>(response.text) ?? {};
+  const parsed = extractJson<ScenarioPayload>(response.text) ?? {};
   const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.slice(0, 8) : [];
   const errors: string[] = [];
   let created = 0;
 
   for (const [index, s] of scenarios.entries()) {
-    const title = typeof s.title === 'string' ? s.title.trim() : '';
+    const title = typeof s?.title === 'string' ? s.title.trim() : '';
     if (!title) { errors.push('mobile-' + index + '-sin-titulo'); continue; }
     const steps = (Array.isArray(s.steps) ? s.steps : [])
       .filter(step => typeof step?.action === 'string' && step.action.trim())
@@ -60,13 +52,18 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
         expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
       }));
     if (!steps.length) { errors.push('mobile-' + index + '-sin-pasos'); continue; }
-    const tags = buildTags('@mobile', s.flow, s.tags);
+    const manual = s.mode === 'manual';
+    const expectedResult = typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null;
+    if (manual && !expectedResult?.trim()) { errors.push('mobile-' + index + '-sin-resultado-esperado'); continue; }
+    const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
+    const tags = buildTags('@mobile', s.flow, s.tags, s.regression, manual);
     try {
       await deps.prisma.testScenario.create({
         data: {
           projectId: ctx.projectId,
           title: (title.startsWith('[MOBILE]') ? title : '[MOBILE] ' + title).slice(0, 300),
-          expectedResult: typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null,
+          expectedResult,
+          requirementId,
           tags,
           steps: steps as unknown as Prisma.InputJsonValue,
         } as Prisma.TestScenarioUncheckedCreateInput,

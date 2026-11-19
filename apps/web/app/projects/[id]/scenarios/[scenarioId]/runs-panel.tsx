@@ -80,8 +80,8 @@ function formatDuration(ms: number | null) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function RunsPanel({ projectId, scenarioId, environments, role }: { projectId: string; scenarioId: string; environments: EnvironmentOption[]; role?: OrgRole }) {
-  const canRun = can(role, 'run.execute');
+export function RunsPanel({ projectId, scenarioId, environments, role, manual = false }: { projectId: string; scenarioId: string; environments: EnvironmentOption[]; role?: OrgRole; manual?: boolean }) {
+  const canRun = !manual && can(role, 'run.execute');
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
   const [targetBrowser, setTargetBrowser] = useState<'CHROMIUM' | 'FIREFOX' | 'WEBKIT'>('CHROMIUM');

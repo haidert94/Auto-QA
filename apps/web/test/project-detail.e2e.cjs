@@ -366,6 +366,39 @@ async function verifyScenarios(page, screenshots) {
   console.log('PASS escenarios: listado/detalle, búsqueda y etiquetas, selección, exportación derivada, creación/edición, confirmación sin envíos automáticos, encolado y errores de cuota, reintentos, estados vacíos, borradores y autorización; escritorio y móvil.');
 }
 
+async function verifyManualScenario(page) {
+  const automatic = scenarios;
+  const title = 'Revisión manual de claridad';
+  const action = 'Comprueba si el mensaje explica cómo volver a intentar.';
+  scenarios = [...automatic, {
+    id: '40000000-0000-4000-8000-000000000098', title, tags: ['@manual', '@regresion'],
+    steps: [{ ordinal: 1, action }], expectedResult: 'El mensaje explica cómo continuar.',
+    requirementId: null, requirement: null, _count: { results: 0 },
+  }];
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Escenarios (' + (automatic.length + 1) + ')', exact: true }).click();
+    await page.getByRole('button', { name: '@manual (1)', exact: true }).click();
+    const list = page.getByRole('list', { name: 'Escenarios del proyecto', exact: true });
+    await expect(list.locator('.scenario-result')).toHaveCount(1);
+    await list.getByRole('button', { name: title, exact: true }).click();
+    const detail = page.getByRole('complementary', { name: 'Detalle del escenario seleccionado' });
+    await expect(detail.getByText(action, { exact: true })).toBeVisible();
+    await expect(detail.getByText('El mensaje explica cómo continuar.', { exact: true })).toBeVisible();
+    await expect(detail.getByRole('button', { name: 'Ejecutar escenario seleccionado', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Ejecutar suite (' + automatic.length + ')', exact: true })).toBeVisible();
+
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    const automation = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
+    await expect(automation.locator('.automation-pick-list > li')).toHaveCount(automatic.length);
+    await expect(automation.getByText(title, { exact: true })).toHaveCount(0);
+    console.log('PASS escenario manual: filtro, pasos, resultado esperado y exclusión de Playwright.');
+  } finally {
+    scenarios = automatic;
+  }
+  await page.reload();
+}
+
 async function verifyAutomation(page, screenshots) {
   const section = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
   const rows = section.locator('.automation-pick-list > li');
@@ -828,6 +861,7 @@ async function run() {
     await page.getByRole('button', { name: /Volver a la vista de resumen/ }).click();
     await verifyScenarios(page, screenshots);
     await verifyAutomation(page, screenshots);
+    await verifyManualScenario(page);
     await verifyRunReport(page, screenshots);
     await verifyQuality(page, screenshots);
     docsFail = true;

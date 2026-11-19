@@ -1,5 +1,7 @@
 import type { ScenarioListItem, ScenarioStep } from './scenario-card';
 
+export { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../../../api/src/scenarios/scenario-tags';
+
 // Infiere la keyword Gherkin a partir del contenido del paso. Heurística
 // mientras el schema no guarde la keyword como campo propio.
 export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Dado' | 'Cuando' | 'Entonces' | 'Y' {

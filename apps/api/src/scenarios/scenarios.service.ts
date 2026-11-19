@@ -4,6 +4,7 @@ import { AiRouter } from '../ai/ai-router';
 import { PrismaService } from '../prisma.service';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
+import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
 import { generateSpec, suggestedFilename, type GeneratorStep } from './playwright-generator';
 
 type SuggestedScenario = { title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> };
@@ -209,6 +210,7 @@ export class ScenariosService {
 
   async generatePlaywright(projectId: string, scenarioId: string, workspace: Workspace) {
     const scenario = await this.get(projectId, scenarioId, workspace);
+    if (isManualScenario(scenario)) throw new BadRequestException(MANUAL_SCENARIO_MESSAGE);
     // steps viene como Prisma.JsonValue; lo normalizamos defensivamente.
     const rawSteps: unknown[] = Array.isArray(scenario.steps) ? (scenario.steps as unknown[]) : [];
     const steps: GeneratorStep[] = rawSteps

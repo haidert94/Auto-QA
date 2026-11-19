@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import type { OrgRole } from '../../../../autoqa-server';
 import { can } from '../../../../permissions';
+import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../scenario-presentation';
 
 export type ScenarioStep = { ordinal: number; action: string; data?: string; expected?: string };
 
@@ -14,6 +15,7 @@ export type Scenario = {
   requirementId: string | null;
   expectedResult: string | null;
   steps: ScenarioStep[];
+  tags?: string[];
   requirement: { id: string; title: string; externalKey: string | null } | null;
 };
 
@@ -162,7 +164,8 @@ export function ScenarioEditor({ initial, requirements, role }: { initial: Scena
 
     <div className="actions">
       {canEdit && <button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>}
-      <button type="button" className="secondary" onClick={loadPlaywright} disabled={busy}>Ver código Playwright</button>
+      {isManualScenario(initial) ? <p>{MANUAL_SCENARIO_MESSAGE}</p> :
+        <button type="button" className="secondary" onClick={loadPlaywright} disabled={busy}>Ver código Playwright</button>}
       {canDelete && <button type="button" className="secondary" onClick={remove} disabled={busy}>Eliminar escenario</button>}
     </div>
 

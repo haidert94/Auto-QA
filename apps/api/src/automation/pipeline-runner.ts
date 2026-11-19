@@ -14,6 +14,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { convertDocument, needsAiFallback, type ConvertedDocument } from './document-converter';
 import { buildReviewPrompt, parseReviewResponse, type ReviewResult } from './review-prompt';
+import { documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
 import { runSelectedAgents } from './agents';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
 
@@ -153,6 +154,9 @@ async function runGenerationPhase(
     return;
   }
 
+  const requirements = selection.includes('functional_web') || selection.includes('mobile_emulated')
+    ? await readScenarioRequirements(prisma, claim.projectId)
+    : [];
   const environmentId = project.environments[0]?.id ?? null;
   const outcomes = await runSelectedAgents(selection, {
     projectId: claim.projectId,
@@ -163,6 +167,7 @@ async function runGenerationPhase(
     url: inputs.url,
     description: inputs.description,
     review,
+    requirements,
   }, { prisma, router });
 
   await mergeStep(prisma, claim.id, 'generating', {
@@ -184,6 +189,19 @@ async function runGenerationPhase(
     },
   });
   log('INFO', 'generated · ' + outcomes.map(o => o.type + '=' + o.created).join(' '));
+}
+
+async function readScenarioRequirements(prisma: PrismaClient, projectId: string) {
+  const snapshot = await readDocumentSnapshot(prisma, projectId);
+  if (!snapshot.length) return [];
+  const analysis = await prisma.documentAnalysis.findUnique({
+    where: { projectId_signature: { projectId, signature: documentAnalysisSignature(snapshot) } },
+    select: { requirements: {
+      take: 20, orderBy: { id: 'asc' },
+      select: { id: true, title: true, criteria: { take: 4, orderBy: { id: 'asc' }, select: { text: true } } },
+    } },
+  });
+  return analysis?.requirements ?? [];
 }
 
 async function setStage(prisma: PrismaClient, jobId: string, stage: string): Promise<void> {

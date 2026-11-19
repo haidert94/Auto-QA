@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { type Finding, isRequirement } from './document-analysis';
 
@@ -18,6 +18,18 @@ export function metadata(document: DocumentRecord) {
   const state = current?.validatedAt ? 'VALIDATED'
     : current?.processedAt ? 'PROCESSED' : current?.uploadedAt ? 'UPLOADED' : 'DECLARED';
   return { ...document, state, currentVersion: current ?? null };
+}
+
+export function readDocumentSnapshot(tx: Prisma.TransactionClient, projectId: string) {
+  return tx.document.findMany({
+    where: { projectId, removedAt: null }, orderBy: { id: 'asc' },
+    include: { versions: { orderBy: { number: 'desc' }, take: 1 } },
+  });
+}
+
+export function documentAnalysisSignature(snapshot: Awaited<ReturnType<typeof readDocumentSnapshot>>) {
+  const versions = snapshot.map(document => [document.id, document.versions[0]?.id]);
+  return createHash('sha256').update(JSON.stringify(['rules-v1', versions])).digest('hex');
 }
 
 const sourceSelect = { id: true, number: true, document: { select: { id: true, filename: true } } };

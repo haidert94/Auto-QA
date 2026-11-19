@@ -8,6 +8,7 @@
 // "compatibilidad" no quede vacía.
 
 import type { Prisma } from '@prisma/client';
+import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { type AgentContext, type AgentDeps, type AgentOutcome } from './agent-types';
 
 const BROWSERS = [
@@ -18,7 +19,10 @@ const BROWSERS = [
 
 export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const existing = await deps.prisma.testScenario.findMany({
-    where: { projectId: ctx.projectId, NOT: { title: { startsWith: '[COMPAT]' } } },
+    where: {
+      projectId: ctx.projectId,
+      NOT: { OR: [{ title: { startsWith: '[COMPAT]' } }, { tags: { has: MANUAL_SCENARIO_TAG } }] },
+    },
     take: 5,
     orderBy: { title: 'asc' },
     select: { title: true, steps: true, expectedResult: true, tags: true } as const,

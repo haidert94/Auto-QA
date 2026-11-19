@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountFetch, requireAccount, type OrgRole } from '../../../../autoqa-server';
 import { RunsPanel, type EnvironmentOption } from './runs-panel';
+import { isManualScenario } from '../../scenario-presentation';
 import { ScenarioEditor, type RequirementOption, type Scenario } from './scenario-editor';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,6 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Editar escenario</h1>
     <ScenarioEditor initial={{ ...scenario, projectId: id }} requirements={requirements} role={role} />
-    <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} role={role} />
+    <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} role={role} manual={isManualScenario(scenario)} />
   </section>;
 }
