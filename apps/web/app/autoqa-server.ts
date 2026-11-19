@@ -52,7 +52,7 @@ export type PlanCapability = {
 export type Usage = {
   month: string; projects: { used: number; limit: number };
   roles: { limit: number; projects: { id: string; name: string; used: number }[] };
-  browser: { secondsUsed: number; secondsReserved: number; minutesLimit: number; availability: CapabilityAvailability };
+  browser: { secondsUsed: number; secondsReserved: number; minutesLimit: number | null; availability: CapabilityAvailability };
   runs: { active: number; simultaneousLimit: number; completed: number; availability: CapabilityAvailability };
   monitors: { active: number; limit: number; availability: CapabilityAvailability };
   performance: { used: number; previousPending: number; limit: number; availability: CapabilityAvailability };

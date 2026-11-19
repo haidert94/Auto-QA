@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma.service';
 import { activePlan } from './workspace.guard';
 import { availability, capabilityFor, planInclude, requireCapability, runAvailability } from './plan-capabilities';
 import { assertMonitorQuota, assertRunQuota, positiveInteger, type RunRequest } from './usage-quotas';
+import { browserMinutesLimit } from './browser-minutes';
 
 const capabilities = { BROWSER: 'BROWSER_TESTS', API: 'API_TESTS', PERFORMANCE: 'PERFORMANCE_TESTS' } as const;
 
@@ -91,7 +92,7 @@ export class UsageService {
         projects: { used: projects.length, limit: plan.maxProjects },
         roles: { limit: plan.maxRoles, projects: projects.map(({ id, name, _count }) => ({ id, name, used: _count.roles })) },
         browser: { secondsUsed: counters.browserSeconds, secondsReserved: counters.reservedBrowserSeconds,
-          minutesLimit: browser?.monthlyLimit ?? 0, availability: browser ? availability(browser) : 'NOT_INCLUDED' },
+          minutesLimit: browserMinutesLimit(plan.code, browser), availability: browser ? availability(browser) : 'NOT_INCLUDED' },
         runs: { active: counters.running, simultaneousLimit: plan.parallelRuns, completed: counters.finished,
           availability: runAvailability(plan) },
         monitors: { active: counters.monitors, limit: monitor?.monitorLimit ?? 0,

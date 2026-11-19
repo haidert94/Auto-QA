@@ -71,7 +71,7 @@ Para revisar el nuevo diseño manualmente: abre `/projects/<id>#escenarios`, cam
 
 La portada presenta un ejemplo de análisis documental con su fuente, los pasos de preparación y una comparativa de planes. La evaluación local permite verificar correo mediante Mailpit o un proveedor SMTP, activar una suscripción simulada y abrir proyectos de una organización. Para activar el flujo, repetir sus pruebas o consultar los requisitos de producción, usa [la guía comercial](docs/COMMERCIAL.md).
 
-Los tres planes propuestos son Starter ($99.000 COP/mes), Pro ($299.000 COP/mes) y Business ($899.000 COP/mes). Aplica las migraciones para actualizar el catálogo de PostgreSQL y abre [la comparativa](http://localhost:3000/#precios). En **Facturación**, consulta el consumo de tu organización. La portada indica qué capacidades están operativas y cuáles estarán disponibles próximamente. La cuota mensual de performance queda en cero hasta validar el valor y los controles de ejecución.
+Los tres planes propuestos son Starter ($99.000 COP/mes), Pro ($299.000 COP/mes) y Business ($899.000 COP/mes). Aplica las migraciones para actualizar el catálogo de PostgreSQL y abre [la comparativa](http://localhost:3000/#precios). En **Facturación**, consulta los minutos de navegador usados y reservados y el límite mensual de tu organización. Enterprise muestra **Sin límite** cuando su catálogo define el uso de navegador como ilimitado. La portada indica qué capacidades están operativas y cuáles estarán disponibles próximamente. La cuota mensual de performance queda en cero hasta validar el valor y los controles de ejecución.
 
 ## Verificación de correo en Windows
 

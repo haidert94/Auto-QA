@@ -1,12 +1,18 @@
 import Link from 'next/link';
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import type { CapabilityAvailability, Plan, PlanCapability } from './autoqa-server';
+import { browserMinutesLimit } from '../../api/src/commerce/browser-minutes';
 
 const numeric = new Intl.NumberFormat('es-CO');
 const browserNames: Record<string, string> = { CHROMIUM: 'Chromium', FIREFOX: 'Firefox', WEBKIT: 'WebKit' };
 const statuses: Record<CapabilityAvailability, string> = {
   OPERATIONAL: 'Operativa', BETA: 'Beta', UPCOMING: 'Próximamente', NOT_INCLUDED: 'Sin incluir',
 };
+
+function browserLimitText(planCode: string, capability?: PlanCapability) {
+  const limit = browserMinutesLimit(planCode, capability);
+  return limit === null ? 'Sin límite' : numeric.format(limit);
+}
 
 export function CapabilityStatus({ value }: { value: CapabilityAvailability }) {
   return <span className={'capability-status ' + (value === 'OPERATIONAL' ? 'available' : 'roadmap')}>{statuses[value]}</span>;
@@ -60,7 +66,7 @@ export function PlanCards({ plans, accountOrigin }: { plans: Plan[]; accountOrig
             <dl className="plan-capacity">
               <div><dt>Aplicaciones</dt><dd>{plan.maxProjects}</dd></div>
               <div><dt>Roles por aplicación</dt><dd>{plan.maxRoles}</dd></div>
-              <div><dt>Minutos de navegador/mes</dt><dd>{numeric.format(browser?.monthlyLimit ?? 0)}</dd></div>
+              <div><dt>Minutos de navegador/mes</dt><dd>{browserLimitText(plan.code, browser)}</dd></div>
               <div><dt>Ejecuciones simultáneas</dt><dd>{plan.parallelRuns}</dd></div>
             </dl>
             <Link className={'button ' + (plan.code === 'pro' ? 'primary' : 'outline')}
@@ -98,7 +104,7 @@ export function PlanComparison({ plans }: { plans: Plan[] }) {
             <tr><th scope="row">Minutos de navegador al mes</th>{plans.map(plan => {
               const browser = plan.capabilities.find(item => item.code === 'BROWSER_TESTS');
               return <td key={plan.code}>
-                <span className="comparison-detail">{numeric.format(browser?.monthlyLimit ?? 0)}</span>
+                <span className="comparison-detail">{browserLimitText(plan.code, browser)}</span>
                 <CapabilityStatus value={browser?.availability ?? 'NOT_INCLUDED'}/>
               </td>;
             })}</tr>

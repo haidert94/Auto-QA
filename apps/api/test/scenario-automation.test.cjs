@@ -4,6 +4,7 @@ const ts = require('typescript');
 const { ScenariosService } = require('../dist/scenarios/scenarios.service');
 const { RunsService } = require('../dist/runs/runs.service');
 const { RunsController } = require('../dist/runs/runs.controller');
+const { UsageService } = require('../dist/commerce/usage.service');
 const { translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
 const { generateHarnessedSpec, generateSpec } = require('../dist/scenarios/playwright-generator');
 
@@ -120,6 +121,48 @@ test('consulta las ejecuciones pedidas sin salir del alcance del proyecto', asyn
   assert.deepEqual(await controller.list('project', [first, second].join(','), workspace), [{ id: first, status: 'RUNNING' }]);
   assert.throws(() => controller.list('project', 'invalid', workspace), /identificadores válidos/);
   assert.throws(() => controller.list('project', Array(101).fill(first).join(','), workspace), /identificadores válidos/);
+});
+
+test('Enterprise muestra minutos sin límite y reserva navegador respetando la simultaneidad', async () => {
+  const browser = { code: 'BROWSER_TESTS', availability: 'OPERATIONAL', browsers: ['CHROMIUM'], monthlyLimit: null };
+  const plan = { code: 'enterprise', parallelRuns: 8, maxProjects: 999, maxRoles: 999, capabilities: [browser] };
+  const subscription = { plan, status: 'ACTIVE', periodEndsAt: new Date(Date.now() + 60000) };
+  let active = 0;
+  let reserved = 0;
+  const tx = {
+    async $queryRaw() {},
+    subscription: { async findUnique() { return subscription; } },
+    project: { async findFirst() { return { id: 'project' }; }, async findMany() { return []; } },
+    meteredMonitor: { async count() { return 0; } },
+    meteredRun: {
+      async findUnique() { return null; },
+      async count() { return 0; },
+      async aggregate({ where }) {
+        return where.completedAt === null
+          ? { _sum: { reservedBrowserSeconds: reserved }, _count: active }
+          : { _sum: { browserSeconds: 0 }, _count: 0 };
+      },
+      async create({ data }) { active++; reserved += data.reservedBrowserSeconds; return data; },
+    },
+  };
+  const usage = new UsageService({ $transaction: callback => callback(tx) });
+  const reserve = key => usage.reserveRun('test-org', 'project', key, { kind: 'BROWSER', browser: 'CHROMIUM', browserSeconds: 120 });
+  assert.deepEqual((await usage.summary('test-org')).browser, {
+    secondsUsed: 0, secondsReserved: 0, minutesLimit: null, availability: 'OPERATIONAL',
+  });
+  assert.equal((await reserve('run-1')).reservedBrowserSeconds, 120);
+  assert.equal((await usage.summary('test-org')).browser.secondsReserved, 120);
+
+  active = 8;
+  await assert.rejects(reserve('run-2'), /ejecuciones simultáneas/);
+  active = 1;
+  browser.monthlyLimit = 3;
+  assert.equal((await usage.summary('test-org')).browser.minutesLimit, 3);
+  await assert.rejects(reserve('run-2'), /minutos de navegador/);
+  browser.monthlyLimit = null;
+  browser.availability = 'NOT_INCLUDED';
+  assert.equal((await usage.summary('test-org')).browser.minutesLimit, 0);
+  await assert.rejects(reserve('run-2'), /no está incluida/);
 });
 
 test('exige una confirmación vigente para encolar cambios con datos de prueba', async () => {

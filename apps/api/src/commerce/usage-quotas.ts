@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { capabilityFor, type CatalogPlan } from './plan-capabilities';
+import { browserMinutesLimit } from './browser-minutes';
 
 export type RunRequest =
   | { kind: 'BROWSER'; browser: string; browserSeconds: number }
@@ -20,7 +21,8 @@ export function assertRunQuota(plan: CatalogPlan, request: RunRequest,
     const capability = capabilityFor(plan, 'BROWSER_TESTS');
     if (!capability?.browsers.includes(request.browser)) throw new ForbiddenException('Navegador fuera del plan.');
     if (!positiveInteger(request.browserSeconds)) throw new BadRequestException('Duración de navegador inválida.');
-    if (counters.browserSeconds + request.browserSeconds > (capability.monthlyLimit ?? 0) * 60) {
+    const monthlyMinutes = browserMinutesLimit(plan.code, capability);
+    if (monthlyMinutes !== null && counters.browserSeconds + request.browserSeconds > monthlyMinutes * 60) {
       throw new ConflictException('Superaste los minutos de navegador del mes.');
     }
   }

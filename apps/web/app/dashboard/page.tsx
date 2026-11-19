@@ -1,15 +1,10 @@
 import Link from 'next/link';
-import { accountFetch, requireAccount } from '../autoqa-server';
+import { accountFetch, requireAccount, type Usage } from '../autoqa-server';
 import { environmentTypes, statusLabels, type ProjectSummary } from '../projects/onboarding';
 
 export const dynamic = 'force-dynamic';
 
-type Usage = {
-  month: string;
-  projects: { used: number; limit: number };
-  runs: { active: number; simultaneousLimit: number; completed: number; availability: string };
-  browser: { secondsUsed: number; minutesLimit: number; availability: string };
-  monitors: { active: number; limit: number; availability: string };
+type DashboardUsage = Usage & {
   exploration?: { completed: number; running: number; queued: number; failed: number; pagesFound: number };
 };
 
@@ -22,7 +17,7 @@ export default async function Dashboard() {
   ]);
   const projectsPayload = projectsRes?.ok ? await projectsRes.json().catch(() => []) : [];
   const projects: ProjectSummary[] = Array.isArray(projectsPayload) ? projectsPayload : [];
-  const usage: Usage | null = usageRes?.ok ? await usageRes.json() : null;
+  const usage: DashboardUsage | null = usageRes?.ok ? await usageRes.json() : null;
   const exploration = usage?.exploration;
 
   const readyProjects = projects.filter(p => p.status === 'READY');
@@ -81,7 +76,7 @@ export default async function Dashboard() {
           : <dl className="dashboard-metrics">
             <div><dt>Proyectos</dt><dd>{usage.projects.used} / {usage.projects.limit || '∞'}</dd></div>
             <div><dt>Ejecuciones</dt><dd>{usage.runs.completed} completadas · {usage.runs.active} activas</dd></div>
-            <div><dt>Segundos de navegador</dt><dd>{usage.browser.secondsUsed} / {usage.browser.minutesLimit ? usage.browser.minutesLimit * 60 : '∞'}</dd></div>
+            <div><dt>Segundos de navegador</dt><dd>{usage.browser.secondsUsed} / {usage.browser.minutesLimit === null ? 'Sin límite mensual' : usage.browser.minutesLimit * 60}</dd></div>
             <div><dt>Monitores</dt><dd>{usage.monitors.active} / {usage.monitors.limit || '∞'}</dd></div>
           </dl>}
         <p><Link href="/billing">Ver facturación completa →</Link></p>
