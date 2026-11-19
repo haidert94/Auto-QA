@@ -17,6 +17,9 @@ import { DocumentsService, DOCUMENT_ANALYZER } from './documents.service';
     // analizador por reglas.
     { provide: DOCUMENT_ANALYZER, useClass: AiDocumentAnalyzer },
   ],
-  exports: [DocumentsService],
+  // Exportamos también el storage para que otros módulos (p.ej.
+  // AutomationService) puedan leer los documentos directamente del storage
+  // y empaquetarlos como base64 en jobs destinados a workers remotos.
+  exports: [DocumentsService, DOCUMENT_STORAGE],
 })
 export class DocumentsModule {}

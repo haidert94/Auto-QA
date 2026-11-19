@@ -1,7 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
+import { DOCUMENT_STORAGE, type DocumentStorage } from '../documents/document-storage';
 import { PrismaService } from '../prisma.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
@@ -11,7 +12,10 @@ const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
 @Injectable()
 export class AutomationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(DOCUMENT_STORAGE) private readonly storage: DocumentStorage,
+  ) {}
 
   async create(projectId: string, dto: CreateAutomationDto, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
@@ -22,14 +26,25 @@ export class AutomationService {
       throw new BadRequestException('La URL debe ser http(s).');
     }
 
-    const docs = (dto.documents ?? []).map((doc, index) => {
-      const bytes = Buffer.from(doc.base64, 'base64');
-      if (bytes.length === 0) throw new BadRequestException('Documento ' + (index + 1) + ' vacío o base64 inválido.');
-      if (bytes.length > MAX_DOC_BYTES) {
-        throw new BadRequestException('Documento ' + doc.filename + ' supera los 5 MB.');
-      }
-      return { filename: doc.filename, base64: bytes.toString('base64') };
-    });
+    let docs: Array<{ filename: string; base64: string }>;
+    if (dto.documents && dto.documents.length > 0) {
+      // El wizard puede inyectar los documentos como base64 (compatibilidad
+      // con el flujo original del Automate).
+      docs = dto.documents.map((doc, index) => {
+        const bytes = Buffer.from(doc.base64, 'base64');
+        if (bytes.length === 0) throw new BadRequestException('Documento ' + (index + 1) + ' vacío o base64 inválido.');
+        if (bytes.length > MAX_DOC_BYTES) {
+          throw new BadRequestException('Documento ' + doc.filename + ' supera los 5 MB.');
+        }
+        return { filename: doc.filename, base64: bytes.toString('base64') };
+      });
+    } else {
+      // CTA "Generar casos de prueba": leemos los documentos ya cargados del
+      // proyecto desde el storage y los embebemos como base64 en el job.
+      // Esto permite que un worker remoto (p.ej. en VPS) no necesite acceso
+      // al disco donde vive el storage de Hostinger: todo viaja por DB.
+      docs = await this.loadProjectDocuments(projectId);
+    }
 
     const runKey = workspace.organizationId ? 'auto-' + randomUUID() : null;
     const inputs = {
@@ -160,5 +175,30 @@ export class AutomationService {
   private async ensureProject(projectId: string, workspace: Workspace) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
+  }
+
+  // Lee los documentos activos del proyecto desde el storage y los devuelve
+  // como base64. Los documentos muy grandes se saltan con un warning
+  // implícito (el runner los ignora igual). Un fallo de lectura por archivo
+  // no aborta el resto: el agente puede trabajar con lo que haya.
+  private async loadProjectDocuments(projectId: string): Promise<Array<{ filename: string; base64: string }>> {
+    const docs = await this.prisma.document.findMany({
+      where: { projectId, removedAt: null },
+      include: { versions: { orderBy: { number: 'desc' }, take: 1 } },
+    });
+    const loaded: Array<{ filename: string; base64: string }> = [];
+    for (const doc of docs) {
+      const version = doc.versions[0];
+      if (!version?.storageKey) continue;
+      if (version.size && version.size > MAX_DOC_BYTES) continue;
+      try {
+        const bytes = await this.storage.get(version.storageKey);
+        if (bytes.length === 0 || bytes.length > MAX_DOC_BYTES) continue;
+        loaded.push({ filename: doc.filename, base64: bytes.toString('base64') });
+      } catch {
+        // El worker puede continuar con un subset; no abortamos el job.
+      }
+    }
+    return loaded;
   }
 }
