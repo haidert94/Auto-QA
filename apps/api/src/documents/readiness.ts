@@ -135,8 +135,15 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
       points: (uploaded ? 5 : 0) + (readable ? 10 : 0)
         + Math.round(5 * verifiable / Math.max(1, verifiable + ambiguous))
         + (validated ? 10 : 0),
-      available: ['Documentos cargados: ' + uploaded, 'Documentos procesados: ' + processed,
-        'Documentos revisados: ' + validated, 'Requisitos verificables: ' + verifiable],
+      // Solo emitimos como "disponible" lo que realmente tiene un valor > 0.
+      // Un contador en 0 no es disponibilidad; el mensaje faltante ya vive
+      // en missing[] para la misma señal.
+      available: [
+        ...(uploaded ? ['Documentos cargados: ' + uploaded] : []),
+        ...(processed ? ['Documentos procesados: ' + processed] : []),
+        ...(validated ? ['Documentos revisados: ' + validated] : []),
+        ...(verifiable ? ['Requisitos verificables: ' + verifiable] : []),
+      ],
       missing: [...(uploaded ? [] : ['Adjunta documentación funcional.']),
         ...(readable ? [] : ['Analiza los archivos y aporta versiones con texto legible.']),
         ...(verifiable ? [] : ['Vincula criterios de aceptación explícitos con sus requisitos.']),
