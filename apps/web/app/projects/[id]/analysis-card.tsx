@@ -150,18 +150,29 @@ function MetricDrawer({ metric, documents, analysis }: {
   analysis: Report['analysis'];
 }) {
   if (metric === 'declared' || metric === 'uploaded' || metric === 'processed' || metric === 'validated') {
-    const state = { declared: 'DECLARED', uploaded: 'UPLOADED', processed: 'PROCESSED', validated: 'VALIDATED' }[metric];
-    const filtered = documents.filter(doc => doc.state === state);
-    const title = documentStates[state];
-    if (!filtered.length) return <EmptyDrawer title={title} message={`No hay documentos en estado ${title.toLowerCase()}.`} />;
+    // El backend cuenta cumulativo: un doc PROCESADO también está
+    // "cargado" porque pasó por ese estado. Replicamos esa semántica
+    // acá o el drawer mostraría "No hay documentos" aún con contador > 0.
+    const matches: Record<typeof metric, (state: string) => boolean> = {
+      declared: state => state === 'DECLARED',
+      uploaded: state => state === 'UPLOADED' || state === 'PROCESSED' || state === 'VALIDATED',
+      processed: state => state === 'PROCESSED' || state === 'VALIDATED',
+      validated: state => state === 'VALIDATED',
+    };
+    const filtered = documents.filter(doc => matches[metric](doc.state));
+    const titles: Record<typeof metric, string> = {
+      declared: 'Declarados', uploaded: 'Cargados', processed: 'Procesados', validated: 'Validados',
+    };
+    const title = titles[metric];
+    if (!filtered.length) return <EmptyDrawer title={title} message={`No hay documentos en este grupo.`} />;
     return <div className="detail-analysis__drawer" aria-label={`Documentos ${title.toLowerCase()}`}>
       <p className="detail-analysis__drawer-title">Documentos · {title}</p>
       <ul className="detail-analysis__doc-list">
         {filtered.map(doc => <li key={doc.id}>
           <strong>{doc.filename}</strong>
           <span className="muted">
-            {doc.currentVersion?.format ?? 'Sin formato'}
-            {doc.currentVersion?.size ? ` · v${doc.currentVersion.number}` : ''}
+            {documentStates[doc.state]}{doc.currentVersion?.format ? ` · ${doc.currentVersion.format}` : ''}
+            {doc.currentVersion?.number ? ` · v${doc.currentVersion.number}` : ''}
           </span>
         </li>)}
       </ul>
