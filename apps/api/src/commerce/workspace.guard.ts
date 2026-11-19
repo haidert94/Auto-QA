@@ -1,4 +1,4 @@
-import { CanActivate, createParamDecorator, ExecutionContext, ForbiddenException, Injectable, NotFoundException, SetMetadata } from '@nestjs/common';
+import { CanActivate, createParamDecorator, ExecutionContext, ForbiddenException, Injectable, Logger, NotFoundException, SetMetadata } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import type { CapabilityCode, OrgRole, Prisma } from '@prisma/client';
 import { Reflector } from '@nestjs/core';
@@ -60,6 +60,11 @@ export async function activePlan(tx: Prisma.TransactionClient, organizationId: s
 
 @Injectable()
 export class WorkspaceGuard implements CanActivate {
+  // Logger temporal para diagnosticar negativos de plan/capability. Permite
+  // distinguir, en Hostinger, si el 403 viene de "sin suscripción", "plan X
+  // no incluye capability Y" o "rol insuficiente".
+  private readonly logger = new Logger(WorkspaceGuard.name);
+
   constructor(private readonly accounts: AccountService, private readonly db: PrismaService, private readonly reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext) {
@@ -76,13 +81,25 @@ export class WorkspaceGuard implements CanActivate {
     } else {
       const identity = await this.accounts.identity(authorization);
       const { organization } = identity;
-      if (!['ACTIVE', 'TRIALING'].includes(subscriptionStatus(organization.subscription))) {
+      const subStatus = subscriptionStatus(organization.subscription);
+      if (!['ACTIVE', 'TRIALING'].includes(subStatus)) {
+        this.logger.warn(`[guard] org=${organization.id} sub=${subStatus} subscripción inactiva`);
         throw new ForbiddenException('Activa tu suscripción para acceder a los proyectos.');
       }
       const code = this.reflector.get<CapabilityCode | undefined>(PLAN_CAPABILITY, context.getHandler());
-      if (code && organization.subscription) requireCapability(organization.subscription.plan, code);
+      if (code && organization.subscription) {
+        try {
+          requireCapability(organization.subscription.plan, code);
+        } catch (error) {
+          const plan = organization.subscription.plan;
+          const capsSummary = plan?.capabilities?.map(c => `${c.code}:${c.availability}`).join(',') ?? 'ninguna';
+          this.logger.warn(`[guard] org=${organization.id} plan=${plan?.code ?? 'null'} capability=${code} FALLÓ. Caps=${capsSummary.slice(0, 500)}`);
+          throw error;
+        }
+      }
       const required = this.reflector.get<OrgRole[] | undefined>(ROLE_REQUIREMENT, context.getHandler());
       if (required && required.length && !hasRole(identity.role, required)) {
+        this.logger.warn(`[guard] org=${organization.id} role=${identity.role} requerido=${required.join('|')}`);
         throw new ForbiddenException('No tienes el rol necesario para esta acción.');
       }
       request.workspace = { organizationId: organization.id, userId: identity.userId, role: identity.role };
