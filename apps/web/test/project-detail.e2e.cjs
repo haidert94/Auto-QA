@@ -470,7 +470,14 @@ async function verifyAutomation(page, screenshots) {
   await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
   await expect(rows).toHaveCount(4);
   await expect(source).toContainText(fixtureSpec(scenarios[0]).code.split('\n')[0]);
-  await section.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
+  const generation = section.getByRole('region', { name: 'Generar código Playwright' });
+  const generate = generation.getByRole('button', { name: 'Generar seleccionados (4)', exact: true });
+  await expect(generate).toBeVisible();
+  await expect(section.getByRole('button', { name: /^Generar seleccionados/ })).toHaveCount(1);
+  const cardBounds = await generation.boundingBox();
+  const workspaceBounds = await section.locator('.automation-workspace').boundingBox();
+  assert.ok(cardBounds.y + cardBounds.height <= workspaceBounds.y, 'El bloque de generación queda encima de la lista y el visor.');
+  await generate.click();
   await expect(section.getByText('4 archivos generados. Revisa los pendientes antes de ejecutar.', { exact: true })).toBeVisible();
   await expect(section.locator('.automation-generation-state').getByText('Generado', { exact: true })).toHaveCount(2);
   await expect(section.locator('.automation-generation-state').getByText('Requiere revisión', { exact: true })).toHaveCount(2);

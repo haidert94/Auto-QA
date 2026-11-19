@@ -29,10 +29,11 @@
 .automation-pick-path { font: 400 9px/1.6 var(--mono); color: var(--muted); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .automation-pick-list p.error, .automation-review-reasons { font-size: 10px; line-height: 1.65; margin: 6px 0 0; overflow-wrap: anywhere; }
 .automation-review-reasons { color: var(--warn); }
-.automation-scenarios__footer { padding: 16px 14px; }
-.automation-scenarios__footer button { min-height: 34px; font-size: 11px; padding: 7px 10px; border-radius: 2px; width: 100%; }
-.automation-scenarios__footer p { color: var(--muted); font-size: 10px; line-height: 1.65; margin: 10px 0 0; }
-.automation-scenarios__footer .automation-operation-notice { color: var(--success); }
+.generate-cta--playwright .generate-cta__action button {
+  background: var(--blue); border-color: var(--blue); color: #fff; width: 100%;
+  min-height: 34px; font-size: 11px; padding: 7px 10px; border-radius: 2px;
+}
+.automation-operation-notice { color: var(--success); }
 .automation-list-message { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .automation-list-message h3 { font-size: 14px; margin-top: 10px; }
 .automation-list-message > svg { color: var(--blue); }

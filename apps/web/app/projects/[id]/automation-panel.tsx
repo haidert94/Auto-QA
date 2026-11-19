@@ -8,6 +8,7 @@ import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
+import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader } from './project-tabs';
 import { AutomationCodeViewer } from './automation-code-viewer';
@@ -149,11 +150,20 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   }
 
   const selectedSpec = activeId ? specs[activeId] : undefined;
+  const generationDisabled = busy || !selectedScenarios.length || !!listError;
   return <section className="automation-panel" aria-label="Automatización Playwright">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Generador de código Playwright TypeScript a partir de los escenarios guardados. Revisa el código antes de solicitar su ejecución."
       actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
         {canRunSuite && <button type="button" disabled={busy || !canRun} onClick={() => setRunSelection(ready)}><ArrowRight size={14} />Ejecutar en runners ({ready.length})</button>}</>} />, header.element)}
+    {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
+      <button type="button" disabled={generationDisabled} onClick={() => void prepare()}>
+        <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
+      </button>
+    }>
+      <p className="muted">El agente convierte los escenarios seleccionados en código Playwright. Revisa el código antes de ejecutarlo.</p>
+    </GenerationCard>}
+    {notice && <p className="automation-message automation-operation-notice" role="status">{notice}</p>}
     {error && <p className="automation-message error" role="alert">{error}</p>}
     <div className="automation-workspace">
       <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
@@ -180,9 +190,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
               </div>
             </li>;
           })}</ul>}
-        <footer className="automation-scenarios__footer">{canGenerate && <button type="button" disabled={busy || !selected.size || !!listError} onClick={() => void prepare()}><Play size={13} />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}</button>}
-          {notice && <p className="automation-operation-notice" role="status">{notice}</p>}
-          <p>El agente convierte los escenarios en código Playwright. Revisa el código antes de ejecutarlo.</p></footer>
       </section>
       <div className="automation-preview-column"><AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} generating={generating.size > 0} />
         {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}

@@ -9,6 +9,7 @@ import type { Project } from '../onboarding';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { scenarioSpecSignature } from './automation-export';
+import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader } from './project-tabs';
 import { featureText, isManualScenario, type ScenarioRun } from './scenario-presentation';
@@ -416,25 +417,20 @@ function GenerateCta({ score, status, projectStatus, canGenerate, availableTypes
   const disabled = reasons.length > 0 || generating;
   const pctLabel = score === null ? '—' : `${score}/100`;
 
-  return <section className={disabled ? 'generate-cta generate-cta--disabled' : 'generate-cta generate-cta--ready'}>
-    <div className="generate-cta__info">
-      <span className="generate-cta__eyebrow">Automatización con IA</span>
-      <h2>Generar casos de prueba</h2>
-      <p className="muted">
-        Un solo clic crea los casos para los <strong>{availableTypes}</strong> tipos habilitados por tu plan, usando los requisitos ya analizados.
-      </p>
-      <p className="generate-cta__score">
-        Preparación · <strong>{pctLabel}</strong> · umbral mínimo {threshold}
-      </p>
-    </div>
-    <div className="generate-cta__action">
-      <button type="button" disabled={disabled} onClick={onGenerate}
-        aria-describedby={disabled ? 'generate-cta-reason' : undefined}>
-        {generating ? 'Procesando…' : 'Generar casos de prueba'}
-      </button>
-      {disabled && reasons.length > 0 && <ul id="generate-cta-reason" className="generate-cta__reasons" role="status">
-        {reasons.map(reason => <li key={reason}>{reason}</li>)}
-      </ul>}
-    </div>
-  </section>;
+  return <GenerationCard title="Generar casos de prueba" disabled={disabled} action={<>
+    <button type="button" disabled={disabled} onClick={onGenerate}
+      aria-describedby={reasons.length ? 'generate-cta-reason' : undefined}>
+      {generating ? 'Procesando…' : 'Generar casos de prueba'}
+    </button>
+    {reasons.length > 0 && <ul id="generate-cta-reason" className="generate-cta__reasons" role="status">
+      {reasons.map(reason => <li key={reason}>{reason}</li>)}
+    </ul>}
+  </>}>
+    <p className="muted">
+      Un solo clic crea los casos para los <strong>{availableTypes}</strong> tipos habilitados por tu plan, usando los requisitos ya analizados.
+    </p>
+    <p className="generate-cta__score">
+      Preparación · <strong>{pctLabel}</strong> · umbral mínimo {threshold}
+    </p>
+  </GenerationCard>;
 }
