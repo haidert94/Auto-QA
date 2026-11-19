@@ -7,6 +7,8 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Project } from '../onboarding';
 import { ProjectHeading } from './project-heading';
 import { useQualityHeader } from './project-tabs';
+import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
+import { REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
 import { levelFor, type IpaSummary } from './ipa-hero';
 import { dateText, durationText, runLabels } from './run-report-data';
 
@@ -40,6 +42,7 @@ function EvaluationCard({ index, title, badge, children }: { index: string; titl
 
 export function QualityPanel({ project }: { project: Project }) {
   const header = useQualityHeader();
+  const activity = useReportActivity(project.id, !!header?.active);
   const [ipa, setIpa] = useState<Data<{ ipa: Ipa; generatedAt?: string }>>(pending);
   const [icsp, setIcsp] = useState<Data<Icsp>>(pending);
   const [ipaHistory, setIpaHistory] = useState<Data<Assessment[]>>(pending);
@@ -75,14 +78,17 @@ export function QualityPanel({ project }: { project: Project }) {
       setIpa(state(0)); setIcsp(state(1)); setIpaHistory(state(2)); setIcspHistory(state(3)); setAudits(state(4));
     });
     return () => controller.abort();
-  }, [project.id, header?.active, refresh]);
+  }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion]);
 
   async function exportJson() {
-    if (exporting) return;
+    if (exporting || !canGenerate) return;
     setExporting(true); setExportError('');
     try {
       const response = await fetch(`/api/projects/${project.id}/report/export`, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
-      if (!response.ok) throw new Error('No se pudo exportar el informe de calidad.');
+      if (!response.ok) {
+        const reason = response.status === 409 ? await response.json().catch(() => null) : null;
+        throw new Error(typeof reason?.message === 'string' ? reason.message : 'No se pudo exportar el informe de calidad.');
+      }
       const report = await response.json();
       if (report?.project?.id !== project.id || !report.ipa || !report.icsp) throw new Error('El servidor no devolvió un informe válido de este proyecto.');
       const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
@@ -97,16 +103,38 @@ export function QualityPanel({ project }: { project: Project }) {
   const health = icsp.value;
   const hasResults = !!health && health.counts.results > 0;
   const loading = ipa.loading || icsp.loading;
+  const hasRuns = !!health?.counts.runs;
+  const canGenerate = activity.verified && !activity.waiting && !loading && !!preparation && hasRuns;
+  const exportNotice = activity.waiting ? REPORT_WHILE_RUNNING
+    : activity.statusMessage || (!loading && health && !hasRuns ? REPORT_WITHOUT_RUNS : '');
   const completedAudit = audits.value?.find(audit => audit.status === 'COMPLETED');
   const lastAudit = audits.value?.[0];
+
+  async function printReport() {
+    if (!canGenerate || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      if (hasRunActivity(await readRunActivity(project.id))) {
+        setExportError(REPORT_WHILE_RUNNING);
+        return;
+      }
+      window.print();
+    } catch {
+      setExportError('No se pudo confirmar el estado de las ejecuciones.');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return <section className="quality-panel" aria-label="Calidad del proyecto">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Evaluación de preparación (IPA), salud del producto (ICSP) y auditorías registradas. Consulta las fuentes y los datos pendientes antes de interpretar los indicadores."
       actions={<><details className="quality-export"><summary><Download size={14} />Exportar informe</summary><div>
-        <button type="button" disabled={exporting || loading || !preparation || !health} onClick={() => void exportJson()}>{exporting ? 'Exportando…' : 'Descargar informe JSON'}</button>
-        <button type="button" onClick={() => window.print()}>Imprimir / Guardar como PDF</button>
-        <Link href={`/projects/${project.id}/report`}>Abrir informe consolidado</Link></div></details>
+        <button type="button" disabled={exporting || !canGenerate} onClick={() => void exportJson()}>{exporting ? 'Exportando…' : 'Descargar informe JSON'}</button>
+        <button type="button" disabled={exporting || !canGenerate} onClick={() => void printReport()}>Imprimir / Guardar como PDF</button>
+        {canGenerate && <Link href={`/projects/${project.id}/report`}>Abrir informe consolidado</Link>}
+        {exportNotice && <small>{exportNotice}</small>}</div></details>
         <Link className="button-like" href={`/projects/${project.id}/performance`}>Configurar auditoría <ArrowRight size={14} /></Link></>} />, header.element)}
     {exportError && <p className="quality-message error" role="alert">{exportError}</p>}
     <div className="quality-update"><p>Los índices se consultan con la información registrada. Actualizar no inicia pruebas ni auditorías externas.</p>

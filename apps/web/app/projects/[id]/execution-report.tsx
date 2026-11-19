@@ -3,20 +3,25 @@
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { Activity, Clock, Download, HelpCircle, Play, RefreshCw, Search, ShieldCheck } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
+import { isFinalRunStatus, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
 import { ProjectHeading } from './project-heading';
 import { useReportHeader } from './project-tabs';
+import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
 import { dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
 import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, type RunFilter } from './run-report-views';
 
 export function ExecutionReport({ project }: { project: Project }) {
   const header = useReportHeader();
+  const activity = useReportActivity(project.id, !!header?.active);
   const [runs, setRuns] = useState<ReportRun[] | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [error, setError] = useState('');
   const [tagsWarning, setTagsWarning] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
   const [scope, setScope] = useState('all');
@@ -52,7 +57,7 @@ export function ExecutionReport({ project }: { project: Project }) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No se pudo cargar el reporte.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [project.id, header?.active, refresh]);
+  }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion]);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
       if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'k' || !search.current?.getClientRects().length) return;
@@ -76,15 +81,40 @@ export function ExecutionReport({ project }: { project: Project }) {
   const selectedState = selectedRun ? outcome(selectedRun) : null;
   const detail = (runs ?? []).find(run => run.id === detailId);
   const filters = Object.keys(filterLabels) as RunFilter[];
-  const downloadDisabled = loading || !!error || !visible.length;
+  const finalized = visible.filter(run => isFinalRunStatus(run.status));
+  const hasFinalized = !!runs?.some(run => isFinalRunStatus(run.status));
+  const waiting = activity.waiting || !!runs?.some(run => !isFinalRunStatus(run.status));
+  const canGenerate = activity.verified && !waiting && !loading && !error && hasFinalized;
+  const downloadDisabled = exporting || !canGenerate || !finalized.length;
+  const exportNotice = waiting ? REPORT_WHILE_RUNNING
+    : activity.statusMessage || (!loading && !error && !hasFinalized ? REPORT_WITHOUT_RUNS : '');
+
+  async function exportResults(event: MouseEvent<HTMLButtonElement>, format: 'xml' | 'json') {
+    if (downloadDisabled) return;
+    const menu = event.currentTarget.closest('details');
+    setExporting(true);
+    setExportError('');
+    try {
+      if (hasRunActivity(await readRunActivity(project.id))) {
+        setExportError(REPORT_WHILE_RUNNING);
+        return;
+      }
+      downloadRunReport(project.id, finalized, format);
+      menu?.removeAttribute('open');
+    } catch {
+      setExportError('No se pudo confirmar el estado de las ejecuciones.');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return <section className="run-report" aria-label="Reporte de ejecuciones">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Historial de ejecuciones, resultados y trazas registradas por escenario. Consulta los datos disponibles y prepara una nueva ejecución."
       actions={<><details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
-        <div><button type="button" disabled={downloadDisabled} onClick={event => { downloadRunReport(project.id, visible, 'xml'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Exportar JUnit XML</button>
-          <button type="button" disabled={downloadDisabled} onClick={event => { downloadRunReport(project.id, visible, 'json'); event.currentTarget.closest('details')?.removeAttribute('open'); }}>Exportar JSON</button>
-          <small>Exporta las {visible.length} ejecuciones visibles.</small></div></details>
+        <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
+          <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
+          <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details>
         <a className="button-like" href="#automatizacion"><Play size={14} />Nueva ejecución →</a></>} />, header.element)}
     <div className="run-report-selection">
       <label>Ejecución<select aria-label="Ejecución del reporte" value={scope} disabled={loading || !!error} onChange={event => { setScope(event.target.value); setDetailId(null); setTag(''); }}>
@@ -95,6 +125,7 @@ export function ExecutionReport({ project }: { project: Project }) {
       <span className={`run-report-state run-report-state--${selectedState?.tone ?? 'unknown'}`}>{selectedState?.label ?? 'Historial del proyecto'}</span>
       <button className="run-report-refresh" type="button" aria-label="Actualizar reporte" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} /></button>
     </div>
+    {exportError && <p className="run-report-warning" role="alert">{exportError}</p>}
     {loading ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
       : error ? <div className="run-report-message" role="alert"><p className="error">{error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar reporte</button></div>
       : <>
@@ -136,7 +167,7 @@ export function ExecutionReport({ project }: { project: Project }) {
             : view === 'matrix' ? <RunMatrix runs={visible} />
             : <RunsTable projectId={project.id} runs={visible} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
           <p className="run-report-data-note">Cada fila representa una ejecución registrada. Las etiquetas son las actuales del escenario; no se asumen etiquetas históricas.</p>
-          <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>
+          {canGenerate && <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>}
         </div><aside className="run-report-aside" aria-label="Historial y detalle de ejecuciones">
           {detail && <RunDetail run={detail} projectId={project.id} onClose={() => setDetailId(null)} />}
           <section className="run-report-history"><header><h2>Historial de últimos runs</h2><span>{Math.min(8, runs?.length ?? 0)} de {runs?.length ?? 0}</span></header>

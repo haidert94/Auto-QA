@@ -7,14 +7,14 @@
 // Un run = un escenario (fase 6.3). El batch queda para una iteración
 // posterior.
 
-import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { execFile, spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, readGeneratorSteps, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
 import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
+import { RUN_CANCELED_BY_USER, RUN_STOP_REQUESTED } from '../../api/src/runs/run-cancellation';
 import { readPreparedAutomation } from '../../api/src/scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../api/src/scenarios/scenario-tags';
 import { type ScreenshotStorage } from './screenshot-storage';
@@ -73,83 +73,105 @@ export async function runTestRun(
   log: Logger = () => {},
 ): Promise<void> {
   const startedAt = Date.now();
-  if (!claim.scenarioId || !claim.environmentId) {
-    await failRun(prisma, claim, 'missing-scenario-or-environment', 'scenarioId y environmentId son requeridos.');
-    return;
-  }
-
-  const scenario = await prisma.testScenario.findUnique({
-    where: { id: claim.scenarioId },
-    select: { id: true, title: true, steps: true, expectedResult: true, tags: true },
-  });
-  if (!scenario) {
-    await failRun(prisma, claim, 'scenario-missing', 'El escenario fue borrado.');
-    return;
-  }
-
-  if (isManualScenario(scenario)) {
-    await failRun(prisma, claim, 'manual-scenario', MANUAL_SCENARIO_MESSAGE);
-    return;
-  }
-
-  const environment = await prisma.environment.findUnique({
-    where: { id: claim.environmentId, projectId: claim.projectId },
-    select: {
-      type: true, baseUrl: true, allowedHosts: true, allowedPaths: true, excludedPaths: true,
-      authorizationConfirmed: true, authorizedAt: true, readOnly: true,
-    },
-  });
-  if (!environment) {
-    await failRun(prisma, claim, 'environment-missing', 'El entorno fue borrado.');
-    return;
-  }
-  const environmentError = scenarioRunEnvironmentError(environment);
-  if (environmentError) {
-    await failRun(prisma, claim, 'environment-unauthorized', environmentError);
-    return;
-  }
-  const currentAuthorization = environment.readOnly ? null : environment.authorizedAt?.getTime();
-  if ((claim.writeAuthorizationAt?.getTime() ?? null) !== currentAuthorization) {
-    await failRun(prisma, claim, 'environment-mode-changed', 'La autorización del entorno cambió después de encolar la prueba.');
-    return;
-  }
-
-  const prepared = readPreparedAutomation(claim.automation);
-  if (claim.automation && !prepared) {
-    await failRun(prisma, claim, 'invalid-automation', 'No se pudo recuperar la automatización de esta ejecución.');
-    return;
-  }
-  const steps = prepared?.steps ?? readGeneratorSteps(scenario.steps);
-
-  const harness: HarnessEnvironment = {
-    baseUrl: environment.baseUrl,
-    allowedHosts: toStringArray(environment.allowedHosts),
-    allowedPaths: toHarnessPaths(environment.allowedPaths),
-    excludedPaths: toHarnessPaths(environment.excludedPaths),
-    allowWrites: !environment.readOnly,
+  let workdir: string | undefined;
+  const shouldStop = async () => {
+    const current = await prisma.testRun.findUnique({
+      where: { id: claim.id }, select: { status: true, errorCode: true },
+    });
+    return !current || current.status !== 'RUNNING' || current.errorCode === RUN_STOP_REQUESTED;
   };
-  const spec = generateHarnessedSpec({
-    id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
-  }, harness, { browser: claim.targetBrowser, device: claim.targetDevice });
-
-  // Directorio de trabajo aislado; limpiamos al final (éxito o error).
-  const workdir = await mkdtemp(join(tmpdir(), 'autoqa-run-'));
-  const outputDir = join(workdir, 'playwright-output');
-  const specPath = join(workdir, 'scenario.spec.ts');
-  const configPath = join(workdir, 'playwright.config.ts');
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(specPath, spec, { encoding: 'utf8' });
-  const { wsEndpoint, error: providerError } = resolveWsEndpoint(claim);
-  if (providerError) {
-    await failRun(prisma, claim, providerError, 'El proveedor ' + (claim.targetProvider ?? '') + ' no está disponible.');
-    return;
-  }
-  await writeFile(configPath, generatePlaywrightConfig({
-    outputDir, browser: claim.targetBrowser, wsEndpoint,
-  }), { encoding: 'utf8' });
-
+  const fail = (code: string, message: string) => finishRun(prisma, claim, startedAt,
+    { status: 'FAILED', errorCode: code }, { status: 'BLOCKED', errorMessage: message.slice(0, 4000) });
+  const finishStopped = () => finishRun(prisma, claim, startedAt, {});
   try {
-    const outcome = await spawnPlaywright(workdir, configPath, log);
+    if (await shouldStop()) {
+      await finishStopped();
+      return;
+    }
+    if (!claim.scenarioId || !claim.environmentId) {
+      await fail('missing-scenario-or-environment', 'scenarioId y environmentId son requeridos.');
+      return;
+    }
+
+    const scenario = await prisma.testScenario.findUnique({
+      where: { id: claim.scenarioId },
+      select: { id: true, title: true, steps: true, expectedResult: true, tags: true },
+    });
+    if (!scenario) {
+      await fail('scenario-missing', 'El escenario fue borrado.');
+      return;
+    }
+
+    if (isManualScenario(scenario)) {
+      await fail('manual-scenario', MANUAL_SCENARIO_MESSAGE);
+      return;
+    }
+
+    const environment = await prisma.environment.findUnique({
+      where: { id: claim.environmentId, projectId: claim.projectId },
+      select: {
+        type: true, baseUrl: true, allowedHosts: true, allowedPaths: true, excludedPaths: true,
+        authorizationConfirmed: true, authorizedAt: true, readOnly: true,
+      },
+    });
+    if (!environment) {
+      await fail('environment-missing', 'El entorno fue borrado.');
+      return;
+    }
+    const environmentError = scenarioRunEnvironmentError(environment);
+    if (environmentError) {
+      await fail('environment-unauthorized', environmentError);
+      return;
+    }
+    const currentAuthorization = environment.readOnly ? null : environment.authorizedAt?.getTime();
+    if ((claim.writeAuthorizationAt?.getTime() ?? null) !== currentAuthorization) {
+      await fail('environment-mode-changed', 'La autorización del entorno cambió después de encolar la prueba.');
+      return;
+    }
+
+    const prepared = readPreparedAutomation(claim.automation);
+    if (claim.automation && !prepared) {
+      await fail('invalid-automation', 'No se pudo recuperar la automatización de esta ejecución.');
+      return;
+    }
+    const steps = prepared?.steps ?? readGeneratorSteps(scenario.steps);
+
+    const harness: HarnessEnvironment = {
+      baseUrl: environment.baseUrl,
+      allowedHosts: toStringArray(environment.allowedHosts),
+      allowedPaths: toHarnessPaths(environment.allowedPaths),
+      excludedPaths: toHarnessPaths(environment.excludedPaths),
+      allowWrites: !environment.readOnly,
+    };
+    const spec = generateHarnessedSpec({
+      id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
+    }, harness, { browser: claim.targetBrowser, device: claim.targetDevice });
+
+    // Directorio de trabajo aislado; limpiamos al final (éxito o error).
+    workdir = await mkdtemp(join(tmpdir(), 'autoqa-run-'));
+    const outputDir = join(workdir, 'playwright-output');
+    const specPath = join(workdir, 'scenario.spec.ts');
+    const configPath = join(workdir, 'playwright.config.ts');
+    await mkdir(outputDir, { recursive: true });
+    await writeFile(specPath, spec, { encoding: 'utf8' });
+    const { wsEndpoint, error: providerError } = resolveWsEndpoint(claim);
+    if (providerError) {
+      await fail(providerError, 'El proveedor ' + (claim.targetProvider ?? '') + ' no está disponible.');
+      return;
+    }
+    await writeFile(configPath, generatePlaywrightConfig({
+      outputDir, browser: claim.targetBrowser, wsEndpoint,
+    }), { encoding: 'utf8' });
+
+    if (await shouldStop()) {
+      await finishStopped();
+      return;
+    }
+    const outcome = await spawnPlaywright(workdir, configPath, log, shouldStop);
+    if (await shouldStop()) {
+      await finishStopped();
+      return;
+    }
     const report = await readReport(workdir).catch(() => null);
     const summary = summariseReport(report, outcome.exitCode);
     const tracePath = extractTracePath(report, outputDir);
@@ -164,61 +186,90 @@ export async function runTestRun(
     }
 
     const providerSessionUrl = extractProviderSessionUrl(report, claim.targetProvider);
-    await prisma.$transaction(async tx => {
-      await tx.testResult.create({
-        data: {
-          runId: claim.id,
-          scenarioId: scenario.id,
-          status: summary.status,
-          durationMs: summary.durationMs,
-          errorMessage: summary.errorMessage?.slice(0, 4000) ?? null,
-          evidenceKey,
-        },
-      });
-      await tx.testRun.update({
-        where: { id: claim.id },
-        data: {
-          status: summary.status === 'PASSED' ? 'COMPLETED' : 'FAILED',
-          completedAt: new Date(),
-          errorCode: summary.status === 'PASSED' ? null : (summary.errorCode ?? 'test-failed'),
-          specText: spec,
-          providerSessionUrl,
-        },
-      });
+    await finishRun(prisma, claim, startedAt, {
+      status: summary.status === 'PASSED' ? 'COMPLETED' : 'FAILED',
+      errorCode: summary.status === 'PASSED' ? null : (summary.errorCode ?? 'test-failed'),
+      specText: spec,
+      providerSessionUrl,
+    }, {
+      status: summary.status,
+      durationMs: summary.durationMs,
+      errorMessage: summary.errorMessage?.slice(0, 4000) ?? null,
+      evidenceKey,
     });
-    await settleUsage(prisma, claim, startedAt);
   } catch (error) {
-    log('ERROR', 'worker-crashed: ' + (error instanceof Error ? error.message : String(error)));
-    await failRun(prisma, claim, 'worker-crashed', error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    log('ERROR', 'worker-crashed: ' + message);
+    await fail('worker-crashed', message);
   } finally {
-    await rm(workdir, { recursive: true, force: true }).catch(() => {});
+    if (workdir) await rm(workdir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
 type SpawnOutcome = { exitCode: number | null };
 
-function spawnPlaywright(workdir: string, configPath: string, log: Logger): Promise<SpawnOutcome> {
-  return new Promise(resolvePromise => {
-    // playwright test busca el config relativo; usamos ruta absoluta para
-    // evitar sorpresas con el cwd del worker.
+function spawnPlaywright(workdir: string, configPath: string, log: Logger, shouldStop: () => Promise<boolean>): Promise<SpawnOutcome> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const windows = process.platform === 'win32';
     const child = spawn('npx', ['--yes', 'playwright', 'test', '--config', resolve(configPath)], {
       cwd: workdir,
       env: { ...process.env, PLAYWRIGHT_HTML_REPORT: '/dev/null' },
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
+      shell: windows,
+      detached: !windows,
     });
-    const stdoutChunks: string[] = [];
-    const stderrChunks: string[] = [];
-    child.stdout.on('data', chunk => stdoutChunks.push(chunk.toString()));
-    child.stderr.on('data', chunk => stderrChunks.push(chunk.toString()));
-    // Cinturón y tirantes: hard kill a los 10 minutos.
+    child.stdout.resume();
+    let stderr = '';
+    child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-800); });
+    let closed = false;
+    let poll: NodeJS.Timeout | undefined;
+    let forceStop: NodeJS.Timeout | undefined;
+
+    function terminate(signal: NodeJS.Signals) {
+      if (closed || !child.pid) return;
+      if (windows) {
+        execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, error => {
+          if (error && !closed) child.kill('SIGTERM');
+        });
+        return;
+      }
+      try {
+        process.kill(-child.pid, signal);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill(signal);
+      }
+    }
+
+    async function checkStop() {
+      try {
+        if (await shouldStop()) {
+          log('INFO', 'Solicitud de detener Playwright recibida.');
+          terminate('SIGTERM');
+          if (!closed && !windows) forceStop = setTimeout(() => terminate('SIGKILL'), 3000);
+          return;
+        }
+      } catch {
+        log('WARN', 'No se pudo consultar la solicitud de detener Playwright.');
+      }
+      if (!closed) poll = setTimeout(() => void checkStop(), 1000);
+    }
+
+    function cleanup() {
+      closed = true;
+      clearTimeout(timeout);
+      clearTimeout(poll);
+      clearTimeout(forceStop);
+    }
+
     const timeout = setTimeout(() => {
       log('WARN', 'Playwright excedió 10 minutos; forzando kill.');
-      child.kill('SIGKILL');
+      terminate('SIGKILL');
     }, 10 * 60 * 1000);
-    child.on('close', exitCode => {
-      clearTimeout(timeout);
-      if (stderrChunks.length) log('WARN', 'stderr: ' + stderrChunks.join('').slice(-800));
+    poll = setTimeout(() => void checkStop(), 1000);
+    child.once('error', error => { cleanup(); rejectPromise(error); });
+    child.once('close', exitCode => {
+      cleanup();
+      if (stderr) log('WARN', 'stderr: ' + stderr);
       resolvePromise({ exitCode });
     });
   });
@@ -291,36 +342,36 @@ function extractTracePath(report: any, outputDir: string): string | null {
   void outputDir;
 }
 
-async function failRun(prisma: PrismaClient, claim: ExecutionClaim, code: string, message: string): Promise<void> {
+async function finishRun(
+  prisma: PrismaClient,
+  claim: ExecutionClaim,
+  startedAt: number,
+  data: Pick<Prisma.TestRunUncheckedUpdateInput, 'status' | 'errorCode' | 'specText' | 'providerSessionUrl'>,
+  result?: Omit<Prisma.TestResultUncheckedCreateInput, 'runId' | 'scenarioId'>,
+): Promise<void> {
+  const completedAt = new Date();
   await prisma.$transaction(async tx => {
-    if (claim.scenarioId) {
-      await tx.testResult.create({
-        data: {
-          runId: claim.id,
-          scenarioId: claim.scenarioId,
-          status: 'BLOCKED',
-          errorMessage: message.slice(0, 4000),
-          evidenceKey: null,
-        },
-      });
-    }
+    const [run] = await tx.$queryRaw<{ errorCode: string | null }[]>`
+      SELECT "errorCode" FROM "TestRun" WHERE id = ${claim.id} AND status = 'RUNNING' FOR UPDATE
+    `;
+    if (!run) return;
+    const canceled = run.errorCode === RUN_STOP_REQUESTED;
     await tx.testRun.update({
       where: { id: claim.id },
-      data: { status: 'FAILED', completedAt: new Date(), errorCode: code },
+      data: {
+        ...(canceled ? { status: 'CANCELED', errorCode: RUN_CANCELED_BY_USER } : data),
+        completedAt,
+      },
+    });
+    if (!canceled && result && claim.scenarioId) {
+      await tx.testResult.create({ data: { ...result, runId: claim.id, scenarioId: claim.scenarioId } });
+    }
+    if (!claim.runKey) return;
+    const project = await tx.project.findUnique({ where: { id: claim.projectId }, select: { organizationId: true } });
+    if (!project?.organizationId) return;
+    await tx.meteredRun.updateMany({
+      where: { projectId: claim.projectId, organizationId: project.organizationId, runKey: claim.runKey, completedAt: null },
+      data: { browserSeconds: Math.max(1, Math.round((completedAt.getTime() - startedAt) / 1000)), completedAt },
     });
   });
-  await settleUsage(prisma, claim, Date.now()).catch(() => {});
 }
-
-async function settleUsage(prisma: PrismaClient, claim: ExecutionClaim, startedAt: number): Promise<void> {
-  if (!claim.runKey) return;
-  const project = await prisma.project.findUnique({ where: { id: claim.projectId }, select: { organizationId: true } });
-  if (!project?.organizationId) return;
-  const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-  await prisma.meteredRun.updateMany({
-    where: { organizationId: project.organizationId, runKey: claim.runKey, completedAt: null },
-    data: { browserSeconds: elapsedSeconds, completedAt: new Date() },
-  });
-}
-
-void randomUUID; // re-exportado implícitamente por si lo necesitamos luego

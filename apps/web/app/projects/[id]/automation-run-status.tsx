@@ -1,49 +1,39 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useRunActivity } from './run-activity';
+import { useScenarioSuite } from './project-tabs';
 
-type RunCounts = { running: number; queued: number };
-type RunActivity = RunCounts | 'unavailable' | null;
-
-export function AutomationRunStatus({ projectId }: { projectId: string }) {
-  const [activity, setActivity] = useState<RunActivity>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let timer: number | undefined;
-
-    async function refresh() {
-      try {
-        const response = await fetch(`/api/projects/${projectId}/runs/activity`, {
-          cache: 'no-store',
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8000)]),
-        });
-        if (!response.ok) throw new Error('No se pudo consultar la actividad.');
-        const counts: RunCounts = await response.json();
-        if (!counts || !Number.isSafeInteger(counts.running) || counts.running < 0
-          || !Number.isSafeInteger(counts.queued) || counts.queued < 0) {
-          throw new Error('La API devolvió un estado inválido.');
-        }
-        if (!controller.signal.aborted) setActivity(counts);
-      } catch {
-        if (!controller.signal.aborted) setActivity('unavailable');
-      } finally {
-        if (!controller.signal.aborted) timer = window.setTimeout(() => void refresh(), 5000);
-      }
-    }
-
-    void refresh();
-    return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [projectId]);
-
-  const running = activity && activity !== 'unavailable' && activity.running > 0;
+export function AutomationRunStatus({ projectId, canStop }: { projectId: string; canStop: boolean }) {
+  const suite = useScenarioSuite();
+  const activity = useRunActivity(projectId, true, suite?.historyVersion);
+  const [stopError, setStopError] = useState(false);
+  const counts = activity && activity !== 'unavailable' ? activity : null;
+  const hasActivity = !!counts && (counts.running > 0 || counts.queued > 0);
   const message = activity === null ? 'Consultando ejecuciones…'
     : activity === 'unavailable' ? 'No se pudo consultar el estado.'
-    : activity.running || activity.queued ? `${activity.running} en ejecución · ${activity.queued} en cola`
-    : 'Sin ejecuciones en curso ni en cola.';
+    : hasActivity || activity.stopping
+      ? `${activity.running} en ejecución · ${activity.queued} en cola${activity.stopping ? ` · ${activity.stopping} deteniéndose` : ''}`
+      : 'Sin ejecuciones en curso ni en cola.';
 
-  return <section className="automation-run-status" aria-label="Estado de ejecución" data-state={running ? 'running' : undefined}>
+  async function stop() {
+    setStopError(false);
+    try {
+      await suite?.stop();
+    } catch {
+      setStopError(true);
+    }
+  }
+
+  return <section className="automation-run-status" aria-label="Estado de ejecución" data-state={counts?.running ? 'running' : undefined}>
     <strong>Estado de ejecución</strong>
-    <p role="status">{message}</p>
+    <div className="automation-run-status__actions">
+      <p role="status">{message}</p>
+      {canStop && suite && (hasActivity || counts?.stopping || suite.suiteRunning || suite.stopping) ? (
+        <button type="button" className="secondary" disabled={suite.stopping || (!hasActivity && !suite.suiteRunning)}
+          onClick={() => void stop()}>{suite.stopping || (!hasActivity && counts?.stopping) ? 'Deteniendo…' : 'Detener ejecución'}</button>
+      ) : null}
+    </div>
+    {stopError && <p className="error" role="alert">No se pudo detener la ejecución. Vuelve a intentarlo.</p>}
   </section>;
 }

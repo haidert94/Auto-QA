@@ -31,6 +31,7 @@ enum RunStatus {
   RUNNING
   COMPLETED
   FAILED
+  CANCELED
 }
 
 enum ResultStatus {

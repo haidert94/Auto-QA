@@ -1,18 +1,21 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { OrgRole } from '../../autoqa-server';
 import type { Project } from '../onboarding';
 import type { GeneratedSpec } from './automation-export';
 import type { ScenarioListItem } from './scenario-card';
-import { ScenarioRunDialog } from './scenario-run-dialog';
+import { ScenarioRunDialog, type ScenarioSuiteControl } from './scenario-run-dialog';
 
 type ScenarioSpecs = Record<string, GeneratedSpec>;
 
 const ScenarioSuiteContext = createContext<{
   open: (scenarios: ScenarioListItem[]) => void;
   hasSuite: boolean;
+  suiteRunning: boolean;
+  stopping: boolean;
+  stop: () => Promise<void>;
   historyVersion: number;
 } | null>(null);
 export function useScenarioSuite() { return useContext(ScenarioSuiteContext); }
@@ -81,13 +84,39 @@ export function ProjectTabs({
   const [specs, setSpecs] = useState<ScenarioSpecs>({});
   const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
   const [suiteOpen, setSuiteOpen] = useState(false);
+  const [suiteRunning, setSuiteRunning] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const stopRequest = useRef(false);
+  const suiteControl = useRef<ScenarioSuiteControl>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const hasSuite = runSelection !== null;
   const openSuite = useCallback((scenarios: ScenarioListItem[]) => {
+    if (stopRequest.current) return;
     setRunSelection(current => current ?? scenarios);
     setSuiteOpen(true);
   }, []);
-  const suiteContext = useMemo(() => ({ open: openSuite, hasSuite, historyVersion }), [openSuite, hasSuite, historyVersion]);
+  const stopSuite = useCallback(async () => {
+    if (stopRequest.current) return;
+    stopRequest.current = true;
+    setStopping(true);
+    try {
+      await suiteControl.current?.stop();
+      setSuiteOpen(false);
+      setRunSelection(null);
+      setSuiteRunning(false);
+      const response = await fetch(`/api/projects/${project.id}/runs/cancel`, {
+        method: 'POST', signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok) throw new Error('No se pudo detener la ejecución.');
+      setHistoryVersion(version => version + 1);
+    } finally {
+      stopRequest.current = false;
+      setStopping(false);
+    }
+  }, [project.id]);
+  const suiteContext = useMemo(() => ({
+    open: openSuite, hasSuite, suiteRunning, stopping, stop: stopSuite, historyVersion,
+  }), [openSuite, hasSuite, suiteRunning, stopping, stopSuite, historyVersion]);
   const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount, specs }), [headerElement, specs]);
   const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
   const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion', specs, setSpecs }), [automationElement, active, specs]);
@@ -157,7 +186,8 @@ export function ProjectTabs({
         </div>
       ))}
       {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs}
-        open={suiteOpen} onHide={() => setSuiteOpen(false)} onClose={() => { setSuiteOpen(false); setRunSelection(null); }}
+        control={suiteControl} open={suiteOpen} onHide={() => setSuiteOpen(false)}
+        onClose={() => { setSuiteOpen(false); setRunSelection(null); }} onRunningChange={setSuiteRunning}
         onRunsChanged={() => setHistoryVersion(version => version + 1)} />}
     </ExplorationHeaderContext.Provider>
     </QualityHeaderContext.Provider>

@@ -5,6 +5,8 @@ const { ScenariosService } = require('../dist/scenarios/scenarios.service');
 const { RunsService } = require('../dist/runs/runs.service');
 const { RunsController } = require('../dist/runs/runs.controller');
 const { UsageService } = require('../dist/commerce/usage.service');
+const { IcspService } = require('../dist/icsp/icsp.service');
+const { ReportsService } = require('../dist/reports/reports.service');
 const { translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
 const { generateHarnessedSpec, generateSpec } = require('../dist/scenarios/playwright-generator');
 
@@ -104,8 +106,43 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.equal(calls, 2);
 });
 
+test('el reporte consolidado espera la primera ejecución finalizada y el cierre de la cola', async () => {
+  let active = { id: 'active-run' };
+  let finished = [];
+  let documentReads = 0;
+  const prisma = {
+    project: { async findFirst({ where }) {
+      assert.equal(where.organizationId, workspace.organizationId);
+      return { id: 'project' };
+    } },
+    requirement: { async findMany() { return [{ id: 'requirement', title: 'Requisito' }]; } },
+    testScenario: { async findMany() { return [{ id: 'scenario', title: 'Escenario', requirementId: 'requirement' }]; } },
+    testRun: {
+      async findFirst({ where }) {
+        assert.deepEqual(where, { projectId: 'project', status: { in: ['QUEUED', 'RUNNING'] } });
+        return active;
+      },
+      async findMany({ where }) {
+        assert.deepEqual(where, { projectId: 'project', status: { in: ['COMPLETED', 'FAILED', 'CANCELED'] } });
+        return finished;
+      },
+    },
+  };
+  const documents = { async report() { documentReads++; return { ipa: { score: 80 }, analysis: null }; } };
+  const reports = new ReportsService(prisma, documents, new IcspService(prisma));
+  await assert.rejects(reports.export('project', workspace), /cuando finalicen las ejecuciones/);
+  active = null;
+  await assert.rejects(reports.export('project', workspace), /primera ejecución finalizada/);
+  assert.equal(documentReads, 0);
+  finished = [{ id: 'done', scenarioId: 'scenario', status: 'FAILED', createdAt: new Date(), results: [] }];
+  const report = await reports.export('project', workspace);
+  assert.equal(report.icsp.counts.runs, 1);
+  assert.equal(report.traceability[0].scenarios[0].lastRun.id, 'done');
+  assert.equal(documentReads, 1);
+});
+
 test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto autorizado', async () => {
-  let counts = [{ status: 'QUEUED', _count: { _all: 2 } }];
+  let counts = [{ status: 'QUEUED', errorCode: null, _count: { _all: 2 } }];
   const prisma = {
     project: { async findFirst({ where }) {
       assert.deepEqual(where, { id: 'project', organizationId: workspace.organizationId });
@@ -113,17 +150,66 @@ test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto a
     } },
     testRun: { async groupBy(query) {
       assert.deepEqual(query, {
-        by: ['status'], where: { projectId: 'project', status: { in: ['RUNNING', 'QUEUED'] } }, _count: { _all: true },
+        by: ['status', 'errorCode'], where: { projectId: 'project', status: { in: ['RUNNING', 'QUEUED'] } }, _count: { _all: true },
       });
       return counts;
     } },
   };
   const controller = new RunsController(new RunsService(prisma, {}, {}, {}));
-  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 2 });
-  counts = [{ status: 'RUNNING', _count: { _all: 1 } }];
-  assert.deepEqual(await controller.activity('project', workspace), { running: 1, queued: 0 });
+  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 2, stopping: 0 });
+  counts = [
+    { status: 'RUNNING', errorCode: null, _count: { _all: 1 } },
+    { status: 'RUNNING', errorCode: 'cancel-requested', _count: { _all: 2 } },
+  ];
+  assert.deepEqual(await controller.activity('project', workspace), { running: 1, queued: 0, stopping: 2 });
   counts = [];
-  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 0 });
+  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 0, stopping: 0 });
+});
+
+test('detener cancela la cola, libera solo sus reservas y solicita detener las activas del proyecto', async () => {
+  let queued = [{ runKey: 'queued-1' }, { runKey: null }];
+  let running = 1;
+  let released = 0;
+  const tx = {
+    testRun: {
+      async updateManyAndReturn({ where, data, select }) {
+        assert.deepEqual(where, { projectId: 'project', status: 'QUEUED' });
+        assert.deepEqual(select, { runKey: true });
+        assert.equal(data.status, 'CANCELED');
+        assert.equal(data.errorCode, 'canceled-by-user');
+        assert.ok(data.completedAt instanceof Date);
+        const canceled = queued;
+        queued = [];
+        return canceled;
+      },
+      async updateMany({ where, data }) {
+        assert.equal(where.projectId, 'project');
+        assert.equal(where.status, 'RUNNING');
+        assert.deepEqual(data, { errorCode: 'cancel-requested' });
+        const count = running;
+        running = 0;
+        return { count };
+      },
+    },
+    meteredRun: { async updateMany({ where, data }) {
+      assert.deepEqual(where, { projectId: 'project', organizationId: workspace.organizationId,
+        runKey: { in: ['queued-1'] }, completedAt: null });
+      assert.equal(data.browserSeconds, 0);
+      released++;
+    } },
+  };
+  const prisma = {
+    project: { async findFirst({ where }) {
+      assert.equal(where.organizationId, workspace.organizationId);
+      return where.id === 'project' ? { id: where.id } : null;
+    } },
+    $transaction: callback => callback(tx),
+  };
+  const controller = new RunsController(new RunsService(prisma, {}, {}, {}));
+  await assert.rejects(controller.cancel('other-project', workspace), /Proyecto no encontrado/);
+  assert.deepEqual(await controller.cancel('project', workspace), { queuedCanceled: 2, runningRequested: 1 });
+  assert.deepEqual(await controller.cancel('project', workspace), { queuedCanceled: 0, runningRequested: 0 });
+  assert.equal(released, 1);
 });
 
 test('consulta las ejecuciones pedidas sin salir del alcance del proyecto', async () => {

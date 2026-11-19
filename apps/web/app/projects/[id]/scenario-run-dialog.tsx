@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { environmentTypes, scenarioRunEnvironmentError, supportsScenarioWrites, type Project } from '../onboarding';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
@@ -25,14 +25,18 @@ function resultLabel(state: SuiteState) {
   }
 }
 
-export function ScenarioRunDialog({ project, role, scenarios, specs, open, onHide, onClose, onRunsChanged }: {
+export type ScenarioSuiteControl = { stop: () => Promise<void> };
+
+export function ScenarioRunDialog({ project, role, scenarios, specs, control, open, onHide, onClose, onRunningChange, onRunsChanged }: {
   project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
-  open: boolean; onHide: () => void; onClose: () => void; onRunsChanged?: () => void;
+  control: Ref<ScenarioSuiteControl>;
+  open: boolean; onHide: () => void; onClose: () => void;
+  onRunningChange: (running: boolean) => void; onRunsChanged?: () => void;
 }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
-  const suite = useRef<AbortController | null>(null);
+  const suite = useRef<{ controller: AbortController; finished: Promise<void> } | null>(null);
   const [savedProject, setSavedProject] = useState<Project | null>(null);
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
   const currentProject = savedProject && savedProject.revision > project.revision ? savedProject : project;
@@ -57,7 +61,15 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, open, onHid
     if (open) element.showModal();
     else element.close();
   }, [open]);
-  useEffect(() => () => suite.current?.abort(), []);
+  useEffect(() => () => suite.current?.controller.abort(), []);
+  useImperativeHandle(control, () => ({
+    async stop() {
+      const activeSuite = suite.current;
+      if (!activeSuite) return;
+      activeSuite.controller.abort();
+      await activeSuite.finished;
+    },
+  }), []);
 
   function close() {
     if (suite.current) onHide();
@@ -75,26 +87,31 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, open, onHid
     event.preventDefault();
     if (suite.current || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
     const controller = new AbortController();
-    suite.current = controller;
     setBusy(true);
+    onRunningChange(true);
+    const finished = runScenarioSuite({
+      projectId: project.id,
+      scenarios: scenarios.map(scenario => ({
+        scenarioId: scenario.id,
+        title: scenario.title,
+        automationId: specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null,
+      })),
+      environmentId,
+      writeAuthorizationAt: allowsWrites ? environment.authorizedAt ?? undefined : undefined,
+      signal: controller.signal,
+      onProgress: setResults,
+      onWarning: setTrackingWarning,
+    });
+    suite.current = { controller, finished };
     try {
-      await runScenarioSuite({
-        projectId: project.id,
-        scenarios: scenarios.map(scenario => ({
-          scenarioId: scenario.id,
-          title: scenario.title,
-          automationId: specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null,
-        })),
-        environmentId,
-        writeAuthorizationAt: allowsWrites ? environment.authorizedAt ?? undefined : undefined,
-        signal: controller.signal,
-        onProgress: setResults,
-        onWarning: setTrackingWarning,
-      });
+      await finished;
       if (!controller.signal.aborted) onRunsChanged?.();
     } finally {
       suite.current = null;
-      if (!controller.signal.aborted) setBusy(false);
+      if (!controller.signal.aborted) {
+        setBusy(false);
+        onRunningChange(false);
+      }
     }
   }
 
@@ -140,7 +157,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, open, onHid
         </li>;
       })}</ul>
       <div className="actions">
-        {busy ? <button type="button" disabled>Ver reporte</button>
+        {busy || pending > 0 || !finished || hasUnknown ? <button type="button" disabled>Ver reporte</button>
           : <Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>}
         <button type="button" className="secondary" onClick={close}>Cerrar</button>
       </div>

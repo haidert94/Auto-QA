@@ -40,6 +40,9 @@
 .automation-preview-column { min-width: 0; }
 .automation-run-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 9px 12px; margin-bottom: 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; font-size: 12px; }
 .automation-run-status p { margin: 0; color: var(--muted); }
+.automation-run-status__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.automation-run-status__actions button { padding: 5px 9px; min-height: 28px; font-size: 11px; }
+.automation-run-status p.error { width: 100%; color: var(--error, #b23); }
 .automation-run-status[data-state="running"] p { color: var(--blue); }
 .automation-editor { background: #101421; color: #e1e7fa; border: 1px solid #29324b; border-radius: 3px; min-width: 0; overflow: hidden; }
 .automation-editor__head { display: flex; align-items: center; min-width: 0; gap: 8px; background: #0c101b; border-bottom: 1px solid #29324b; }

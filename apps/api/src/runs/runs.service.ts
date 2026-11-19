@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
 import { scenarioRunEnvironmentError } from './environment-policy';
+import { RUN_STOP_REQUESTED, RUN_CANCELED_BY_USER } from './run-cancellation';
 import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { CreateRunDto } from './dto/create-run.dto';
@@ -88,14 +89,40 @@ export class RunsService {
   async activity(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const counts = await this.prisma.testRun.groupBy({
-      by: ['status'],
+      by: ['status', 'errorCode'],
       where: { projectId, status: { in: ['RUNNING', 'QUEUED'] } },
       _count: { _all: true },
     });
-    return {
-      running: counts.find(row => row.status === 'RUNNING')?._count._all ?? 0,
-      queued: counts.find(row => row.status === 'QUEUED')?._count._all ?? 0,
-    };
+    const activity = { running: 0, queued: 0, stopping: 0 };
+    for (const row of counts) {
+      const bucket = row.status === 'QUEUED' ? 'queued' : row.errorCode === RUN_STOP_REQUESTED ? 'stopping' : 'running';
+      activity[bucket] += row._count._all;
+    }
+    return activity;
+  }
+
+  async cancelActive(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    return this.prisma.$transaction(async tx => {
+      const completedAt = new Date();
+      const queued = await tx.testRun.updateManyAndReturn({
+        where: { projectId, status: 'QUEUED' },
+        data: { status: 'CANCELED', completedAt, errorCode: RUN_CANCELED_BY_USER },
+        select: { runKey: true },
+      });
+      const runKeys = queued.flatMap(run => run.runKey ? [run.runKey] : []);
+      if (workspace.organizationId && runKeys.length) {
+        await tx.meteredRun.updateMany({
+          where: { projectId, organizationId: workspace.organizationId, runKey: { in: runKeys }, completedAt: null },
+          data: { browserSeconds: 0, completedAt },
+        });
+      }
+      const running = await tx.testRun.updateMany({
+        where: { projectId, status: 'RUNNING', OR: [{ errorCode: null }, { errorCode: { not: RUN_STOP_REQUESTED } }] },
+        data: { errorCode: RUN_STOP_REQUESTED },
+      });
+      return { queuedCanceled: queued.length, runningRequested: running.count };
+    });
   }
 
   async get(projectId: string, runId: string, workspace: Workspace) {

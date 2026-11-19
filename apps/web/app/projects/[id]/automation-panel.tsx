@@ -207,7 +207,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Generador de código Playwright TypeScript a partir de los escenarios guardados. Revisa el código antes de solicitar su ejecución."
       actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
-        {canRunSuite && runner && <button type="button" disabled={!runner.hasSuite && (busy || !canRun)} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar en runners (${ready.length})`}</button>}</>} />, header.element)}
+        {canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar en runners (${ready.length})`}</button>}</>} />, header.element)}
     {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
       <button type="button" disabled={generationDisabled} onClick={() => void prepare()}>
         <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
@@ -257,7 +257,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         {scenarios && !listError && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
       </section>
       <div className="automation-preview-column">
-        {header?.active && <AutomationRunStatus projectId={project.id} />}
+        {header?.active && <AutomationRunStatus projectId={project.id} canStop={canRunSuite} />}
         <AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} loading={generating.size > 0 || (!!activeId && activeId !== 'configuration' && !selectedSpec && !listError)} />
         {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}
         {selectedSpec?.review.length ? <p className="automation-preview-note">Pendientes detectados: {selectedSpec.review.join(' · ')}. Se incluye el código en la descarga para su revisión, pero no en la solicitud de ejecución.</p> : null}

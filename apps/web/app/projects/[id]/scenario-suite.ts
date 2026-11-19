@@ -54,7 +54,8 @@ export async function runScenarioSuite({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ environmentId, automationId: scenario.automationId, writeAuthorizationAt }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+        // Al detener la suite esperamos la respuesta de este envío antes de cancelar en el servidor.
+        signal: AbortSignal.timeout(15000),
       });
       const payload = await response.json().catch(() => ({}));
       if (response.status === 409 && payload.code === 'RUN_CONCURRENCY_LIMIT') return { kind: 'waiting' };

@@ -1,3 +1,4 @@
+import { isFinalRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { runPresentation } from './scenario-presentation';
 
 export type RunResult = {
@@ -32,7 +33,7 @@ export function resultDuration(run: ReportRun) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
 }
 export function reportStatistics(runs: ReportRun[]) {
-  const results = runs.flatMap(run => run.results);
+  const results = runs.filter(run => isFinalRunStatus(run.status)).flatMap(run => run.results);
   const counts = Object.fromEntries(Object.keys(resultLabels).map(key => [key, results.filter(result => result.status === key).length])) as Record<RunResult['status'], number>;
   const durations = results.map(result => result.durationMs).filter((value): value is number => value !== null);
   return { counts, results: results.length, rate: results.length ? 100 * counts.PASSED / results.length : null,
@@ -69,8 +70,10 @@ export function junitXml(projectId: string, runs: ReportRun[]) {
 }
 
 export function downloadRunReport(projectId: string, runs: ReportRun[], format: 'xml' | 'json') {
-  const content = format === 'xml' ? junitXml(projectId, runs) : JSON.stringify({ projectId, exportedAt: new Date().toISOString(),
-    scope: 'Ejecuciones visibles del historial disponible (máximo 100)', runs: runs.map(run => ({
+  const finalized = runs.filter(run => isFinalRunStatus(run.status));
+  if (!finalized.length) return;
+  const content = format === 'xml' ? junitXml(projectId, finalized) : JSON.stringify({ projectId, exportedAt: new Date().toISOString(),
+    scope: 'Ejecuciones finalizadas visibles del historial disponible (máximo 100)', runs: finalized.map(run => ({
       id: run.id, scenarioId: run.scenarioId, title: runTitle(run), status: run.status, environmentId: run.environmentId,
       createdAt: run.createdAt, startedAt: run.startedAt, completedAt: run.completedAt, errorCode: run.errorCode,
       targetBrowser: run.targetBrowser ?? null, targetDevice: run.targetDevice ?? null, targetProvider: run.targetProvider ?? null,

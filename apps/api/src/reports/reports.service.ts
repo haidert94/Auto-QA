@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DocumentsService } from '../documents/documents.service';
 import { IcspService } from '../icsp/icsp.service';
 import { computeIcsp } from '../icsp/icsp-calculator';
 import { PrismaService } from '../prisma.service';
+import { ACTIVE_RUN_STATUSES, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../runs/run-report-policy';
 
 @Injectable()
 export class ReportsService {
@@ -23,10 +24,15 @@ export class ReportsService {
     });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
 
-    const [{ ipa, analysis }, icspInput] = await Promise.all([
-      this.documents.report(projectId),
-      this.icsp.collect(projectId),
-    ]);
+    const active = await this.prisma.testRun.findFirst({
+      where: { projectId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      select: { id: true },
+    });
+    if (active) throw new ConflictException(REPORT_WHILE_RUNNING);
+
+    const icspInput = await this.icsp.collect(projectId, true);
+    if (!icspInput.runs.length) throw new ConflictException(REPORT_WITHOUT_RUNS);
+    const { ipa, analysis } = await this.documents.report(projectId);
     const icsp = computeIcsp(icspInput);
 
     // Mapeo de trazabilidad por requisito: lista cada escenario y el último

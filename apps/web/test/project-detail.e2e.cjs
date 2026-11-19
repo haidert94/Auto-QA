@@ -109,6 +109,8 @@ const previewRequests = [];
 const trackedRunRequests = [];
 let trackingFailures = 0;
 let activityUnavailable = false;
+let stopRequests = 0;
+let runAdmission = null;
 let runCapacity = Infinity;
 const scenarioVersion = scenario => JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
 
@@ -190,6 +192,7 @@ const api = createServer(async (request, response) => {
     if (scenario && scenarioPath === scenario.id + '/runs' && request.method === 'POST') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString()); queuedRequests.push({ scenarioId: scenario.id, ...payload });
+      if (runAdmission) await runAdmission;
       if (scenario.id === scenarioB) return send({ message: 'Cuota de ejecuciones alcanzada.' }, 403);
       if (scenarioRuns.filter(run => ['QUEUED', 'RUNNING'].includes(run.status)).length >= runCapacity) {
         return send({ code: 'RUN_CONCURRENCY_LIMIT', message: 'Alcanzaste el límite de ejecuciones simultáneas.' }, 409);
@@ -201,10 +204,27 @@ const api = createServer(async (request, response) => {
   }
   if (path === base + '/runs/activity') {
     if (activityUnavailable) return send({ message: 'Actividad no disponible.' }, 503);
+    const activityRuns = reportMode ? reportRuns : scenarioRuns;
     return send({
-      running: scenarioRuns.filter(run => run.status === 'RUNNING').length,
-      queued: scenarioRuns.filter(run => run.status === 'QUEUED').length,
+      running: activityRuns.filter(run => run.status === 'RUNNING' && run.errorCode !== 'cancel-requested').length,
+      queued: activityRuns.filter(run => run.status === 'QUEUED').length,
+      stopping: activityRuns.filter(run => run.status === 'RUNNING' && run.errorCode === 'cancel-requested').length,
     });
+  }
+  if (path === base + '/runs/cancel' && request.method === 'POST') {
+    stopRequests++;
+    let queuedCanceled = 0;
+    let runningRequested = 0;
+    for (const run of scenarioRuns) {
+      if (run.status === 'QUEUED') {
+        run.status = 'CANCELED';
+        queuedCanceled++;
+      } else if (run.status === 'RUNNING' && run.errorCode !== 'cancel-requested') {
+        run.errorCode = 'cancel-requested';
+        runningRequested++;
+      }
+    }
+    return send({ queuedCanceled, runningRequested });
   }
   if (path === base + '/runs') {
     const ids = requestUrl.searchParams.get('ids')?.split(',');
@@ -252,6 +272,9 @@ const api = createServer(async (request, response) => {
     if (request.method === 'POST') { auditPosts++; return send({ message: 'No debe iniciar auditorías en estas pruebas' }, 503); }
     return qualityAuditForbidden ? send({ message: 'Sin acceso' }, 403) : send(qualityMode ? [{ id: 'audit-1', status: 'COMPLETED', createdAt: '2026-11-18T11:00:00Z', completedAt: '2026-11-18T11:01:00Z',
       performanceScore: 94, accessibilityScore: 0, bestPracticesScore: 90, seoScore: 88, lcpMs: 2200, tbtMs: 0, cls: 0, fcpMs: 1100 }] : []);
+  }
+  if (path === base + '/report/export' && (reportMode ? reportRuns : scenarioRuns).some(run => ['QUEUED', 'RUNNING'].includes(run.status))) {
+    return send({ message: 'El reporte estará disponible cuando finalicen las ejecuciones del proyecto.' }, 409);
   }
   if (path === base + '/report/export') return qualityExportFail ? send({ message: 'Exportación no disponible' }, 503) : send({
     project: { id: project.id, name: project.name, status: project.status }, ipa, icsp: qualityIcsp, traceability: [], generatedAt: '2026-11-18T12:00:00Z',
@@ -466,6 +489,7 @@ async function verifyScenarios(page, screenshots) {
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('status')).toHaveText('La suite no se inició.');
+  await expect(dialog.getByRole('button', { name: 'Ver reporte', exact: true })).toBeDisabled();
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   scenariosFail = true;
   await page.reload();
@@ -685,10 +709,22 @@ async function verifyAutomationRunStatus(page) {
 
     activityUnavailable = false;
     await expect(status).toHaveText('0 en ejecución · 1 en cola', { timeout: 10000 });
+    const stop = indicator.getByRole('button', { name: 'Detener ejecución', exact: true });
+    await expect(stop).toBeEnabled();
     queued.status = 'RUNNING';
-    await expect(status).toHaveText('1 en ejecución · 0 en cola', { timeout: 10000 });
-    completeFixtureRun(queued);
+    const pending = { ...queued, id: randomUUID(), status: 'QUEUED' };
+    scenarioRuns.push(pending);
+    await expect(status).toHaveText('1 en ejecución · 1 en cola', { timeout: 10000 });
+    const initialStops = stopRequests;
+    await stop.click();
+    await expect(status).toHaveText('0 en ejecución · 0 en cola · 1 deteniéndose');
+    await expect(indicator.getByRole('button', { name: 'Deteniendo…' })).toBeDisabled();
+    assert.equal(stopRequests, initialStops + 1);
+    assert.equal(pending.status, 'CANCELED');
+    assert.equal(queued.status, 'RUNNING');
+    queued.status = 'CANCELED';
     await expect(status).toHaveText('Sin ejecuciones en curso ni en cola.', { timeout: 10000 });
+    await expect(stop).toHaveCount(0);
   } finally {
     activityUnavailable = false;
     scenarioRuns.length = initialRuns;
@@ -696,7 +732,46 @@ async function verifyAutomationRunStatus(page) {
 
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
-  console.log('PASS el indicador sobre el visor muestra consulta fallida, cola, ejecución y ausencia de actividad.');
+  console.log('PASS el indicador cancela la cola y muestra Deteniendo hasta que el runner confirma.');
+}
+
+async function verifyStopSuiteDuringSubmission(page) {
+  const initialQueues = queuedRequests.length;
+  const initialRuns = scenarioRuns.length;
+  const initialStops = stopRequests;
+  let release;
+  try {
+    scenarios.slice(0, 2).forEach(persistFixtureSpec);
+    runAdmission = new Promise(resolve => { release = resolve; });
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true }).click();
+    const suite = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
+    await suite.getByRole('checkbox').check();
+    await suite.getByRole('button', { name: 'Confirmar ejecución' }).click();
+    await expect.poll(() => queuedRequests.length - initialQueues).toBe(1);
+    await suite.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    const indicator = page.getByRole('region', { name: 'Estado de ejecución', exact: true });
+    await indicator.getByRole('button', { name: 'Detener ejecución', exact: true }).click();
+    await expect(indicator.getByRole('button', { name: 'Deteniendo…' })).toBeDisabled();
+    assert.equal(stopRequests, initialStops);
+    release();
+
+    await expect(indicator.getByRole('button', { name: 'Deteniendo…' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true })).toBeEnabled();
+    assert.equal(stopRequests, initialStops + 1);
+    assert.equal(queuedRequests.length - initialQueues, 1);
+    assert.equal(scenarioRuns[initialRuns].status, 'CANCELED');
+  } finally {
+    release?.();
+    runAdmission = null;
+    savedPlaywright.delete(scenarioA);
+    savedPlaywright.delete(scenarioB);
+    queuedRequests.length = initialQueues;
+    scenarioRuns.length = initialRuns;
+  }
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS detener espera el envío en curso y cancela antes de enviar más escenarios.');
 }
 
 async function verifyAutomationToolbar(page) {
@@ -1026,6 +1101,24 @@ async function verifyRunReport(page, screenshots) {
   await expect(section.getByRole('table', { name: 'Matriz de estados por escenario', exact: true }).getByRole('row')).toHaveCount(3);
   await views.getByRole('button', { name: 'Ejecuciones', exact: true }).click();
   await page.getByText('Exportar resultados', { exact: true }).click();
+  const xmlButton = page.getByRole('button', { name: 'Exportar JUnit XML', exact: true });
+  const jsonButton = page.getByRole('button', { name: 'Exportar JSON', exact: true });
+  await expect(xmlButton).toBeDisabled();
+  await expect(jsonButton).toBeDisabled();
+  await expect(page.getByText('El reporte estará disponible cuando finalicen las ejecuciones del proyecto.')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Abrir reporte consolidado/ })).toHaveCount(0);
+  const consolidated = await page.context().newPage();
+  try {
+    await consolidated.goto(new URL('/projects/' + projectId + '/report', page.url()).href);
+    await expect(consolidated.getByRole('alert').filter({ hasText: 'El reporte estará disponible cuando finalicen las ejecuciones del proyecto.' })).toBeVisible();
+    await expect(consolidated.getByRole('link', { name: 'Descargar JSON' })).toHaveCount(0);
+  } finally {
+    await consolidated.close();
+  }
+  reportRuns[4].status = 'CANCELED';
+  await expect(xmlButton).toBeDisabled();
+  reportRuns[5].status = 'CANCELED';
+  await expect(xmlButton).toBeEnabled({ timeout: 10000 });
   const xmlDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exportar JUnit XML', exact: true }).click();
   const xmlFile = await xmlDownload;
@@ -1042,7 +1135,9 @@ async function verifyRunReport(page, screenshots) {
   await page.getByRole('button', { name: 'Exportar JSON', exact: true }).click();
   const jsonFile = await jsonDownload;
   const jsonText = await readFile(await jsonFile.path(), 'utf8'); const json = JSON.parse(jsonText);
-  assert.equal(json.runs.length, 7); assert.ok(!jsonText.includes('private-internal-key'));
+  assert.equal(json.runs.length, 7);
+  assert.ok(json.runs.every(run => ['COMPLETED', 'FAILED', 'CANCELED'].includes(run.status)));
+  assert.ok(!jsonText.includes('private-internal-key'));
   for (const width of [1920, 1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
@@ -1072,6 +1167,8 @@ async function verifyRunReport(page, screenshots) {
   const saved = reportRuns.splice(0);
   await section.getByRole('button', { name: 'Reintentar reporte', exact: true }).click();
   await expect(section.getByRole('heading', { name: 'Aún no hay ejecuciones registradas', exact: true })).toBeVisible();
+  await page.getByText('Exportar resultados', { exact: true }).click();
+  await expect(jsonButton).toBeDisabled();
   reportRuns.push(...saved); reportMode = false;
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   console.log('PASS reporte: métricas y denominadores, duración cero/ausente, selector/filtros, error seguro, trazas autorizadas, JUnit XML válido, JSON sin claves privadas, matriz/cronología, móvil, permisos y reintentos. API simulada.');
@@ -1111,7 +1208,7 @@ async function verifyQuality(page, screenshots) {
   assert.ok(!text.includes('synthetic-private')); assert.ok(!text.includes('secretReference'));
   await page.evaluate(() => { window.print = () => { window.autoqaPrinted = true; }; });
   await page.getByRole('button', { name: 'Imprimir / Guardar como PDF', exact: true }).click();
-  assert.equal(await page.evaluate(() => window.autoqaPrinted), true);
+  await expect.poll(() => page.evaluate(() => window.autoqaPrinted)).toBe(true);
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.app-nav')).toBeHidden();
   await expect(page.locator('.project-tabs')).toBeHidden();
@@ -1210,6 +1307,7 @@ async function run() {
     await verifyWritableExecution(page);
     await verifySuiteProgress(page);
     await verifyAutomationRunStatus(page);
+    await verifyStopSuiteDuringSubmission(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();

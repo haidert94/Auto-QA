@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateRunDto } from './dto/create-run.dto';
@@ -30,6 +30,13 @@ export class RunsController {
   @RequiresPlanCapability('BROWSER_TESTS')
   activity(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
     return this.service.activity(projectId, workspace);
+  }
+
+  @Post('projects/:projectId/runs/cancel')
+  @HttpCode(200)
+  @RequiresRole('EDITOR')
+  cancel(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.cancelActive(projectId, workspace);
   }
 
   @Get('projects/:projectId/runs/:runId')

@@ -347,7 +347,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
-        {canRun && runner && <button type="button" disabled={!runner.hasSuite && (!runnable || !suiteReady || !!listError)} onClick={() => runner.open(suite)}>
+        {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
         </button>}
       </>} />, header.element)}
@@ -380,7 +380,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
       : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
-        hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun ? runner?.open : undefined}
+        hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
