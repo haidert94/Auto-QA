@@ -101,7 +101,7 @@ export class AutomationService {
     }
 
     if (workspace.organizationId) {
-      const available = await this.capabilitiesForOrg(workspace.organizationId);
+      const { available } = await this.capabilitiesForOrg(workspace.organizationId);
       const blocked = dto.types.filter(t => !available.has(TEST_TYPE_META[t].capability));
       if (blocked.length) {
         throw new ForbiddenException({
@@ -128,11 +128,15 @@ export class AutomationService {
   // La UI lo usa para pintar los checkboxes bloqueados.
   async availableTypes(workspace: Workspace) {
     if (!workspace.organizationId) {
+      // Legacy sin org: se habilita todo para no bloquear flujos sueltos.
       return Object.entries(TEST_TYPE_META).map(([code, meta]) => ({
         code: code as AutomationTestType, label: meta.label, description: meta.description, available: true,
       }));
     }
-    const available = await this.capabilitiesForOrg(workspace.organizationId);
+    const { available, planCode } = await this.capabilitiesForOrg(workspace.organizationId);
+    // El planCode ayuda al cliente a explicar POR QUÉ ningún tipo está
+    // habilitado cuando pasa (ej. "org sin suscripción").
+    console.log(`[automation] availableTypes org=${workspace.organizationId} plan=${planCode ?? 'none'} caps=${available.size}`);
     return Object.entries(TEST_TYPE_META).map(([code, meta]) => ({
       code: code as AutomationTestType,
       label: meta.label,
@@ -141,15 +145,16 @@ export class AutomationService {
     }));
   }
 
-  private async capabilitiesForOrg(organizationId: string): Promise<Set<string>> {
+  private async capabilitiesForOrg(organizationId: string): Promise<{ available: Set<string>; planCode: string | null }> {
     const subscription = await this.prisma.subscription.findUnique({
       where: { organizationId },
       include: { plan: { include: { capabilities: true } } },
     });
     const caps = subscription?.plan?.capabilities ?? [];
-    return new Set(
-      caps.filter(c => c.availability !== 'NOT_INCLUDED').map(c => c.code as string),
-    );
+    return {
+      available: new Set(caps.filter(c => c.availability !== 'NOT_INCLUDED').map(c => c.code as string)),
+      planCode: subscription?.plan?.code ?? null,
+    };
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {
