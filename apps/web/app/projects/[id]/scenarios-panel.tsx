@@ -349,82 +349,12 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {runSelection && <ScenarioRunDialog projectId={projectId} scenarios={runSelection} environments={environments}
       onClose={() => setRunSelection(null)} onQueued={() => { void loadRuns(); void load(); }} />}
 
-    {(canSuggest || canGenerate) && <details className="scenario-ai-tools"><summary><Sparkles size={14} />Generar y sugerir escenarios con IA</summary>
-    <section className="generator">
-      <h3>Generar escenarios con IA</h3>
-      {typesError
-        ? <p className="error" role="alert">{typesError}</p>
-        : types === null
-          ? <p className="muted">Cargando tipos disponibles…</p>
-          : types.length === 0
-            ? <p className="muted">No hay tipos de prueba habilitados para este plan.</p>
-            : <>
-          <ul className="type-select">
-            {types.map(t => <li key={t.code} className={t.available ? '' : 'locked'}>
-              <label title={t.available ? t.description : 'Requiere un plan superior'}>
-                <input type="checkbox" disabled={!t.available}
-                  checked={selectedTypes.has(t.code)}
-                  onChange={() => toggleType(t.code)} />
-                <span>
-                  <strong>{t.label}</strong>
-                  {!t.available && <span className="badge badge-canceled" style={{ marginLeft: 6 }}>Requiere plan superior</span>}
-                  <br/>
-                  <small className="muted">{t.description}</small>
-                </span>
-              </label>
-            </li>)}
-          </ul>
-          <div className="actions">
-            <button type="button" onClick={generate} disabled={generating || selectedTypes.size === 0}>
-              {generating ? 'Trabajando…' : 'Generar escenarios'}
-            </button>
-            {!projectBaseUrl && <small className="muted">
-              Registra un entorno con URL base antes de generar.
-            </small>}
-          </div>
-          {generateNotice && <p className="muted" role="status">{generateNotice}</p>}
-          <p className="muted"><small>
-            Al pulsar, AutoQA analiza los documentos del proyecto (si no se ha hecho ya) y luego
-            los agentes generan escenarios para los tipos marcados. Puede tardar unos minutos.
-          </small></p>
-        </>}
-    </section>
-
-    <label>Requisito para sugerencias<select value={requirementId} onChange={event => setRequirementId(event.target.value)}>
-      <option value="">Selecciona un requisito</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>{requirement.title}</option>)}
-    </select></label>
-    <div className="actions">
-      <button type="button" className="secondary" onClick={suggest} disabled={suggesting || !requirementId}>
-        {suggesting ? 'Pensando…' : 'Sugerir desde requisito'}
-      </button>
-    </div>
-
-    {suggestions && <section className="ai-suggestions">
-      <header>
-        <strong>Propuesta IA ({suggestions.length})</strong>
-        <span className="muted">{suggestionMeta?.model}{suggestionMeta?.usedFallback ? ' · fallback (plan sin IA)' : ''}</span>
-        <button type="button" className="secondary" onClick={() => setSuggestions(null)}>Descartar todas</button>
-      </header>
-      {suggestions.length === 0
-        ? <p className="muted">La IA no devolvió sugerencias utilizables para este requisito.</p>
-        : <ul className="ai-suggestions-list">
-          {suggestions.map((s, i) => <li key={i}>
-            <div className="suggestion-head">
-              <strong>{s.title}</strong>
-              <button type="button" onClick={() => createFromSuggestion(s)} disabled={busy}>Crear este</button>
-            </div>
-            {s.expectedResult && <p className="muted">Esperado: {s.expectedResult}</p>}
-            <ol className="suggestion-steps">
-              {s.steps.map((step, j) => <li key={j}>
-                <code>{step.action}</code>
-                {step.data && <span className="muted"> · dato: {step.data}</span>}
-              </li>)}
-            </ol>
-          </li>)}
-        </ul>}
-    </section>}
-
-    </details>}
+    {/* El bloque "Generar y sugerir escenarios con IA" se removió: ahora
+       el CTA de arriba dispara la generación con todos los tipos del plan
+       y no requiere marcar cada uno. El selector de "Sugerir desde
+       requisito" también sale: duplicaba una ruta IA parcial que el
+       pipeline del CTA ya cubre. Si en el futuro hace falta un modo
+       avanzado, se reintroduce como vista aparte. */}
   </section>;
 }
 
