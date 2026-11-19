@@ -2,6 +2,7 @@
 // this suite does not claim to validate persistence, SMTP, AI or test runners.
 const assert = require('node:assert/strict');
 const { createServer } = require('node:http');
+const { randomUUID } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { resolve, join } = require('node:path');
 const { mkdir, readFile } = require('node:fs/promises');
@@ -103,6 +104,16 @@ const reportRuns = ['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED', 'QUEUED', 'RUNNING
     errorMessage: status === 'FAILED' ? reportError : null, evidenceKey: i === 0 ? 'private-internal-key' : null }] : [],
 }));
 
+const savedPlaywright = new Map();
+const previewRequests = [];
+const scenarioVersion = scenario => JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
+
+function persistFixtureSpec(scenario) {
+  const saved = { automationId: randomUUID(), version: scenarioVersion(scenario) };
+  savedPlaywright.set(scenario.id, saved);
+  return saved.automationId;
+}
+
 function fixtureSpec(scenario) {
   const steps = (scenario.steps ?? []).flatMap(step => {
     const value = step.action.split(':').slice(1).join(':').trim();
@@ -111,7 +122,9 @@ function fixtureSpec(scenario) {
     if (step.action.startsWith('expect-text:')) return [`  await expect(page.getByText(${JSON.stringify(value)})).toBeVisible();`];
     return ['  // TODO: revisar acción no reconocida'];
   });
+  const saved = savedPlaywright.get(scenario.id);
   return { filename: scenario.id === scenarioB ? '../../payment-declined.spec.ts' : `${scenario.id.slice(0, 8)}-checkout.spec.ts`,
+    automationId: saved?.version === scenarioVersion(scenario) ? saved.automationId : null,
     code: ["import { expect, test } from '@playwright/test';", '', `// Escenario ${scenario.id}`,
       ...(scenario.id === scenarioB ? ['// <img src=x onerror="window.autoqaInjected=true">'] : []), `test(${JSON.stringify(scenario.title)}, async ({ page }) => {`,
       ...(steps.length ? steps : ['  // TODO: define los pasos del escenario en AutoQA.']), '});', ''].join('\n') };
@@ -137,7 +150,10 @@ const api = createServer(async (request, response) => {
       const created = { ...payload, id: '31000004-0000-4000-8000-000000000004', tags: [], requirement: null, _count: { results: 0 } };
       scenarios.push(created); return send(created, 201);
     }
-    return scenariosFail ? send({ message: 'Consulta de escenarios fallida' }, 503) : send(scenarios);
+    return scenariosFail ? send({ message: 'Consulta de escenarios fallida' }, 503) : send(scenarios.map(scenario => {
+      const { filename, automationId } = fixtureSpec(scenario);
+      return { ...scenario, playwright: automationId ? { filename, automationId } : null };
+    }));
   }
   const scenarioPath = path.slice((base + '/scenarios/').length);
   if (path.startsWith(base + '/scenarios/')) {
@@ -145,7 +161,12 @@ const api = createServer(async (request, response) => {
     if (scenario && scenarioPath === scenario.id + '/playwright') {
       if (scenario.id === scenarioB && specFailure) return send({ message: 'Generador temporalmente no disponible.' }, 503);
       if (scenario.id === scenarioB && malformedSpec) return send({ spec: 'contrato incorrecto' });
-      return send(fixtureSpec(scenario));
+      if (request.method === 'GET') previewRequests.push(scenario.id);
+      const spec = fixtureSpec(scenario);
+      if (request.method === 'POST' && !spec.automationId && spec.code.includes('await expect(')) {
+        spec.automationId = persistFixtureSpec(scenario);
+      }
+      return send(spec);
     }
     if (scenario && scenarioPath === scenario.id && request.method === 'PATCH') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
@@ -374,7 +395,7 @@ async function verifyScenarios(page, screenshots) {
   await expect(automation.locator('.automation-pick-list > li')).toHaveCount(4);
   await automation.getByRole('checkbox', { name: 'Seleccionar visibles (4)', exact: true }).check();
   await automation.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
-  await expect(automation.getByText('4 archivos generados. Revisa los pendientes antes de ejecutar.', { exact: true })).toBeVisible();
+  await expect(automation.getByText('2 con código guardado · 2 en revisión.', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Escenarios (4)', exact: true }).click();
   await expect(execute).toBeEnabled();
   const pendingScenario = list.getByRole('checkbox', { name: `Seleccionar ${scenarios[2].title}`, exact: true });
@@ -391,7 +412,7 @@ async function verifyScenarios(page, screenshots) {
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText(/En cola ·/)).toBeVisible();
-  assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id }]);
+  assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id, automationId: fixtureSpec(scenarios[0]).automationId }]);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await expect(list.locator('.scenario-result').filter({ hasText: 'Pago sandbox editado' }).getByText('En cola', { exact: true })).toBeVisible();
   await list.getByRole('checkbox', { name: 'Seleccionar Pago sandbox editado', exact: true }).uncheck();
@@ -471,7 +492,62 @@ async function verifyManualScenario(page) {
   await page.reload();
 }
 
+async function verifySavedAutomationAfterReload(page) {
+  const initialQueues = queuedRequests.length;
+  const initialRuns = scenarioRuns.length;
+  const originalSecondTitle = scenarios[1].title;
+  const section = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
+  const states = section.getByRole('group', { name: 'Filtrar por estado del código' });
+  const rows = section.locator('.automation-pick-list > li');
+  const second = rows.filter({ hasText: scenarios[1].title });
+  const runner = page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true });
+
+  try {
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await second.getByRole('button', { name: scenarios[1].title, exact: true }).click();
+    await expect(section.locator('.automation-source')).toContainText(scenarios[1].title);
+    await expect(second.getByText('Pendiente', { exact: true })).toBeVisible();
+    await expect(states.getByRole('button', { name: 'Generado (0)', exact: true })).toBeVisible();
+    await rows.nth(2).getByRole('checkbox').uncheck();
+    await section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true }).click();
+    await expect(runner).toBeEnabled();
+    await expect(section.getByText('2 con código guardado.', { exact: true })).toBeVisible();
+
+    const requestStart = previewRequests.length;
+    await page.reload();
+    await states.getByRole('button', { name: 'Generado (2)', exact: true }).click();
+    await expect(rows).toHaveCount(2);
+    await expect(second.getByText('Generado', { exact: true })).toBeVisible();
+    await expect(second.getByText(/payment-declined\.spec\.ts$/)).toBeVisible();
+    assert.ok(!previewRequests.slice(requestStart).includes(scenarioB));
+    await runner.click();
+    const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
+    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('button', { name: 'Confirmar ejecución' }).click();
+    await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
+    assert.deepEqual(queuedRequests.slice(initialQueues).map(request => request.automationId),
+      scenarios.slice(0, 2).map(scenario => fixtureSpec(scenario).automationId));
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+
+    scenarios[1].title += ' · editado';
+    await section.getByRole('button', { name: 'Actualizar escenarios de automatización' }).click();
+    await expect(states.getByRole('button', { name: 'Generado (1)', exact: true })).toBeVisible();
+    await expect(rows).toHaveCount(1);
+    await expect(states.getByRole('button', { name: 'Pendiente (2)', exact: true })).toBeVisible();
+  } finally {
+    savedPlaywright.delete(scenarioA);
+    savedPlaywright.delete(scenarioB);
+    scenarios[1].title = originalSecondTitle;
+    queuedRequests.length = initialQueues;
+    scenarioRuns.length = initialRuns;
+  }
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS los estados de código guardado se mantienen al recargar y al filtrar sin abrir cada caso.');
+}
+
 async function verifyAutomationToolbar(page) {
+  persistFixtureSpec(scenarios[0]);
   await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
   const section = page.getByRole('region', { name: 'Automatización Playwright' });
   const toolbar = section.getByRole('region', { name: 'Buscar y filtrar automatización' });
@@ -524,10 +600,12 @@ async function verifyAutomationToolbar(page) {
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
+  savedPlaywright.delete(scenarioA);
   console.log('PASS filtros de automatización: búsqueda por archivo, estado, etiquetas y selección visible.');
 }
 
 async function verifyWritableExecution(page) {
+  const automationId = persistFixtureSpec(scenarios[0]);
   const originalProject = project;
   const originalSaveCount = saveCount;
   const initialQueues = queuedRequests.length;
@@ -560,9 +638,11 @@ async function verifyWritableExecution(page) {
       scenarioId: scenarioA,
       environmentId: environment.id,
       writeAuthorizationAt: project.environments[0].authorizedAt,
+      automationId,
     });
     await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   } finally {
+    savedPlaywright.delete(scenarioA);
     project = originalProject;
     saveCount = originalSaveCount;
     queuedRequests.length = initialQueues;
@@ -589,7 +669,7 @@ async function verifyAutomation(page, screenshots) {
   const workspaceBounds = await section.locator('.automation-workspace').boundingBox();
   assert.ok(cardBounds.y + cardBounds.height <= workspaceBounds.y, 'El bloque de generación queda encima de la lista y el visor.');
   await generate.click();
-  await expect(section.getByText('4 archivos generados. Revisa los pendientes antes de ejecutar.', { exact: true })).toBeVisible();
+  await expect(section.getByText('2 con código guardado · 2 en revisión.', { exact: true })).toBeVisible();
   await expect(section.locator('.automation-generation-state').getByText('Generado', { exact: true })).toHaveCount(2);
   await expect(section.locator('.automation-generation-state').getByText('Requiere revisión', { exact: true })).toHaveCount(2);
   assert.equal(queuedRequests.length, initialQueues, 'Generar y visualizar no encola ejecuciones.');
@@ -945,6 +1025,7 @@ async function run() {
     await page.goto(`${website}/projects/${projectId}`);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);
+    await verifySavedAutomationAfterReload(page);
     await verifyAutomationToolbar(page);
     await verifyWritableExecution(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();

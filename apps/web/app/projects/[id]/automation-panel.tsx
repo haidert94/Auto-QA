@@ -29,17 +29,17 @@ const AUTOMATION_STATUS_LABELS = {
 
 type AutomationFilter = keyof typeof AUTOMATION_STATUS_LABELS;
 
-function codeStatus(spec: GeneratedSpec | undefined, generating: boolean): Exclude<AutomationFilter, 'all'> {
+function codeStatus(scenario: ScenarioListItem, spec: GeneratedSpec | undefined, generating: boolean): Exclude<AutomationFilter, 'all'> {
   if (generating) return 'generating';
-  if (!spec) return 'pending';
-  if (spec.error) return 'error';
-  return spec.review.length ? 'review' : 'generated';
+  if (spec?.automationId || scenario.playwright) return 'generated';
+  if (spec?.error) return 'error';
+  return spec?.review.length ? 'review' : 'pending';
 }
 
 function reviewCode(scenario: ScenarioListItem, code: string) {
   const reasons = [];
   if (!scenario.steps?.length) reasons.push('Sin pasos definidos');
-  if (/\bTODO\b/.test(code)) reasons.push('Contiene pasos por completar');
+  if (/^\s*\/\/ TODO\b/m.test(code)) reasons.push('Contiene pasos por completar');
   const executable = code.split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
   if (!/\bexpect\s*\(/.test(executable)) reasons.push('No se detectan aserciones activas');
   return reasons;
@@ -83,7 +83,12 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         if (controller.signal.aborted) return;
         const firstLoad = listRef.current.length === 0;
         listRef.current = list;
-        const current = Object.fromEntries(Object.entries(specsRef.current).filter(([id, spec]) => list.some(item => item.id === id && scenarioSpecSignature(item) === spec.signature)));
+        const current = Object.fromEntries(list.flatMap(scenario => {
+          const spec = specsRef.current[scenario.id];
+          if (!spec || spec.error || spec.signature !== scenarioSpecSignature(scenario)
+            || (spec.automationId ?? null) !== (scenario.playwright?.automationId ?? null)) return [];
+          return [[scenario.id, spec]];
+        }));
         specsRef.current = current; setSpecs?.(current);
         setSelected(previous => new Set(list.filter(item => firstLoad || previous.has(item.id)).map(item => item.id)));
         setScenarios(list);
@@ -99,10 +104,10 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     if (cached?.signature === currentSignature && (mode === 'preview' || (!cached.error && (!useAgent || cached.automationId)))) {
       return Promise.resolve(cached);
     }
-    const requestKey = scenario.id + ':' + useAgent;
+    const requestKey = JSON.stringify([scenario.id, currentSignature, scenario.playwright?.automationId, useAgent]);
     const pending = requests.current.get(requestKey);
     if (pending) return pending;
-    setGenerating(previous => new Set(previous).add(scenario.id));
+    if (useAgent) setGenerating(previous => new Set(previous).add(scenario.id));
     const task = (async () => {
       let result: GeneratedSpec = { scenarioId: scenario.id, title: scenario.title, filename: '', code: '', signature: currentSignature, review: [] };
       try {
@@ -113,16 +118,21 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message ?? 'No se pudo generar este archivo.');
         if (typeof payload.code !== 'string' || !payload.code.trim() || typeof payload.filename !== 'string') throw new Error('La API no devolvió un archivo de código válido.');
+        const automationId = typeof payload.automationId === 'string' ? payload.automationId : null;
+        const review = reviewCode(scenario, payload.code);
+        if (useAgent && !automationId && !review.length) review.push('La automatización no se guardó');
         result = {
           ...result,
           code: payload.code,
           filename: specFilename(payload.filename, scenario.id),
-          review: reviewCode(scenario, payload.code),
-          automationId: typeof payload.automationId === 'string' || payload.automationId === null ? payload.automationId : undefined,
+          review,
+          automationId,
           notice: typeof payload.notice === 'string' ? payload.notice : undefined,
         };
       } catch (reason) { result.error = reason instanceof Error ? reason.message : 'No se pudo generar este archivo.'; }
-      if (mounted.current && listRef.current.some(item => item.id === scenario.id && scenarioSpecSignature(item) === currentSignature)) {
+      const latest = listRef.current.find(item => item.id === scenario.id);
+      if (mounted.current && latest && scenarioSpecSignature(latest) === currentSignature
+        && (useAgent || latest.playwright?.automationId === scenario.playwright?.automationId)) {
         const current = specsRef.current[scenario.id];
         if (useAgent || !current?.automationId || current.signature !== currentSignature) {
           specsRef.current = { ...specsRef.current, [scenario.id]: result };
@@ -134,7 +144,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
       return result;
     })().finally(() => {
       requests.current.delete(requestKey);
-      if (mounted.current && !requests.current.has(scenario.id + ':' + String(!useAgent))) {
+      if (mounted.current && useAgent) {
         setGenerating(previous => { const next = new Set(previous); next.delete(scenario.id); return next; });
       }
     });
@@ -151,19 +161,22 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const items = scenarios ?? [];
   const statusCounts = { all: items.length, pending: 0, generating: 0, generated: 0, review: 0, error: 0 };
   const normalized = query.trim().toLocaleLowerCase('es');
-  const filtered = items.map(scenario => {
+  const rows = items.map(scenario => {
     const spec = specs[scenario.id];
-    const status = codeStatus(spec, generating.has(scenario.id));
+    const status = codeStatus(scenario, spec, generating.has(scenario.id));
+    const filename = spec && !spec.error ? spec.filename : scenario.playwright?.filename;
+    const path = filename ? specPath({ scenarioId: scenario.id, filename }) : '';
     statusCounts[status]++;
-    return { scenario, spec, status };
-  }).filter(({ scenario, spec, status }) => !listError
+    return { scenario, spec, status, path };
+  });
+  const filtered = rows.filter(({ scenario, path, status }) => !listError
     && (statusFilter === 'all' || statusFilter === status)
     && (!tag || scenario.tags?.includes(tag))
-    && matchesScenarioQuery(scenario, normalized, spec && !spec.error ? specPath(spec) : ''));
+    && matchesScenarioQuery(scenario, normalized, path));
   const { visible, results, resetPage, pagination } = useScenarioPagination(filtered);
   const selectedScenarios = items.filter(scenario => selected.has(scenario.id));
   const generated = (scenarios ?? []).map(scenario => specs[scenario.id]).filter((spec): spec is GeneratedSpec => !!spec);
-  const ready = selectedScenarios.filter(scenario => specs[scenario.id] && !specs[scenario.id].error && !specs[scenario.id].review.length);
+  const ready = rows.filter(({ scenario, status }) => selected.has(scenario.id) && status === 'generated').map(({ scenario }) => scenario);
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError;
 
   function toggle(id: string) { setSelected(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
@@ -176,8 +189,14 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
       if (results.some(spec => spec.error)) {
         setError('Algunos archivos no se pudieron generar. Revisa los errores por escenario; no se descargó un ZIP incompleto.'); return;
       }
-      if (download) await downloadSpecs(project.name, results);
-      setNotice(download ? `ZIP preparado con ${results.length} archivos .spec.ts, configuración y notas de revisión.` : `${results.length} archivos generados. Revisa los pendientes antes de ejecutar.`);
+      if (download) {
+        await downloadSpecs(project.name, results);
+        setNotice(`ZIP preparado con ${results.length} archivos .spec.ts, configuración y notas de revisión.`);
+      } else {
+        const saved = results.filter(spec => spec.automationId).length;
+        const review = results.length - saved;
+        setNotice(`${saved} con código guardado${review ? ` · ${review} en revisión` : ''}.`);
+      }
     } catch { setError('No se pudo preparar el código. Vuelve a intentarlo.'); }
     finally { if (mounted.current) setBusy(false); }
   }
@@ -211,7 +230,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     <div className="automation-workspace">
       <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
         <header><div><h2 id="automation-scenarios-heading">Escenarios para Playwright</h2>
-          <p>{selected.size} seleccionados · {ready.length} sin pendientes detectados</p></div>
+          <p>{selected.size} seleccionados · {ready.length} con código guardado</p></div>
           <div className="automation-scenarios__tools">
             <span className="automation-suite-count">Suite {selected.size}/{scenarios?.length ?? '…'}</span>
             <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button>
@@ -222,13 +241,13 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
           : !scenarios.length ? <div className="automation-list-message"><FileCode2 size={25} /><h3>Aún no hay escenarios para automatizar</h3><p>Crea escenarios y define sus pasos para preparar código.</p><Link href="#escenarios">Ir a Escenarios →</Link></div>
           : !visible.length ? <div className="automation-list-message"><h3>No hay coincidencias</h3>
             <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setStatusFilter('all'); resetPage(); }}>Limpiar filtros</button></div>
-          : <ul ref={results} className="automation-pick-list" tabIndex={-1} aria-label="Escenarios para Playwright">{visible.map(({ scenario, spec, status }) => {
+          : <ul ref={results} className="automation-pick-list" tabIndex={-1} aria-label="Escenarios para Playwright">{visible.map(({ scenario, spec, status, path }) => {
             return <li key={scenario.id} className={activeId === scenario.id ? 'automation-pick--active' : ''}>
               <input type="checkbox" checked={selected.has(scenario.id)} disabled={busy} aria-label={`Automatizar ${scenario.title}`} onChange={() => toggle(scenario.id)} />
               <div><div className="automation-pick-meta"><code title={scenario.id}>{scenario.id.slice(0, 8)}</code>{scenario.tags?.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}
-                <span className={`automation-generation-state${spec?.error ? ' is-error' : spec?.review.length ? ' is-review' : spec ? ' is-generated' : ''}`}>{AUTOMATION_STATUS_LABELS[status]}</span></div>
+                <span className={`automation-generation-state${status === 'error' ? ' is-error' : status === 'review' ? ' is-review' : status === 'generated' ? ' is-generated' : ''}`}>{AUTOMATION_STATUS_LABELS[status]}</span></div>
                 <h3><button type="button" aria-pressed={activeId === scenario.id} onClick={() => setActiveId(scenario.id)}>{scenario.title}</button></h3>
-                <p className="automation-pick-path" title={spec && !spec.error ? specPath(spec) : undefined}>{spec && !spec.error ? specPath(spec) : 'Código pendiente de generación'}</p>
+                <p className="automation-pick-path" title={path || undefined}>{path || (status === 'error' ? 'Código no disponible' : 'Código pendiente de generación')}</p>
                 {spec?.error && <p className="error" role="alert">{spec.error}</p>}
                 {spec?.notice && <p className="automation-review-reasons">{spec.notice}</p>}
                 {spec?.review.length ? <p className="automation-review-reasons">{spec.review.join(' · ')}</p> : null}
@@ -237,7 +256,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
           })}</ul>}
         {scenarios && !listError && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
       </section>
-      <div className="automation-preview-column"><AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} generating={generating.size > 0} />
+      <div className="automation-preview-column"><AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} loading={generating.size > 0 || (!!activeId && activeId !== 'configuration' && !selectedSpec && !listError)} />
         {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}
         {selectedSpec?.review.length ? <p className="automation-preview-note">Pendientes detectados: {selectedSpec.review.join(' · ')}. Se incluye el código en la descarga para su revisión, pero no en la solicitud de ejecución.</p> : null}
         {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}

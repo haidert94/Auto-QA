@@ -23,7 +23,7 @@ export function specFilename(filename: string, id: string) {
   return safe.endsWith('.spec.ts') && safe.length > 8 ? safe : `${id.replace(/[^a-zA-Z0-9_-]/g, '')}.spec.ts`;
 }
 
-export function specPath(spec: GeneratedSpec) {
+export function specPath(spec: Pick<GeneratedSpec, 'filename' | 'scenarioId'>) {
   return `tests/${spec.scenarioId.replace(/[^a-zA-Z0-9_-]/g, '')}/${specFilename(spec.filename, spec.scenarioId)}`;
 }
 

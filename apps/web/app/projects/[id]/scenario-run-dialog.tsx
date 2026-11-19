@@ -27,9 +27,10 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, specs, o
     const next = [];
     for (const scenario of scenarios) {
       try {
+        const automationId = specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null;
         const response = await fetch(`/api/projects/${projectId}/scenarios/${scenario.id}/runs`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            environmentId, automationId: specs?.[scenario.id]?.automationId,
+            environmentId, automationId,
             writeAuthorizationAt: allowsWrites ? environment.authorizedAt : undefined,
           }),
           signal: AbortSignal.timeout(15000),

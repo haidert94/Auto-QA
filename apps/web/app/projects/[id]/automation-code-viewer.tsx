@@ -10,8 +10,8 @@ function Highlight({ text }: { text: string }) {
     : /^(import|from|const|let|async|await|test|expect|export|default|return)$/.test(part) ? 'code-keyword' : undefined}>{part}</span>)}</>;
 }
 
-export function AutomationCodeViewer({ specs, activeId, onSelect, generating }: {
-  specs: GeneratedSpec[]; activeId: string | null; onSelect: (id: string) => void; generating: boolean;
+export function AutomationCodeViewer({ specs, activeId, onSelect, loading }: {
+  specs: GeneratedSpec[]; activeId: string | null; onSelect: (id: string) => void; loading: boolean;
 }) {
   const editor = useRef<HTMLElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -65,7 +65,7 @@ export function AutomationCodeViewer({ specs, activeId, onSelect, generating }: 
       <pre className="automation-source"><code>{active.code.split('\n').map((line, i) => <span className="automation-code-line" key={i}>
         <span className="automation-line-number" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><span><Highlight text={line || ' '} /></span>
       </span>)}</code></pre>
-    </div> : <div className="automation-code-empty"><FileCode2 size={32} /><h3>{generating ? 'Generando código…' : 'Prepara tus escenarios para Playwright'}</h3>
+    </div> : <div className="automation-code-empty"><FileCode2 size={32} /><h3>{loading ? 'Cargando código…' : 'Prepara tus escenarios para Playwright'}</h3>
       <p>Selecciona un escenario para consultar su código, o genera los seleccionados.</p></div>}
     <footer className="automation-editor__footer"><span>{active ? `${active.code.split('\n').length} líneas · ${active.filename}` : 'Sin archivo generado'}</span>
       <span role="status">{notice || 'Código generado · compilación y ejecución no verificadas'}</span></footer>

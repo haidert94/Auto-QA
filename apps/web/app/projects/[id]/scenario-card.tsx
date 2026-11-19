@@ -15,6 +15,7 @@ export type ScenarioListItem = {
   expectedResult: string | null;
   steps: ScenarioStep[] | null;
   tags?: string[];
+  playwright?: { automationId: string; filename: string } | null;
   requirement?: { title: string; externalKey: string | null } | null;
   _count?: { results: number };
 };

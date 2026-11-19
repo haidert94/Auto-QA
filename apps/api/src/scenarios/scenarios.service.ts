@@ -141,14 +141,21 @@ export class ScenariosService {
 
   async list(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
-    return this.prisma.testScenario.findMany({
+    const scenarios = await this.prisma.testScenario.findMany({
       where: { projectId },
       orderBy: { title: 'asc' },
       select: {
-        id: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true,
+        id: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true, automation: true,
         requirement: { select: { title: true, externalKey: true } },
         _count: { select: { results: true } },
       },
+    });
+    return scenarios.map(({ automation, ...scenario }) => {
+      const prepared = isManualScenario(scenario) ? null : currentAutomation({ ...scenario, automation });
+      return {
+        ...scenario,
+        playwright: prepared ? { automationId: prepared.id, filename: suggestedFilename(scenario) } : null,
+      };
     });
   }
 

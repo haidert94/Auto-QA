@@ -31,6 +31,7 @@ function fixture(dispatch, row = { ...sample }, environment = { id: 'qa', author
     environment: { async findFirst() { return environment; } },
     testScenario: {
       async findFirst() { return { ...row }; },
+      async findMany() { return [{ ...row }]; },
       async updateMany({ where, data }) {
         if (row.title !== where.title) return { count: 0 };
         row.automation = JSON.parse(JSON.stringify(data.automation));
@@ -58,12 +59,17 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
     assert.ok(!prompt.includes('fixture-input'));
     return { model: 'model-test', text: JSON.stringify({ actions }) };
   });
+  const list = async () => (await service.list('project', workspace))[0];
+  assert.equal((await list()).playwright, null);
   const preview = await service.generatePlaywright('project', 'scenario', workspace);
   assert.equal(preview.automationId, null);
   assert.equal(calls, 0);
   const prepared = await service.preparePlaywright('project', 'scenario', workspace);
   assert.equal(calls, 1);
   assert.equal(prepared.automationId, row.automation.id);
+  const listed = await list();
+  assert.deepEqual(listed.playwright, { automationId: prepared.automationId, filename: prepared.filename });
+  assert.ok(!Object.hasOwn(listed, 'automation'));
   assert.match(prepared.code, /page\.getByLabel\('Buscar', \{ exact: true \}\)\.fill\('fixture-input'\)/);
   assert.match(prepared.code, /expect\(page\.getByText\('Resultados'\)\)\.toBeVisible/);
   assert.equal((await service.generatePlaywright('project', 'scenario', workspace)).code, prepared.code);
@@ -84,7 +90,11 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
     assert.deepEqual(compiled.diagnostics, []);
   }
 
+  row.tags = ['@manual'];
+  assert.equal((await list()).playwright, null);
+  row.tags = [];
   row.title = 'Escenario editado';
+  assert.equal((await list()).playwright, null);
   assert.equal((await service.generatePlaywright('project', 'scenario', workspace)).automationId, null);
   await assert.rejects(runs.create('project', 'scenario', { environmentId: 'qa', automationId: prepared.automationId }, workspace), /automatización cambió/);
   assert.equal(snapshot.title, sample.title);
