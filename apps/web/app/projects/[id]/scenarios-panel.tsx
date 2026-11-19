@@ -237,39 +237,36 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     }
     setGenerating(true);
     try {
-      let job = latestJob;
-
-      // Paso 1: si no hay un job listo para seleccionar tipos, lo creamos
-      // usando la URL del entorno autorizado. El worker correrá el análisis
-      // documental y pondrá el job en "review-ready".
-      if (!job || job.stage !== 'review-ready') {
-        if (!projectBaseUrl) {
-          setGenerateNotice('Primero registra un entorno con URL base para que el agente sepa qué analizar.');
-          return;
-        }
-        setGenerateNotice('Analizando documentos y preparando el proyecto…');
-        const create = await fetch(`/api/projects/${projectId}/automation`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: projectBaseUrl }),
-        });
-        if (!create.ok) {
-          const payload = await create.json().catch(() => ({}));
-          setError(payload.message ?? 'No se pudo iniciar el análisis.');
-          return;
-        }
-        const newJob: AutomationSummary = await create.json();
-        setLatestJob(newJob);
-        job = newJob;
-
-        // Paso 2: esperar a que el worker termine el análisis.
-        const ready = await waitForReview(newJob.id);
-        if (!ready) {
-          setGenerateNotice('El worker no respondió a tiempo. Verifica que el Explorer esté desplegado y vuelve a intentar.');
-          return;
-        }
-        job = ready;
-        setLatestJob(ready);
+      // Siempre arrancamos un job fresco al clickear "Generar casos de
+      // prueba". Reusar un job cacheado llevaba a enviar /select sobre un
+      // AutomationJob ya avanzado (stage='generated') y el backend
+      // respondía "La automatización no está en estado review-ready".
+      if (!projectBaseUrl) {
+        setGenerateNotice('Primero registra un entorno con URL base para que el agente sepa qué analizar.');
+        return;
       }
+      setGenerateNotice('Analizando documentos y preparando el proyecto…');
+      const create = await fetch(`/api/projects/${projectId}/automation`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: projectBaseUrl }),
+      });
+      if (!create.ok) {
+        const payload = await create.json().catch(() => ({}));
+        setError(payload.message ?? 'No se pudo iniciar el análisis.');
+        return;
+      }
+      const newJob: AutomationSummary = await create.json();
+      setLatestJob(newJob);
+      let job = newJob;
+
+      // Esperar a que el worker termine el análisis.
+      const ready = await waitForReview(newJob.id);
+      if (!ready) {
+        setGenerateNotice('El worker no respondió a tiempo. Verifica que el Explorer esté desplegado y vuelve a intentar.');
+        return;
+      }
+      job = ready;
+      setLatestJob(ready);
 
       // Paso 3: con el job en review-ready, encolamos los tipos marcados.
       setGenerateNotice('Análisis listo. Encolando agentes de generación…');
