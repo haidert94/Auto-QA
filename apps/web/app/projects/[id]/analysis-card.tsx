@@ -181,9 +181,14 @@ function MetricDrawer({ metric, documents, analysis }: {
 
   if (!analysis) return <EmptyDrawer title={metric === 'verifiable' ? 'Verificables' : 'Ambiguos o pendientes'}
     message="Aún no hay un análisis guardado." />;
-  const matched = analysis.findings.filter(f => metric === 'verifiable'
-    ? requirementKinds.has(f.kind) && !f.pendingConfirmation
-    : f.pendingConfirmation);
+  // Ambos contadores del backend (readiness.ts:89-90) solo cuentan findings
+  // cuyo kind es un requisito (user story / requirement / functional /
+  // non-functional). Criterios de aceptación, reglas de negocio, roles,
+  // permisos, etc. tienen su propio ciclo y no entran acá aunque estén
+  // pendientes.
+  const matched = analysis.findings.filter(f => requirementKinds.has(f.kind) && (
+    metric === 'verifiable' ? !f.pendingConfirmation : f.pendingConfirmation
+  ));
   const title = metric === 'verifiable' ? 'Requisitos verificables' : 'Ambiguos o pendientes';
   if (!matched.length) return <EmptyDrawer title={title} message="Sin hallazgos en esta categoría." />;
   return <div className="detail-analysis__drawer" aria-label={title}>
