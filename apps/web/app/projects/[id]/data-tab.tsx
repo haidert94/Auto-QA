@@ -181,6 +181,11 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
               <Link href={`/projects/${project.id}/ipa`}>Consultar IPA →</Link></div></>}
       </section>
       <AnalysisCard report={report} documents={documents ?? []}
+        onOpenDialog={target => {
+          if (target === 'environments') setEnvDialogOpen(true);
+          if (target === 'documents') setDocDialogOpen(true);
+          if (target === 'roles') setRolesDialogOpen(true);
+        }}
         pending={documentError
           ? 'No se pudo consultar el análisis documental.'
           : documents === null
