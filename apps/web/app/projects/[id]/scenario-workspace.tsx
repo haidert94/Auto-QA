@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Code2, ExternalLink, FileText, Pencil, PlayCircle, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { gherkinKeyword, ScenarioCard, type ScenarioListItem } from './scenario-card';
-import { durationLabel, runPresentation, type ScenarioRun } from './scenario-presentation';
+import { durationLabel, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
@@ -125,7 +125,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
             <div className="scenario-detail__section-label"><span>Especificación BDD (vista derivada)</span><Code2 size={14} /></div>
             <div className="scenario-gherkin"><ol>{(active.steps ?? []).map((step, i) => <li key={i}>
               <span className="scenario-gherkin__keyword">{gherkinKeyword(step, active.steps?.[i - 1])}</span>
-              <div>{step.action}{step.data && <p><span>Dato:</span> <code>{step.data}</code></p>}{step.expected && <p><span>Esperado:</span> {step.expected}</p>}</div>
+              <div>{scenarioStepText(step)}{step.expected && <p><span>Esperado:</span> {step.expected}</p>}</div>
             </li>)}</ol>{!active.steps?.length && <p>No hay pasos registrados.</p>}</div>
             <p className="scenario-derived-note">Palabras clave inferidas de las acciones. Revisa esta vista antes de utilizarla como especificación.</p>
             <section className="scenario-expected"><h4>Resultado esperado registrado</h4><p>{active.expectedResult ?? 'No declarado. Pendiente de definir.'}</p></section>

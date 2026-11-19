@@ -1,4 +1,69 @@
-import { gherkinKeyword, type ScenarioListItem } from './scenario-card';
+import { gherkinKeyword, type ScenarioListItem, type ScenarioStep } from './scenario-card';
+
+const controlLabels = new Map(Object.entries({
+  'user name': 'nombre de usuario',
+  username: 'nombre de usuario',
+  password: 'contraseña',
+  'login button': 'Iniciar sesión',
+  'sign in': 'Iniciar sesión',
+  'first name': 'nombre',
+  'last name': 'apellido',
+  'postal code': 'código postal',
+  'continue shopping': 'Seguir comprando',
+  'back to products': 'Volver a productos',
+}));
+
+function controlLabel(selector: string) {
+  const attribute = selector.match(/\[(?:aria-label|placeholder|title|data-testid|data-test|data-cy|id|name|type)\s*=\s*(?:"([^"]+)"|'([^']+)'|([\w-]+))\]/i);
+  const simpleTarget = selector.match(/^[#.]?([\p{L}\p{N}][\p{L}\p{N}\s_-]*)$/u);
+  const name = (attribute?.[1] ?? attribute?.[2] ?? attribute?.[3] ?? simpleTarget?.[1] ?? '')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim();
+  return controlLabels.get(name.toLowerCase()) ?? name;
+}
+
+export function scenarioStepText(step: ScenarioStep) {
+  const action = step.action.trim();
+  const separator = action.indexOf(':');
+  const target = separator === -1 ? '' : action.slice(separator + 1).trim();
+  const command = target ? action.slice(0, separator).trim().toLowerCase() : '';
+  const page = target === '/' ? 'la página de inicio' : `la página «${target}»`;
+  switch (command) {
+    case 'navigate':
+    case 'goto':
+    case 'open':
+      return `Abre ${page}.`;
+    case 'click': {
+      const label = controlLabel(target);
+      const product = label.match(/^add to cart (.+)$/i)?.[1];
+      if (product) {
+        const productName = product.replace(/\b[a-z]/gi, letter => letter.toUpperCase());
+        return `Agrega «${productName}» al carrito.`;
+      }
+      return label ? `Pulsa «${label}».` : 'Pulsa el control indicado.';
+    }
+    case 'fill': {
+      const label = controlLabel(target);
+      const field = label ? `el campo «${label}»` : 'el campo indicado';
+      if (!step.data) return `Deja vacío ${field}.`;
+      const normalized = label.normalize('NFD').replace(/\p{M}/gu, '');
+      if (/\b(password|passwd|pwd|contrasena)\b/i.test(normalized)) return 'Ingresa la contraseña.';
+      if (/\b(token|secret|pin)\b/i.test(normalized)) return `Ingresa el dato confidencial en ${field}.`;
+      return `Escribe «${step.data}» en ${field}.`;
+    }
+    case 'press':
+    case 'key':
+      return `Presiona la tecla «${target}».`;
+    case 'expect-text':
+    case 'expect text':
+      return `Comprueba que aparece «${target}» en la página.`;
+    case 'expect-url':
+    case 'expect url':
+      return `Comprueba que se abrió ${page}.`;
+    default:
+      return step.data ? `${action} · Usa «${step.data}».` : action;
+  }
+}
+
 
 export type ScenarioRun = {
   id: string; scenarioId: string | null; status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
