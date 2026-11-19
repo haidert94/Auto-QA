@@ -200,6 +200,69 @@ const api = createServer(async (request, response) => {
   return send({ message: 'No encontrado' }, 404);
 });
 
+async function verifyScenarioPagination(page) {
+  const original = scenarios;
+  scenarios = Array.from({ length: 35 }, (_, i) => ({
+    id: '73000000-0000-4000-8000-' + String(i + 1).padStart(12, '0'),
+    title: 'Caso paginado ' + (i + 1),
+    tags: [i % 2 ? '@par' : '@impar'],
+    steps: [],
+  }));
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Escenarios (35)', exact: true }).click();
+    const pagination = page.getByRole('navigation', { name: 'Paginación de escenarios' });
+    const pageSize = pagination.getByRole('combobox', { name: 'Escenarios por página' });
+    const nextPage = pagination.getByRole('button', { name: 'Página siguiente' });
+    const previousPage = pagination.getByRole('button', { name: 'Página anterior' });
+    const rows = page.getByRole('list', { name: 'Escenarios del proyecto' }).locator('.scenario-result');
+    const search = page.getByRole('searchbox', { name: 'Buscar escenarios' });
+    await expect(pageSize).toHaveValue('10');
+    await expect(rows).toHaveCount(10);
+    await expect(previousPage).toBeDisabled();
+    await expect(pagination.getByRole('status')).toHaveText('1–10 de 35 · Página 1 de 4');
+    await page.getByRole('checkbox', { name: 'Seleccionar visibles (10)', exact: true }).uncheck();
+
+    await nextPage.click();
+    await expect(rows.first()).toContainText('Caso paginado 11');
+    await expect(rows.first().getByRole('checkbox')).toBeChecked();
+    await expect(page.locator('.scenario-selection-count')).toContainText('25 seleccionados');
+    await previousPage.click();
+    await expect(rows.first().getByRole('checkbox')).not.toBeChecked();
+
+    await pageSize.selectOption('20');
+    await expect(rows).toHaveCount(20);
+    await nextPage.click();
+    await expect(rows).toHaveCount(15);
+    await expect(nextPage).toBeDisabled();
+    await pageSize.selectOption('30');
+    await expect(rows).toHaveCount(30);
+    await nextPage.click();
+    await expect(rows).toHaveCount(5);
+    await expect(pagination.getByRole('status')).toHaveText('31–35 de 35 · Página 2 de 2');
+
+    await search.fill('Caso paginado 35');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText('Caso paginado 35');
+    await expect(pagination.getByRole('status')).toHaveText('1–1 de 1 · Página 1 de 1');
+    await search.clear();
+    await pageSize.selectOption('10');
+    await nextPage.click();
+    await page.getByRole('button', { name: '@par (17)', exact: true }).click();
+    await expect(pagination.getByRole('status')).toHaveText('1–10 de 17 · Página 1 de 2');
+    await expect(rows.first()).toContainText('Caso paginado 2');
+
+    await page.setViewportSize({ width: 320, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
+    console.log('PASS paginación: tamaños, navegación, búsqueda, filtros y selección por página.');
+  } finally {
+    scenarios = original;
+    await page.setViewportSize({ width: 1440, height: 1100 });
+  }
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+}
+
 async function verifyScenarios(page, screenshots) {
   async function headerGeometry() {
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -762,6 +825,7 @@ async function run() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(`${website}/projects/${projectId}`);
+    await verifyScenarioPagination(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();

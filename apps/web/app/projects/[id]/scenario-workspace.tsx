@@ -8,6 +8,8 @@ import { durationLabel, gherkinKeyword, isManualScenario, MANUAL_SCENARIO_MESSAG
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
+const PAGE_SIZES = [10, 20, 30] as const;
+
 export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, hasRunnableSpec, onRun, role }: {
   items: ScenarioListItem[]; runs: ScenarioRun[]; runsAvailable: boolean; checked: Set<string>;
   setChecked: (selection: Set<string>) => void; onChange: (scenario: ScenarioListItem) => void;
@@ -18,6 +20,8 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
   const [mode, setMode] = useState<'all' | 'results' | 'pending'>('all');
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
+  const [page, setPage] = useState(1);
   const [activeId, setActiveId] = useState<string | null>(items[0]?.id ?? null);
   const [editing, setEditing] = useState(false);
   const search = useRef<HTMLInputElement>(null);
@@ -30,22 +34,32 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
     && (!normalized || [item.title, item.id, item.expectedResult ?? '', item.requirement?.title ?? '', item.requirement?.externalKey ?? '',
       ...(item.steps ?? []).map(step => `${step.action} ${step.data ?? ''} ${step.expected ?? ''}`), ...(item.tags ?? [])]
       .join(' ').toLocaleLowerCase('es').includes(normalized)));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * pageSize;
+  const visible = filtered.slice(pageStart, pageStart + pageSize);
+  const firstVisibleId = visible[0]?.id ?? null;
   const active = items.find(item => item.id === activeId) ?? null;
-  const allChecked = filtered.length > 0 && filtered.every(item => checked.has(item.id));
+  const activeOnPage = visible.some(item => item.id === activeId);
+  const allChecked = visible.length > 0 && visible.every(item => checked.has(item.id));
+  const someChecked = visible.some(item => checked.has(item.id));
   const latest = new Map<string, ScenarioRun>();
   for (const run of [...runs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))) {
     if (run.scenarioId && !latest.has(run.scenarioId)) latest.set(run.scenarioId, run);
   }
 
   useEffect(() => {
-    if (activeId && !items.some(item => item.id === activeId)) { setActiveId(null); setEditing(false); }
-  }, [items, activeId]);
+    if (page !== currentPage) setPage(currentPage);
+  }, [page, currentPage]);
   useEffect(() => {
-    if (activeId && !filtered.some(item => item.id === activeId)) { setActiveId(filtered[0]?.id ?? null); setEditing(false); }
-  }, [activeId, filtered.map(item => item.id).join(',')]);
+    if (activeId && !activeOnPage) {
+      setActiveId(firstVisibleId);
+      setEditing(false);
+    }
+  }, [activeId, activeOnPage, firstVisibleId]);
   useEffect(() => {
-    if (selectAll.current) selectAll.current.indeterminate = !allChecked && filtered.some(item => checked.has(item.id));
-  }, [checked, filtered, allChecked]);
+    if (selectAll.current) selectAll.current.indeterminate = !allChecked && someChecked;
+  }, [allChecked, someChecked]);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== 'k' || (!event.ctrlKey && !event.metaKey) || !search.current?.getClientRects().length) return;
@@ -59,7 +73,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
   function pick(id: string) { setActiveId(id); setEditing(false); }
   function toggleVisible() {
     const next = new Set(checked);
-    for (const item of filtered) { if (allChecked) next.delete(item.id); else next.add(item.id); }
+    for (const item of visible) { if (allChecked) next.delete(item.id); else next.add(item.id); }
     setChecked(next);
   }
 
@@ -67,28 +81,42 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
     <section className="scenario-toolbar" aria-label="Buscar y filtrar escenarios">
       <div className="scenario-toolbar__top">
         <label className="scenario-search"><Search size={15} aria-hidden="true" />
-          <input ref={search} type="search" aria-label="Buscar escenarios" placeholder="Buscar por título, ID o paso…" value={query} onChange={event => setQuery(event.target.value)} />
+          <input ref={search} type="search" aria-label="Buscar escenarios" placeholder="Buscar por título, ID o paso…" value={query} onChange={event => { setQuery(event.target.value); setPage(1); }} />
           <kbd>Ctrl K</kbd>
         </label>
         <div className="scenario-segments" role="group" aria-label="Filtrar por resultados">
           {([['all', `Todos (${items.length})`], ['results', `Con resultados (${withResults})`], ['pending', `Sin resultados (${items.length - withResults})`]] as const).map(([value, label]) =>
-            <button type="button" key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>{label}</button>)}
+            <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setPage(1); }}>{label}</button>)}
         </div>
       </div>
       <div className="scenario-toolbar__bottom">
         <div className="scenario-tag-filters" role="group" aria-label="Filtrar por etiqueta">
-          <button type="button" aria-pressed={!tag} onClick={() => setTag('')}>Todos ({items.length})</button>
+          <button type="button" aria-pressed={!tag} onClick={() => { setTag(''); setPage(1); }}>Todos ({items.length})</button>
           {tags.map(value => <button type="button" key={value} className={/^@flujo/i.test(value) ? 'scenario-tag-filter--flow' : ''}
-            aria-pressed={tag === value} onClick={() => setTag(tag === value ? '' : value)}>{value} ({items.filter(item => item.tags?.includes(value)).length})</button>)}
+            aria-pressed={tag === value} onClick={() => { setTag(tag === value ? '' : value); setPage(1); }}>{value} ({items.filter(item => item.tags?.includes(value)).length})</button>)}
         </div>
-        <label className="scenario-select-all"><input ref={selectAll} type="checkbox" checked={allChecked} disabled={!filtered.length} onChange={toggleVisible} />Seleccionar visibles ({filtered.length})</label>
-        <span className="scenario-selection-count" role="status">{checked.size} seleccionados · {filtered.length} visibles</span>
+        <label className="scenario-select-all"><input ref={selectAll} type="checkbox" checked={allChecked} disabled={!visible.length} onChange={toggleVisible} />Seleccionar visibles ({visible.length})</label>
+        <span className="scenario-selection-count" role="status">{checked.size} seleccionados · {visible.length} visibles</span>
       </div>
     </section>
     <div className={`scenario-workspace${active ? '' : ' scenario-workspace--list-only'}`}>
       <div className="scenario-list-region">
+        <nav className="scenario-pagination" aria-label="Paginación de escenarios">
+          <label>Escenarios por página
+            <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>
+              {PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+          {filtered.length > 0 && <div className="scenario-pagination__navigation">
+            {pageCount > 1 && <button type="button" className="secondary" aria-label="Página anterior"
+              disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Anterior</button>}
+            <span role="status">{pageStart + 1}–{pageStart + visible.length} de {filtered.length} · Página {currentPage} de {pageCount}</span>
+            {pageCount > 1 && <button type="button" className="secondary" aria-label="Página siguiente"
+              disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Siguiente</button>}
+          </div>}
+        </nav>
         <ul className="scenario-results" aria-label="Escenarios del proyecto">
-          {filtered.map(item => {
+          {visible.map(item => {
             const run = latest.get(item.id);
             const status = runPresentation(run, runsAvailable);
             return <li key={item.id} className={`scenario-result${item.id === activeId ? ' scenario-result--active' : ''}`}>
@@ -108,7 +136,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
         </ul>
         {!filtered.length && <div className="scenario-no-results"><Search size={24} /><h3>{items.length ? 'No hay coincidencias' : 'Aún no hay escenarios'}</h3>
           <p>{items.length ? 'Prueba otra búsqueda o ajusta los filtros.' : 'Crea un escenario manual o utiliza el generador existente.'}</p>
-          {items.length > 0 && <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setMode('all'); }}>Limpiar filtros</button>}
+          {items.length > 0 && <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setMode('all'); setPage(1); }}>Limpiar filtros</button>}
         </div>}
       </div>
       {active && <aside className="scenario-detail" aria-label="Detalle del escenario seleccionado">
