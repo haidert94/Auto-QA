@@ -126,9 +126,15 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
       anchors: unauthorizedEnvs.map(envAnchor),
       blocking: !authorized,
     },
+    // Verificabilidad: antes era "¿hay al menos uno verificable?" (0 o 5).
+    // Ahora es proporción de requisitos sin ambigüedad: 5 * verif/(verif+amb).
+    // Así un signal con findings pendientes no puede marcar 100% mientras la
+    // UI muestra "Aclara los requisitos marcados como pendientes".
     {
       criterion: 'Documentación funcional', weight: 30,
-      points: (uploaded ? 5 : 0) + (readable ? 10 : 0) + (verifiable ? 5 : 0) + (validated ? 10 : 0),
+      points: (uploaded ? 5 : 0) + (readable ? 10 : 0)
+        + Math.round(5 * verifiable / Math.max(1, verifiable + ambiguous))
+        + (validated ? 10 : 0),
       available: ['Documentos cargados: ' + uploaded, 'Documentos procesados: ' + processed,
         'Documentos revisados: ' + validated, 'Requisitos verificables: ' + verifiable],
       missing: [...(uploaded ? [] : ['Adjunta documentación funcional.']),
