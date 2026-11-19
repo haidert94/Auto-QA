@@ -14,7 +14,7 @@ const root = resolve(__dirname, '../../..');
 const projectId = '10000000-0000-4000-8000-000000000001';
 const session = 'a'.repeat(64);
 const account = {
-  name: 'Equipo demo', email: 'qa@example.test', organization: { id: 'demo', name: 'AutoQA Demo' },
+  name: 'Equipo demo', email: 'qa@example.test', role: 'OWNER', organization: { id: 'demo', name: 'AutoQA Demo' },
   subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { name: 'Pro', capabilities: [{ code: 'BROWSER_TESTS', availability: 'BETA' }] } },
 };
 const environment = {
@@ -296,6 +296,19 @@ async function verifyScenarios(page, screenshots) {
   await expect(list.getByRole('button', { name: 'Pago sandbox editado', exact: true })).toBeVisible();
   assert.ok(scenarios[0].tags.includes('@flujoAlterno') && !scenarios[0].tags.includes('@flujoBasico'));
   const execute = page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true });
+  await expect(execute).toBeDisabled();
+  await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+  const automation = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
+  await expect(automation.locator('.automation-pick-list > li')).toHaveCount(4);
+  await automation.getByRole('checkbox', { name: 'Seleccionar todos', exact: true }).check();
+  await automation.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
+  await expect(automation.getByText('4 archivos generados. Revisa los pendientes antes de ejecutar.', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Escenarios (4)', exact: true }).click();
+  await expect(execute).toBeEnabled();
+  const pendingScenario = list.getByRole('checkbox', { name: `Seleccionar ${scenarios[2].title}`, exact: true });
+  await pendingScenario.check();
+  await expect(page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true })).toBeDisabled();
+  await pendingScenario.uncheck();
   await execute.click();
   let dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await expect(dialog.getByLabel('Entorno autorizado').locator('option')).toHaveCount(1);

@@ -11,10 +11,9 @@ import { can } from '../../permissions';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader } from './project-tabs';
 import { AutomationCodeViewer } from './automation-code-viewer';
-import { downloadSpecs, specFilename, specPath, type GeneratedSpec } from './automation-export';
+import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { ScenarioRunDialog } from './scenario-run-dialog';
 
-const signature = (scenario: ScenarioListItem) => JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
 function reviewCode(scenario: ScenarioListItem, code: string) {
   const reasons = [];
   if (!scenario.steps?.length) reasons.push('Sin pasos definidos');
@@ -28,10 +27,11 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const canGenerate = can(role, 'automation.generate');
   const canRunSuite = can(role, 'run.execute');
   const header = useAutomationHeader();
+  const specs = header?.specs ?? {};
+  const setSpecs = header?.setSpecs;
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [listError, setListError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [specs, setSpecs] = useState<Record<string, GeneratedSpec>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -58,17 +58,17 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         if (controller.signal.aborted) return;
         const firstLoad = listRef.current.length === 0;
         listRef.current = list;
-        const current = Object.fromEntries(Object.entries(specsRef.current).filter(([id, spec]) => list.some(item => item.id === id && signature(item) === spec.signature)));
-        specsRef.current = current; setSpecs(current);
+        const current = Object.fromEntries(Object.entries(specsRef.current).filter(([id, spec]) => list.some(item => item.id === id && scenarioSpecSignature(item) === spec.signature)));
+        specsRef.current = current; setSpecs?.(current);
         setSelected(previous => new Set(list.filter(item => firstLoad || previous.has(item.id)).map(item => item.id)));
         setScenarios(list);
         setActiveId(previous => previous === 'configuration' || list.some(item => item.id === previous) ? previous : list[0]?.id ?? null);
       }).catch((reason: unknown) => { if (!controller.signal.aborted) setListError(reason instanceof Error ? reason.message : 'No se pudo consultar la automatización.'); });
     return () => controller.abort();
-  }, [project.id, header?.active, refresh]);
+  }, [project.id, header?.active, refresh, setSpecs]);
 
   const generateOne = useCallback((scenario: ScenarioListItem, retry = false): Promise<GeneratedSpec> => {
-    const currentSignature = signature(scenario);
+    const currentSignature = scenarioSpecSignature(scenario);
     const cached = specsRef.current[scenario.id];
     if (cached?.signature === currentSignature && !(retry && cached.error)) return Promise.resolve(cached);
     const pending = requests.current.get(scenario.id);
@@ -83,8 +83,8 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         if (typeof payload.code !== 'string' || !payload.code.trim() || typeof payload.filename !== 'string') throw new Error('La API no devolvió un archivo de código válido.');
         result = { ...result, code: payload.code, filename: specFilename(payload.filename, scenario.id), review: reviewCode(scenario, payload.code) };
       } catch (reason) { result.error = reason instanceof Error ? reason.message : 'No se pudo generar este archivo.'; }
-      if (mounted.current && listRef.current.some(item => item.id === scenario.id && signature(item) === currentSignature)) {
-        specsRef.current = { ...specsRef.current, [scenario.id]: result }; setSpecs(specsRef.current);
+      if (mounted.current && listRef.current.some(item => item.id === scenario.id && scenarioSpecSignature(item) === currentSignature)) {
+        specsRef.current = { ...specsRef.current, [scenario.id]: result }; setSpecs?.(specsRef.current);
       }
       return result;
     })().finally(() => {
@@ -93,7 +93,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     });
     requests.current.set(scenario.id, task);
     return task;
-  }, [project.id]);
+  }, [project.id, setSpecs]);
 
   useEffect(() => {
     if (!header?.active || !scenarios || !activeId || activeId === 'configuration') return;

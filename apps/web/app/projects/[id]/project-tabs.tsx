@@ -2,12 +2,22 @@
 
 import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 
+import type { GeneratedSpec } from './automation-export';
+
+type ScenarioSpecs = Record<string, GeneratedSpec>;
+
 const ScenarioHeaderContext = createContext<{
   element: HTMLDivElement | null;
   setCount: (count: number | null) => void;
+  specs: ScenarioSpecs;
 } | null>(null);
 export function useScenarioHeader() { return useContext(ScenarioHeaderContext); }
-const AutomationHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
+const AutomationHeaderContext = createContext<{
+  element: HTMLDivElement | null;
+  active: boolean;
+  specs: ScenarioSpecs;
+  setSpecs: (specs: ScenarioSpecs) => void;
+} | null>(null);
 export function useAutomationHeader() { return useContext(AutomationHeaderContext); }
 const ReportHeaderContext = createContext<{ element: HTMLDivElement | null; active: boolean } | null>(null);
 export function useReportHeader() { return useContext(ReportHeaderContext); }
@@ -53,9 +63,10 @@ export function ProjectTabs({
   const tabGroup = useId();
   const [headerElement, setHeaderElement] = useState<HTMLDivElement | null>(null);
   const [scenarioCount, setScenarioCount] = useState<number | null>(null);
-  const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount }), [headerElement]);
+  const [specs, setSpecs] = useState<ScenarioSpecs>({});
+  const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount, specs }), [headerElement, specs]);
   const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
-  const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion' }), [automationElement, active]);
+  const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion', specs, setSpecs }), [automationElement, active, specs]);
   const [reportElement, setReportElement] = useState<HTMLDivElement | null>(null);
   const reportHeader = useMemo(() => ({ element: reportElement, active: active === 'reporte' }), [reportElement, active]);
   const [qualityElement, setQualityElement] = useState<HTMLDivElement | null>(null);

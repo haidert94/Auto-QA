@@ -1,7 +1,13 @@
+import type { ScenarioListItem } from './scenario-card';
+
 export type GeneratedSpec = {
   scenarioId: string; title: string; filename: string; code: string; signature: string;
   review: string[]; error?: string;
 };
+
+export function scenarioSpecSignature(scenario: ScenarioListItem) {
+  return JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
+}
 
 export const playwrightConfig = [
   "import { defineConfig } from '@playwright/test';", '',

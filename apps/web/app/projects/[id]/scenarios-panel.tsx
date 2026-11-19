@@ -8,6 +8,7 @@ import type { ScenarioListItem } from './scenario-card';
 import type { Project } from '../onboarding';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
+import { scenarioSpecSignature } from './automation-export';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader } from './project-tabs';
 import { featureText, type ScenarioRun } from './scenario-presentation';
@@ -330,13 +331,19 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     finally { setBusy(false); }
   }
 
+  const suite = (items ?? []).filter(item => checked.has(item.id));
+  const suiteReady = suite.length > 0 && suite.length === checked.size && suite.every(item => {
+    const spec = header?.specs[item.id];
+    return spec?.signature === scenarioSpecSignature(item) && !spec.error && spec.review.length === 0;
+  });
+
   return <section className="scenarios-panel" aria-label="Gestión de escenarios">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary={items ? `${items.length} escenarios registrados. Consulta sus pasos, requisitos asociados y resultados de ejecución.` : 'Consulta y prepara los escenarios del proyecto.'}
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
-        {canRun && <button type="button" disabled={!runnable || !checked.size || !!listError} onClick={() => setRunSelection((items ?? []).filter(item => checked.has(item.id)))}>
+        {canRun && <button type="button" disabled={!runnable || !suiteReady || !!listError} onClick={() => setRunSelection(suite)}>
           Ejecutar suite ({checked.size})<ArrowRight size={14} />
         </button>}
       </>} />, header.element)}
