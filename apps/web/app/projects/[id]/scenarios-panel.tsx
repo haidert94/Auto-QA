@@ -331,11 +331,13 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     finally { setBusy(false); }
   }
 
-  const suite = (items ?? []).filter(item => checked.has(item.id));
-  const suiteReady = suite.length > 0 && suite.length === checked.size && suite.every(item => {
+  function hasRunnableSpec(item: ScenarioListItem) {
     const spec = header?.specs[item.id];
     return spec?.signature === scenarioSpecSignature(item) && !spec.error && spec.review.length === 0;
-  });
+  }
+
+  const suite = (items ?? []).filter(item => checked.has(item.id));
+  const suiteReady = suite.length > 0 && suite.length === checked.size && suite.every(hasRunnableSpec);
 
   return <section className="scenarios-panel" aria-label="Gestión de escenarios">
     {header?.element && createPortal(<ProjectHeading project={project}
@@ -376,7 +378,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
       : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
-        onRun={runnable && canRun ? scenarios => setRunSelection(scenarios) : undefined}
+        hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun ? scenarios => setRunSelection(scenarios) : undefined}
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}

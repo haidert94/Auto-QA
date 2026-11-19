@@ -8,10 +8,11 @@ import { durationLabel, runPresentation, scenarioStepText, type ScenarioRun } fr
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
-export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, onRun, role }: {
+export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, hasRunnableSpec, onRun, role }: {
   items: ScenarioListItem[]; runs: ScenarioRun[]; runsAvailable: boolean; checked: Set<string>;
   setChecked: (selection: Set<string>) => void; onChange: (scenario: ScenarioListItem) => void;
-  projectId: string; onRun?: (scenarios: ScenarioListItem[]) => void; role?: OrgRole;
+  projectId: string; hasRunnableSpec: (scenario: ScenarioListItem) => boolean;
+  onRun?: (scenarios: ScenarioListItem[]) => void; role?: OrgRole;
 }) {
   const canEdit = can(role, 'scenario.update');
   const [query, setQuery] = useState('');
@@ -113,7 +114,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
       {active && <aside className="scenario-detail" aria-label="Detalle del escenario seleccionado">
         <header className="scenario-detail__head"><div><span>{active.id.slice(0, 8)}</span><h2>Detalle del escenario</h2></div>
           <div className="scenario-detail__controls">
-            {onRun && <button type="button" aria-label="Ejecutar escenario seleccionado" onClick={() => onRun([active])}><PlayCircle size={16} /></button>}
+            {onRun && <button type="button" aria-label="Ejecutar escenario seleccionado" disabled={!hasRunnableSpec(active)} onClick={() => onRun([active])}><PlayCircle size={16} /></button>}
             <button type="button" aria-label="Cerrar detalle del escenario" onClick={() => { setActiveId(null); setEditing(false); }}><X size={16} /></button>
           </div>
         </header>
