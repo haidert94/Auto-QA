@@ -26,6 +26,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
   const [editing, setEditing] = useState(false);
   const search = useRef<HTMLInputElement>(null);
   const selectAll = useRef<HTMLInputElement>(null);
+  const results = useRef<HTMLUListElement>(null);
   const normalized = query.trim().toLocaleLowerCase('es');
   const tags = [...new Set(items.flatMap(item => item.tags ?? []))].sort();
   const withResults = items.filter(item => (item._count?.results ?? 0) > 0).length;
@@ -71,6 +72,11 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
 
   function toggle(id: string) { const next = new Set(checked); if (next.has(id)) next.delete(id); else next.add(id); setChecked(next); }
   function pick(id: string) { setActiveId(id); setEditing(false); }
+  function changePage(nextPage: number) {
+    setPage(nextPage);
+    results.current?.focus({ preventScroll: true });
+    results.current?.scrollIntoView({ block: 'start' });
+  }
   function toggleVisible() {
     const next = new Set(checked);
     for (const item of visible) { if (allChecked) next.delete(item.id); else next.add(item.id); }
@@ -101,21 +107,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
     </section>
     <div className={`scenario-workspace${active ? '' : ' scenario-workspace--list-only'}`}>
       <div className="scenario-list-region">
-        <nav className="scenario-pagination" aria-label="Paginación de escenarios">
-          <label>Escenarios por página
-            <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>
-              {PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
-            </select>
-          </label>
-          {filtered.length > 0 && <div className="scenario-pagination__navigation">
-            {pageCount > 1 && <button type="button" className="secondary" aria-label="Página anterior"
-              disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Anterior</button>}
-            <span role="status">{pageStart + 1}–{pageStart + visible.length} de {filtered.length} · Página {currentPage} de {pageCount}</span>
-            {pageCount > 1 && <button type="button" className="secondary" aria-label="Página siguiente"
-              disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Siguiente</button>}
-          </div>}
-        </nav>
-        <ul className="scenario-results" aria-label="Escenarios del proyecto">
+        <ul ref={results} className="scenario-results" tabIndex={-1} aria-label="Escenarios del proyecto">
           {visible.map(item => {
             const run = latest.get(item.id);
             const status = runPresentation(run, runsAvailable);
@@ -138,6 +130,20 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
           <p>{items.length ? 'Prueba otra búsqueda o ajusta los filtros.' : 'Crea un escenario manual o utiliza el generador existente.'}</p>
           {items.length > 0 && <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setMode('all'); setPage(1); }}>Limpiar filtros</button>}
         </div>}
+        <nav className="scenario-pagination" aria-label="Paginación de escenarios">
+          <label>Escenarios por página
+            <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1); }}>
+              {PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+          {filtered.length > 0 && <div className="scenario-pagination__navigation">
+            {pageCount > 1 && <button type="button" className="secondary" aria-label="Página anterior"
+              disabled={currentPage === 1} onClick={() => changePage(currentPage - 1)}>Anterior</button>}
+            <span role="status">{pageStart + 1}–{pageStart + visible.length} de {filtered.length} · Página {currentPage} de {pageCount}</span>
+            {pageCount > 1 && <button type="button" className="secondary" aria-label="Página siguiente"
+              disabled={currentPage === pageCount} onClick={() => changePage(currentPage + 1)}>Siguiente</button>}
+          </div>}
+        </nav>
       </div>
       {active && <aside className="scenario-detail" aria-label="Detalle del escenario seleccionado">
         <header className="scenario-detail__head"><div><span>{active.id.slice(0, 8)}</span><h2>Detalle del escenario</h2></div>

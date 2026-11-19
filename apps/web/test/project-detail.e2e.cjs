@@ -215,16 +215,22 @@ async function verifyScenarioPagination(page) {
     const pageSize = pagination.getByRole('combobox', { name: 'Escenarios por página' });
     const nextPage = pagination.getByRole('button', { name: 'Página siguiente' });
     const previousPage = pagination.getByRole('button', { name: 'Página anterior' });
-    const rows = page.getByRole('list', { name: 'Escenarios del proyecto' }).locator('.scenario-result');
+    const list = page.getByRole('list', { name: 'Escenarios del proyecto' });
+    const rows = list.locator('.scenario-result');
     const search = page.getByRole('searchbox', { name: 'Buscar escenarios' });
     await expect(pageSize).toHaveValue('10');
     await expect(rows).toHaveCount(10);
     await expect(previousPage).toBeDisabled();
+    const listBounds = await list.boundingBox();
+    const paginationBounds = await pagination.boundingBox();
+    assert.ok(paginationBounds.y >= listBounds.y + listBounds.height, 'La paginaci\u00f3n queda debajo del listado.');
     await expect(pagination.getByRole('status')).toHaveText('1–10 de 35 · Página 1 de 4');
     await page.getByRole('checkbox', { name: 'Seleccionar visibles (10)', exact: true }).uncheck();
 
     await nextPage.click();
     await expect(rows.first()).toContainText('Caso paginado 11');
+    await expect(list).toBeFocused();
+    await expect(rows.first()).toBeInViewport();
     await expect(rows.first().getByRole('checkbox')).toBeChecked();
     await expect(page.locator('.scenario-selection-count')).toContainText('25 seleccionados');
     await previousPage.click();
