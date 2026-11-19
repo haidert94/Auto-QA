@@ -28,7 +28,8 @@ export type Report = {
   analysis: null | {
     warnings: string[];
     findings: {
-      id: string; kind: string; text: string; pendingConfirmation: boolean; source: Source; relatedSource: Source | null;
+      id: string; kind: string; text: string; pendingConfirmation: boolean; pendingReason?: string | null;
+      source: Source; relatedSource: Source | null;
     }[];
   };
   ipa: {

@@ -27,7 +27,7 @@ export const analysisSelect = {
   findings: {
     orderBy: { ordinal: 'asc' },
     select: {
-      id: true, kind: true, text: true, pendingConfirmation: true, requirementId: true,
+      id: true, kind: true, text: true, pendingConfirmation: true, pendingReason: true, requirementId: true,
       locator: true, relatedLocator: true, version: { select: sourceSelect }, relatedVersion: { select: sourceSelect },
     },
   },
@@ -89,7 +89,8 @@ export async function persistFindings(
   if (rules.length) await tx.businessRule.createMany({ data: rules });
   await tx.requirementTraceability.createMany({
     data: findings.map((fact, ordinal) => ({
-      analysisId, ordinal, kind: fact.kind, text: fact.text, pendingConfirmation: fact.pendingConfirmation,
+      analysisId, ordinal, kind: fact.kind, text: fact.text,
+      pendingConfirmation: fact.pendingConfirmation, pendingReason: fact.pendingReason,
       versionId: fact.source.versionId, locator: fact.source.locator,
       relatedVersionId: fact.relatedSource?.versionId, relatedLocator: fact.relatedSource?.locator, ...linkIds.get(fact),
     })),

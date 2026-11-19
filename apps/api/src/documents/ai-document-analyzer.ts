@@ -30,11 +30,12 @@ const SYSTEM_PROMPT = [
   '- Para cada historia de usuario, extrae la frase completa ("Como <rol> quiero <acción> para <valor>" o equivalente).',
   '- Para criterios de aceptación, extrae el enunciado completo y conserva la referencia al requisito superior cuando el documento la indique (por ejemplo "[HU-1]" o "Criterio de HU-1").',
   '- "pendingConfirmation" es true cuando el texto admite más de una interpretación razonable, menciona un rol o funcionalidad sin definirla, o depende de información no declarada en el documento.',
+  '- SIEMPRE que marques pendingConfirmation=true, agrega "pendingReason" con una frase corta (max 240 chars) explicando QUÉ no se entendió o QUÉ falta aclarar. Ejemplos: "No se define qué datos ve el usuario después de limpiar el carrito.", "El actor \\"usuario de la demo\\" no está definido en roles del documento.". Si pendingConfirmation=false, omite pendingReason.',
   '- Si identificas una llave visible (HU-1, RF-01, CA-2, REQ-3, RN-4, RNF-01, etc.), copiala literal en "key".',
   '- Para criterios de aceptación ligados a una historia/requisito, colocá esa llave superior en "requirementKey".',
   '',
   'Responde ÚNICAMENTE un JSON válido, sin markdown, sin texto antes ni después. Shape exacto:',
-  '{"findings":[{"kind":"USER_STORY|REQUIREMENT|FUNCTIONAL|NON_FUNCTIONAL|ACCEPTANCE_CRITERION|BUSINESS_RULE|ROLE|PERMISSION|SCENARIO","text":"...","key":"HU-1","requirementKey":"HU-1","pendingConfirmation":false}]}',
+  '{"findings":[{"kind":"USER_STORY|REQUIREMENT|FUNCTIONAL|NON_FUNCTIONAL|ACCEPTANCE_CRITERION|BUSINESS_RULE|ROLE|PERMISSION|SCENARIO","text":"...","key":"HU-1","requirementKey":"HU-1","pendingConfirmation":false,"pendingReason":"..."}]}',
   '',
   'Si no detectas nada reconocible, responde {"findings":[]}.',
 ].join('\n');
@@ -45,6 +46,7 @@ type RawFinding = {
   key?: unknown;
   requirementKey?: unknown;
   pendingConfirmation?: unknown;
+  pendingReason?: unknown;
 };
 
 function extractJson(text: string): unknown {
@@ -85,6 +87,10 @@ function parseFindings(response: string, evidence: Evidence, markdown: string): 
     const key = normalizeKey(raw.key);
     const requirementKey = normalizeKey(raw.requirementKey);
     ordinal += 1;
+    const isPending = raw.pendingConfirmation !== false;
+    const reason = typeof raw.pendingReason === 'string'
+      ? raw.pendingReason.trim().slice(0, 500) || undefined
+      : undefined;
     findings.push({
       kind: kind as FindingKind,
       text,
@@ -94,7 +100,8 @@ function parseFindings(response: string, evidence: Evidence, markdown: string): 
       source: { versionId: evidence.versionId, locator: `ai#${ordinal}` },
       key: isRequirement(kind as FindingKind) ? (key ?? requirementKey) : key,
       requirementKey: requirementKey ?? (isRequirement(kind as FindingKind) ? undefined : key),
-      pendingConfirmation: raw.pendingConfirmation !== false,
+      pendingConfirmation: isPending,
+      pendingReason: isPending ? reason : undefined,
     });
   }
   return findings;

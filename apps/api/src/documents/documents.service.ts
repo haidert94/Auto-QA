@@ -13,7 +13,7 @@ import { DOCUMENT_STORAGE, type DocumentStorage } from './document-storage';
 import { readiness, type ReadinessFinding } from './readiness';
 
 type AnalysisFindingRow = Prisma.RequirementTraceabilityGetPayload<{
-  select: { id: true; kind: true; text: true; pendingConfirmation: true; requirementId: true; locator: true;
+  select: { id: true; kind: true; text: true; pendingConfirmation: true; pendingReason: true; requirementId: true; locator: true;
     version: { select: { id: true; number: true; document: { select: { id: true; filename: true } } } } };
 }>;
 

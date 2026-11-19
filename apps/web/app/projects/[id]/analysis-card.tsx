@@ -97,6 +97,10 @@ const documentStates: Record<string, string> = {
   PROCESSED: 'Procesado', VALIDATED: 'Validado',
 };
 
+// Alias local para no replicar la definición del find del Report. Lo exportamos
+// a nivel módulo para que el popup y el drawer compartan el mismo shape.
+type FindingItem = NonNullable<Report['analysis']>['findings'][number];
+
 // Reemplaza al card terminal "Diagnóstico del proyecto". Toma la salida del
 // endpoint /documents/analysis y la presenta con el chrome de las tarjetas
 // de la pestaña Datos (cabecera cream, labels mono en mayúsculas, bloques
@@ -110,6 +114,7 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
 }) {
   const [active, setActive] = useState<MetricKey | null>(null);
   const [helpItem, setHelpItem] = useState<string | null>(null);
+  const [pendingFinding, setPendingFinding] = useState<FindingItem | null>(null);
   if (!report) {
     return <section className="detail-card detail-analysis">
       <header className="detail-card__head">
@@ -166,9 +171,11 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
           <span className="detail-analysis__metric-value">{stat.value}</span>
         </button>)}
       </div>
-      {active && <MetricDrawer metric={active} documents={documents} analysis={analysis} />}
+      {active && <MetricDrawer metric={active} documents={documents} analysis={analysis}
+        onFindingClick={finding => setPendingFinding(finding)} />}
       {helpItem && <PendingHelpDialog item={helpItem} onClose={() => setHelpItem(null)}
         onOpenDialog={target => { setHelpItem(null); onOpenDialog?.(target); }} />}
+      {pendingFinding && <FindingDetailDialog finding={pendingFinding} onClose={() => setPendingFinding(null)} />}
 
       <details className="detail-analysis__section">
         <summary>
@@ -232,10 +239,11 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
 // ítems que esa métrica cuenta (documentos en ese estado, findings por
 // verificabilidad). Se cierra haciendo click de nuevo en el mismo
 // contador o seleccionando otro.
-function MetricDrawer({ metric, documents, analysis }: {
+function MetricDrawer({ metric, documents, analysis, onFindingClick }: {
   metric: MetricKey;
   documents: SavedDocument[];
   analysis: Report['analysis'];
+  onFindingClick?: (finding: FindingItem) => void;
 }) {
   if (metric === 'declared' || metric === 'uploaded' || metric === 'processed' || metric === 'validated') {
     // El backend cuenta cumulativo: un doc PROCESADO también está
@@ -284,14 +292,18 @@ function MetricDrawer({ metric, documents, analysis }: {
     <ol className="detail-analysis__findings">
       {matched.slice(0, 50).map(finding => (
         <li key={finding.id}>
-          <header>
-            <span className="detail-analysis__kind">{kindLabels[finding.kind] ?? finding.kind}</span>
-            {finding.pendingConfirmation && <span className="detail-analysis__pending">Pendiente</span>}
-          </header>
-          <p>{finding.text}</p>
-          <p className="muted">
-            {finding.source.filename} · versión {finding.source.version} · {finding.source.locator}
-          </p>
+          <button type="button" className="detail-analysis__finding-link"
+            onClick={() => onFindingClick?.(finding)}
+            aria-label={`Ver detalle del hallazgo ${finding.id}`}>
+            <header>
+              <span className="detail-analysis__kind">{kindLabels[finding.kind] ?? finding.kind}</span>
+              {finding.pendingConfirmation && <span className="detail-analysis__pending">Pendiente</span>}
+            </header>
+            <p>{finding.text}</p>
+            <p className="muted">
+              {finding.source.filename} · versión {finding.source.version} · {finding.source.locator}
+            </p>
+          </button>
         </li>
       ))}
       {matched.length > 50 && <li className="muted detail-analysis__more">
@@ -299,6 +311,47 @@ function MetricDrawer({ metric, documents, analysis }: {
       </li>}
     </ol>
   </div>;
+}
+
+// Popup con el detalle del finding: tipo, texto, fuente y, cuando la IA la
+// entregó, la explicación de qué le faltó para no marcarlo como pendiente.
+function FindingDetailDialog({ finding, onClose }: {
+  finding: FindingItem;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { dialog.current?.showModal(); }, []);
+  const reason = finding.pendingReason?.trim();
+  return <dialog ref={dialog} className="pending-help-dialog finding-dialog" aria-labelledby="finding-dialog-title"
+    onCancel={onClose}>
+    <header className="pending-help-dialog__head">
+      <h2 id="finding-dialog-title">{kindLabels[finding.kind] ?? finding.kind}</h2>
+      <button type="button" className="secondary" onClick={onClose} aria-label="Cerrar">×</button>
+    </header>
+    <div className="pending-help-dialog__body">
+      <p className="pending-help-dialog__eyebrow">Hallazgo</p>
+      <p className="pending-help-dialog__lead">{finding.text}</p>
+      {finding.pendingConfirmation && <>
+        <p className="pending-help-dialog__eyebrow">Por qué está pendiente</p>
+        <p className="pending-help-dialog__lead">
+          {reason || 'La IA no entregó una razón específica. Revisá la fuente: típicamente falta definir el actor, el resultado esperado o el criterio de aceptación.'}
+        </p>
+        <p className="pending-help-dialog__eyebrow">Qué corregir</p>
+        <ol className="pending-help-dialog__steps">
+          <li>Abrí el documento fuente en el renglón citado abajo.</li>
+          <li>Reescribí el requisito aclarando lo que la IA señaló arriba.</li>
+          <li>Re-subí la nueva versión; el análisis se dispara de nuevo.</li>
+        </ol>
+      </>}
+      <p className="pending-help-dialog__eyebrow">Fuente</p>
+      <p className="pending-help-dialog__lead muted">
+        {finding.source.filename} · versión {finding.source.version} · locator <code>{finding.source.locator}</code>
+      </p>
+    </div>
+    <div className="pending-help-dialog__actions">
+      <button type="button" className="secondary" onClick={onClose}>Cerrar</button>
+    </div>
+  </dialog>;
 }
 
 function EmptyDrawer({ title, message }: { title: string; message: string }) {

@@ -10,6 +10,9 @@ export type Finding = {
   key?: string;
   requirementKey?: string;
   pendingConfirmation: boolean;
+  // Explicación corta del motivo cuando pendingConfirmation es true. La IA
+  // la devuelve; el analizador por reglas la deja undefined.
+  pendingReason?: string;
 };
 export type Evidence = {
   versionId: string;

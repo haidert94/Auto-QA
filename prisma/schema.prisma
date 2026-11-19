@@ -289,6 +289,10 @@ model RequirementTraceability {
   kind                FindingKind
   text                String
   pendingConfirmation Boolean
+  // Motivo que la IA aporta cuando marca un finding como pendingConfirmation.
+  // Null cuando el finding vino del analizador por reglas o cuando la IA no
+  // justificó la ambigüedad.
+  pendingReason       String?
   versionId           String
   version             DocumentVersion      @relation("PrimarySource", fields: [versionId], references: [id], onDelete: Cascade)
   locator             String
