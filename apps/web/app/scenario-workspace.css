@@ -148,7 +148,10 @@
    documentación" (esta última ya se encadena al subir módulos), pero
    dejamos visible el botón de eliminar — es la única puerta para quitar
    un documento cargado desde la UI en proyectos READY. */
-.documents-dialog__body ul.document-list li .actions > button:first-of-type:not(:last-of-type) { display: none; }
+/* "Analizar documentación" sigue oculto: ya se dispara automáticamente
+   al subir un módulo. "Marcar como validado" y "Eliminar" quedan
+   visibles — la UI y el popup de guías dependen de ellos para cerrar
+   el pendiente "Valida un documento procesado". */
 .documents-dialog__body ul.document-list + button { display: none; }
 /* El reporte IPA ya se muestra en la tarjeta "Análisis documental" del
    tab Datos; dentro del modal sería info duplicada. */
