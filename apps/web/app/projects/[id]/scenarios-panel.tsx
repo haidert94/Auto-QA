@@ -49,6 +49,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [suggestions, setSuggestions] = useState<Array<{ title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }> | null>(null);
   const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
   const [types, setTypes] = useState<TestType[] | null>(null);
+  const [typesError, setTypesError] = useState('');
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -142,12 +143,26 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           // Preseleccionamos todos los disponibles para que el botón funcione
           // al primer intento sin obligar al usuario a marcar uno por uno.
           setSelectedTypes(new Set(list.filter(t => t.available).map(t => t.code)));
+        } else {
+          // Render explícito: antes el panel se quedaba en "cargando…" para
+          // siempre si el plan no incluye AI_DOCUMENT_ANALYSIS (403) o si la
+          // API caía. Muestra el motivo real que devuelve el backend.
+          const payload = await typesRes.json().catch(() => ({}));
+          const message = typesRes.status === 403
+            ? 'Tu plan no incluye generación de escenarios con IA. Actualiza para habilitar los agentes.'
+            : (payload.message ?? `No se pudo cargar los tipos (HTTP ${typesRes.status}).`);
+          setTypesError(Array.isArray(message) ? message.join(' · ') : message);
+          setTypes([]);
         }
         if (jobsRes.ok) {
           const jobs: AutomationSummary[] = await jobsRes.json();
           setLatestJob(jobs[0] ?? null);
         }
-      } catch {/* UI muestra "cargando opciones" si falta */}
+      } catch (error) {
+        if (!active) return;
+        setTypesError(error instanceof Error ? error.message : 'No se pudo comunicar con la API de AutoQA.');
+        setTypes([]);
+      }
     })();
     return () => { active = false; };
   }, [projectId]);
@@ -301,9 +316,13 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {(canSuggest || canGenerate) && <details className="scenario-ai-tools"><summary><Sparkles size={14} />Generar y sugerir escenarios con IA</summary>
     <section className="generator">
       <h3>Generar escenarios con IA</h3>
-      {types === null
-        ? <p className="muted">Cargando tipos disponibles…</p>
-        : <>
+      {typesError
+        ? <p className="error" role="alert">{typesError}</p>
+        : types === null
+          ? <p className="muted">Cargando tipos disponibles…</p>
+          : types.length === 0
+            ? <p className="muted">No hay tipos de prueba habilitados para este plan.</p>
+            : <>
           <ul className="type-select">
             {types.map(t => <li key={t.code} className={t.available ? '' : 'locked'}>
               <label title={t.available ? t.description : 'Requiere un plan superior'}>
