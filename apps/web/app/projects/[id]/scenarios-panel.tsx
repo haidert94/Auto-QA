@@ -229,6 +229,26 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     if (!response.ok) throw new Error(payload.message ?? 'No se pudo lanzar la generación.');
   }
 
+  // Espera a que el job llegue a stage="generated" (fin de la Fase C). Igual
+  // que waitForReview, hace polling cada 3s con timeout duro. El timeout es
+  // más amplio porque los 6 agentes corren en paralelo y cada uno puede
+  // tardar segundos contra Haiku.
+  async function waitForGeneration(jobId: string, timeoutMs = 240_000): Promise<AutomationSummary | null> {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/automation/${jobId}`, { cache: 'no-store' });
+        if (response.ok) {
+          const job: AutomationSummary = await response.json();
+          if (job.stage === 'generated') return job;
+          if (job.status === 'FAILED' || job.status === 'CANCELED') return null;
+        }
+      } catch {/* sigue reintentando hasta el timeout */}
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    return null;
+  }
+
   async function generate() {
     setGenerateNotice(''); setError('');
     if (selectedTypes.size === 0) {
@@ -271,8 +291,18 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       // Paso 3: con el job en review-ready, encolamos los tipos marcados.
       setGenerateNotice('Análisis listo. Encolando agentes de generación…');
       await selectTypesOnJob(job.id);
-      setGenerateNotice('Generación encolada. Los escenarios aparecerán aquí a medida que el worker termine cada agente.');
-      setTimeout(() => void load(), 2000);
+
+      // Paso 4: esperar que los 6 agentes terminen. Durante este tiempo el
+      // botón sigue deshabilitado con "Procesando…" para que el usuario no
+      // dispare un nuevo job sobre uno todavía corriendo.
+      setGenerateNotice('Procesando: los agentes están generando los casos…');
+      const done = await waitForGeneration(job.id);
+      if (!done) {
+        setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios irán apareciendo según termine cada agente.');
+      } else {
+        setGenerateNotice('Generación completada. Revisa los escenarios abajo.');
+      }
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo comunicar con la API.');
     } finally { setGenerating(false); }
@@ -389,7 +419,7 @@ function GenerateCta({ score, status, projectStatus, canGenerate, availableTypes
     <div className="generate-cta__action">
       <button type="button" disabled={disabled} onClick={onGenerate}
         aria-describedby={disabled ? 'generate-cta-reason' : undefined}>
-        {generating ? 'Trabajando…' : 'Generar casos de prueba'}
+        {generating ? 'Procesando…' : 'Generar casos de prueba'}
       </button>
       {disabled && reasons.length > 0 && <ul id="generate-cta-reason" className="generate-cta__reasons" role="status">
         {reasons.map(reason => <li key={reason}>{reason}</li>)}
