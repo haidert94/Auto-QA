@@ -92,7 +92,10 @@ export function AnalysisCard({ report, documents = [], number = '04', pending }:
       {active && <MetricDrawer metric={active} documents={documents} analysis={analysis} />}
 
       <details className="detail-analysis__section">
-        <summary>Información disponible y faltante</summary>
+        <summary>
+          <span>Información disponible y faltante</span>
+          <span className="detail-analysis__section-count">{ipa.signals.length}</span>
+        </summary>
         <ul className="detail-analysis__signals">
           {ipa.signals.map(signal => (
             <li key={signal.criterion}>
@@ -110,14 +113,20 @@ export function AnalysisCard({ report, documents = [], number = '04', pending }:
       </details>
 
       {ipa.recommendations.length > 0 && <details className="detail-analysis__section">
-        <summary>Recomendaciones ({ipa.recommendations.length})</summary>
+        <summary>
+          <span>Recomendaciones</span>
+          <span className="detail-analysis__section-count">{ipa.recommendations.length}</span>
+        </summary>
         <ul className="detail-analysis__recommendations">
           {ipa.recommendations.map(item => <li key={item}>{item}</li>)}
         </ul>
       </details>}
 
       {analysis && <details className="detail-analysis__section">
-        <summary>Hallazgos y fuentes ({analysis.findings.length})</summary>
+        <summary>
+          <span>Hallazgos y fuentes</span>
+          <span className="detail-analysis__section-count">{analysis.findings.length}</span>
+        </summary>
         {analysis.warnings.length > 0 && <ul className="detail-analysis__warnings">
           {analysis.warnings.map(warning => <li key={warning}>{warning}</li>)}
         </ul>}
