@@ -108,6 +108,7 @@ const savedPlaywright = new Map();
 const previewRequests = [];
 const trackedRunRequests = [];
 let trackingFailures = 0;
+let runCapacity = Infinity;
 const scenarioVersion = scenario => JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
 
 function persistFixtureSpec(scenario) {
@@ -130,6 +131,16 @@ function fixtureSpec(scenario) {
     code: ["import { expect, test } from '@playwright/test';", '', `// Escenario ${scenario.id}`,
       ...(scenario.id === scenarioB ? ['// <img src=x onerror="window.autoqaInjected=true">'] : []), `test(${JSON.stringify(scenario.title)}, async ({ page }) => {`,
       ...(steps.length ? steps : ['  // TODO: define los pasos del escenario en AutoQA.']), '});', ''].join('\n') };
+}
+
+function completeFixtureRun(run) {
+  run.status = 'COMPLETED';
+  run.results = [{ status: 'PASSED', durationMs: 450 }];
+}
+
+async function finishFixtureRun(dialog) {
+  completeFixtureRun(scenarioRuns.at(-1));
+  await expect(dialog.getByRole('button', { name: 'Cerrar', exact: true })).toBeEnabled({ timeout: 10000 });
 }
 
 async function listen(server) {
@@ -179,6 +190,9 @@ const api = createServer(async (request, response) => {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString()); queuedRequests.push({ scenarioId: scenario.id, ...payload });
       if (scenario.id === scenarioB) return send({ message: 'Cuota de ejecuciones alcanzada.' }, 403);
+      if (scenarioRuns.filter(run => ['QUEUED', 'RUNNING'].includes(run.status)).length >= runCapacity) {
+        return send({ code: 'RUN_CONCURRENCY_LIMIT', message: 'Alcanzaste el límite de ejecuciones simultáneas.' }, 409);
+      }
       const run = { id: randomUUID(), scenarioId: scenario.id, scenario: { id: scenario.id, title: scenario.title },
         status: 'QUEUED', createdAt: '2026-11-18T12:00:00Z', completedAt: null, startedAt: null, errorCode: null, environmentId: payload.environmentId, results: [] };
       scenarioRuns.push(run); return send(run, 201);
@@ -433,8 +447,9 @@ async function verifyScenarios(page, screenshots) {
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
   assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id, automationId: fixtureSpec(scenarios[0]).automationId }]);
+  await finishFixtureRun(dialog);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
-  await expect(list.locator('.scenario-result').filter({ hasText: 'Pago sandbox editado' }).getByText('En cola', { exact: true })).toBeVisible();
+  await expect(list.locator('.scenario-result').filter({ hasText: 'Pago sandbox editado' }).getByText('Pasó · 450 ms', { exact: true })).toBeVisible();
   await list.getByRole('checkbox', { name: 'Seleccionar Pago sandbox editado', exact: true }).uncheck();
   await list.getByRole('checkbox', { name: `Seleccionar ${scenarios[1].title}`, exact: true }).check();
   await execute.click();
@@ -456,7 +471,7 @@ async function verifyScenarios(page, screenshots) {
   await expect(list.getByText('Estado no disponible', { exact: true })).toHaveCount(4);
   historyFail = false;
   await page.getByRole('button', { name: 'Reintentar historial', exact: true }).click();
-  await expect(list.getByText('En cola', { exact: true })).toBeVisible();
+  await expect(list.getByText('Pasó · 450 ms', { exact: true })).toBeVisible();
   const populated = scenarios;
   scenarios = [];
   await page.reload();
@@ -548,6 +563,7 @@ async function verifySavedAutomationAfterReload(page) {
     await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
     assert.deepEqual(queuedRequests.slice(initialQueues).map(request => request.automationId),
       scenarios.slice(0, 2).map(scenario => fixtureSpec(scenario).automationId));
+    await finishFixtureRun(dialog);
     await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
 
     scenarios[1].title += ' · editado';
@@ -577,6 +593,7 @@ async function verifySuiteProgress(page) {
     scenarios.push(extra);
     [scenarios[0], scenarios[1], extra].forEach(persistFixtureSpec);
     trackingFailures = 1;
+    runCapacity = 1;
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await page.getByRole('button', { name: 'Ejecutar en runners (3)', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (3)', exact: true });
@@ -590,25 +607,34 @@ async function verifySuiteProgress(page) {
     await expect(dialog.getByText(/^Procesando… 1 de 3/)).toBeVisible();
     await expect(dialog.getByText(/No se pudo actualizar el estado/)).toBeVisible();
 
-    const [passed, failed] = scenarioRuns.slice(initialRuns);
-    assert.deepEqual(trackedRunRequests[firstPoll], [passed.id, failed.id]);
-    passed.status = 'COMPLETED';
-    passed.results = [{ status: 'PASSED', durationMs: 450 }];
-    failed.status = 'RUNNING';
+    await expect(last.getByText('Esperando turno…', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Cerrar', exact: true })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: 'Ver reporte', exact: true })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    assert.equal(scenarioRuns.length - initialRuns, 1);
+    const passed = scenarioRuns[initialRuns];
+    assert.deepEqual(trackedRunRequests[firstPoll], [passed.id]);
+    completeFixtureRun(passed);
     await expect(first.getByText('Pasó', { exact: true })).toBeVisible({ timeout: 10000 });
-    await expect(last.getByText('Procesando…', { exact: true })).toBeVisible();
+    await expect(last.getByText('Procesando…', { exact: true })).toBeVisible({ timeout: 10000 });
     await expect(dialog.getByText(/^Procesando… 2 de 3/)).toBeVisible();
     await expect(dialog.getByText(/No se pudo actualizar el estado/)).toHaveCount(0);
 
+    const failed = scenarioRuns[initialRuns + 1];
     failed.status = 'FAILED';
     await expect(last.getByText('Falló', { exact: true })).toBeVisible({ timeout: 10000 });
     await expect(dialog.getByRole('status')).toHaveText('Ejecuciones finalizadas (2/3).');
     await expect(dialog.getByText('En cola', { exact: false })).toHaveCount(0);
-    assert.equal(queuedRequests.length - initialQueues, 3);
+    assert.deepEqual(scenarioRuns.slice(initialRuns).map(run => run.scenarioId), [scenarioA, extra.id]);
+    assert.equal(queuedRequests.slice(initialQueues).filter(request => request.scenarioId === scenarioA).length, 1);
+    assert.ok(queuedRequests.slice(initialQueues).filter(request => request.scenarioId === extra.id).length > 1);
     assert.deepEqual(trackedRunRequests.at(-1), [failed.id]);
+    await expect(dialog.getByRole('link', { name: 'Ver reporte', exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   } finally {
     trackingFailures = 0;
+    runCapacity = Infinity;
     queuedRequests.length = initialQueues;
     scenarioRuns.length = initialRuns;
     [scenarioA, scenarioB, extra.id].forEach(id => savedPlaywright.delete(id));
@@ -616,7 +642,7 @@ async function verifySuiteProgress(page) {
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
-  console.log('PASS seguimiento de suite con éxito, fallo, rechazo de cuota y reintento de consulta.');
+  console.log('PASS suite espera turno, continúa al liberarse cupo, conserva el rechazo real y habilita las acciones al terminar.');
 }
 
 async function verifyAutomationToolbar(page) {
@@ -735,6 +761,7 @@ async function verifyWritableExecution(page) {
       writeAuthorizationAt: project.environments[1].authorizedAt,
       automationId,
     });
+    await finishFixtureRun(dialog);
     await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
     await page.getByLabel('Entorno seleccionado').selectOption(qa.id);
@@ -845,6 +872,7 @@ async function verifyAutomation(page, screenshots) {
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
   assert.equal(queuedRequests.at(-1).environmentId, environment.id);
+  await finishFixtureRun(dialog);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).uncheck();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[2].title}`, exact: true }).check();

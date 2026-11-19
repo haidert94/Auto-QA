@@ -14,7 +14,10 @@ export function positiveInteger(value: number) {
 export function assertRunQuota(plan: CatalogPlan, request: RunRequest,
   counters: { running: number; browserSeconds: number; performanceRuns: number }) {
   if (counters.running >= plan.parallelRuns) {
-    throw new ConflictException('Alcanzaste el límite de ejecuciones simultáneas.');
+    throw new ConflictException({
+      statusCode: 409, error: 'Conflict', code: 'RUN_CONCURRENCY_LIMIT',
+      message: 'Alcanzaste el límite de ejecuciones simultáneas.',
+    });
   }
 
   if (request.kind === 'BROWSER') {

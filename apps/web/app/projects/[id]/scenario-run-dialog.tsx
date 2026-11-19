@@ -9,24 +9,12 @@ import { can } from '../../permissions';
 import { EnvironmentsDialog } from './environments-dialog';
 import type { ScenarioListItem } from './scenario-card';
 import type { GeneratedSpec } from './automation-export';
-import { runPresentation, type ScenarioRun } from './scenario-presentation';
-
-type SuiteState =
-  | { kind: 'sending' }
-  | { kind: 'active'; runId: string }
-  | { kind: 'finished'; run: ScenarioRun }
-  | { kind: 'rejected' | 'unknown'; detail: string };
-
-type SuiteResult = { scenarioId: string; title: string; state: SuiteState };
-
-const runIdPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-const unknownSubmission: SuiteState = {
-  kind: 'unknown', detail: 'No se pudo confirmar el envío. Consulta el reporte antes de volver a intentarlo.',
-};
+import { runPresentation } from './scenario-presentation';
+import { runScenarioSuite, type SuiteResult, type SuiteState } from './scenario-suite';
 
 function resultLabel(state: SuiteState) {
   switch (state.kind) {
-    case 'sending': return { label: 'Enviando solicitud…', className: 'muted' };
+    case 'waiting': return { label: 'Esperando turno…', className: 'muted' };
     case 'active': return { label: 'Procesando…', className: 'muted' };
     case 'rejected': return { label: 'No ejecutado', className: 'error' };
     case 'unknown': return { label: 'Estado sin confirmar', className: 'muted' };
@@ -44,6 +32,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
 }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
+  const suite = useRef<AbortController | null>(null);
   const [savedProject, setSavedProject] = useState<Project | null>(null);
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
   const currentProject = savedProject && savedProject.revision > project.revision ? savedProject : project;
@@ -53,9 +42,8 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<SuiteResult[] | null>(null);
   const [trackingWarning, setTrackingWarning] = useState('');
-  const activeRunIds = busy ? '' : results?.flatMap(({ state }) => state.kind === 'active' ? [state.runId] : []).join(',') ?? '';
   const finished = results?.filter(({ state }) => state.kind === 'finished').length ?? 0;
-  const pending = results?.filter(({ state }) => state.kind === 'active' || state.kind === 'sending').length ?? 0;
+  const pending = results?.filter(({ state }) => state.kind === 'active' || state.kind === 'waiting').length ?? 0;
   const hasUnknown = results?.some(({ state }) => state.kind === 'unknown');
   const environment = environments.find(item => item.id === environmentId);
   const allowsWrites = environment?.readOnly === false;
@@ -63,54 +51,10 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
   const confirmed = scope !== null && confirmedScope === scope;
   const canConfigureWrites = !!environment && !allowsWrites && supportsScenarioWrites(environment.type)
     && currentProject.status !== 'ARCHIVED' && can(role, 'project.update');
-  useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => {
-    if (!activeRunIds) return;
-    const ids = activeRunIds.split(',');
-    const controller = new AbortController();
-    let timer: number | undefined;
-
-    async function refreshStatus() {
-      try {
-        const runs = new Map<string, ScenarioRun>();
-        for (let start = 0; start < ids.length; start += 100) {
-          const search = new URLSearchParams({ ids: ids.slice(start, start + 100).join(',') });
-          const response = await fetch(`/api/projects/${project.id}/runs?${search}`, {
-            cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]),
-          });
-          if (!response.ok) throw new Error('No se pudo consultar la ejecución.');
-          const batch: ScenarioRun[] = await response.json();
-          if (!Array.isArray(batch)) throw new Error('La API devolvió un estado inválido.');
-          for (const run of batch) runs.set(run.id, run);
-        }
-        if (controller.signal.aborted) return;
-        const updates = new Map<string, SuiteState>();
-        for (const id of ids) {
-          const run = runs.get(id);
-          if (!run) updates.set(id, { kind: 'unknown', detail: 'La ejecución no está disponible. Consulta el reporte.' });
-          else if (run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELED') {
-            updates.set(id, { kind: 'finished', run });
-          }
-        }
-        setTrackingWarning('');
-        if (updates.size) {
-          setResults(current => current?.map(result => {
-            const state = result.state.kind === 'active' ? updates.get(result.state.runId) : undefined;
-            return state ? { ...result, state } : result;
-          }) ?? null);
-          if (updates.size === ids.length) onRunsChanged?.();
-          return;
-        }
-      } catch {
-        if (controller.signal.aborted) return;
-        setTrackingWarning('No se pudo actualizar el estado. Reintentando…');
-      }
-      timer = window.setTimeout(() => void refreshStatus(), 3000);
-    }
-
-    void refreshStatus();
-    return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [activeRunIds, project.id, onRunsChanged]);
+    dialog.current?.showModal();
+    return () => suite.current?.abort();
+  }, []);
 
   function environmentSaved(updated: Project) {
     setSavedProject(updated);
@@ -121,38 +65,29 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
 
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
+    if (suite.current || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
+    const controller = new AbortController();
+    suite.current = controller;
     setBusy(true);
-    setResults(scenarios.map(({ id, title }) => ({ scenarioId: id, title, state: { kind: 'sending' } })));
-    let accepted = false;
-    for (const scenario of scenarios) {
-      let state: SuiteState = unknownSubmission;
-      try {
-        const automationId = specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null;
-        const response = await fetch(`/api/projects/${project.id}/scenarios/${scenario.id}/runs`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-            environmentId, automationId,
-            writeAuthorizationAt: allowsWrites ? environment.authorizedAt : undefined,
-          }),
-          signal: AbortSignal.timeout(15000),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const detail = Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message;
-          state = response.status < 500
-            ? { kind: 'rejected', detail: typeof detail === 'string' && detail ? detail : 'La API rechazó la ejecución.' }
-            : unknownSubmission;
-        } else if (typeof payload.id === 'string' && runIdPattern.test(payload.id)) {
-          state = { kind: 'active', runId: payload.id };
-          accepted = true;
-        }
-      } catch { /* Se desconoce si el servidor recibió la solicitud. */ }
-      const submission = state;
-      setResults(current => current?.map(result => result.scenarioId === scenario.id
-        ? { ...result, state: submission } : result) ?? null);
+    try {
+      await runScenarioSuite({
+        projectId: project.id,
+        scenarios: scenarios.map(scenario => ({
+          scenarioId: scenario.id,
+          title: scenario.title,
+          automationId: specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null,
+        })),
+        environmentId,
+        writeAuthorizationAt: allowsWrites ? environment.authorizedAt ?? undefined : undefined,
+        signal: controller.signal,
+        onProgress: setResults,
+        onWarning: setTrackingWarning,
+      });
+      if (!controller.signal.aborted) onRunsChanged?.();
+    } finally {
+      suite.current = null;
+      if (!controller.signal.aborted) setBusy(false);
     }
-    setBusy(false);
-    if (accepted) onRunsChanged?.();
   }
 
   return <><dialog ref={dialog} className="scenario-run-dialog" aria-labelledby="suite-title"
@@ -196,8 +131,11 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
           {'detail' in state && <span className={className}>{state.detail}</span>}
         </li>;
       })}</ul>
-      {!busy && <div className="actions"><Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>
-        <button type="button" className="secondary" onClick={onClose}>Cerrar</button></div>}
+      <div className="actions">
+        {busy ? <button type="button" disabled>Ver reporte</button>
+          : <Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>}
+        <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cerrar</button>
+      </div>
     </>}
   </dialog>
     {editingEnvironmentId && <EnvironmentsDialog project={currentProject} focusEnvironmentId={editingEnvironmentId}

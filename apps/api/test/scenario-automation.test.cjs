@@ -154,7 +154,11 @@ test('Enterprise muestra minutos sin límite y reserva navegador respetando la s
   assert.equal((await usage.summary('test-org')).browser.secondsReserved, 120);
 
   active = 8;
-  await assert.rejects(reserve('run-2'), /ejecuciones simultáneas/);
+  await assert.rejects(reserve('run-2'), error => {
+    assert.match(error.message, /ejecuciones simultáneas/);
+    assert.equal(error.getResponse().code, 'RUN_CONCURRENCY_LIMIT');
+    return true;
+  });
   active = 1;
   browser.monthlyLimit = 3;
   assert.equal((await usage.summary('test-org')).browser.minutesLimit, 3);
