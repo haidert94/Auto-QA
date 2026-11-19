@@ -196,18 +196,10 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
         </ul>
       </details>
 
-      {ipa.recommendations.length > 0 && <details className="detail-analysis__section">
-        <summary>
-          <span>Recomendaciones</span>
-          <span className="detail-analysis__section-count">{ipa.recommendations.length}</span>
-        </summary>
-        <ul className="detail-analysis__recommendations">
-          {ipa.recommendations.map(item => <li key={item}>
-            <button type="button" className="detail-analysis__pending-link detail-analysis__pending-link--full"
-              onClick={() => setHelpItem(item)}>{item}</button>
-          </li>)}
-        </ul>
-      </details>}
+      {/* "Recomendaciones" era duplicado exacto de los "Pendiente ·" de
+         "Información disponible y faltante" (recommendations se arma en
+         el backend como flatMap de signal.missing). Lo omitimos para no
+         ensuciar la vista. */}
 
       {analysis && <details className="detail-analysis__section">
         <summary>
