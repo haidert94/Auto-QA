@@ -140,7 +140,7 @@ function completeFixtureRun(run) {
 
 async function finishFixtureRun(dialog) {
   completeFixtureRun(scenarioRuns.at(-1));
-  await expect(dialog.getByRole('button', { name: 'Cerrar', exact: true })).toBeEnabled({ timeout: 10000 });
+  await expect(dialog.getByRole('link', { name: 'Ver reporte', exact: true })).toBeVisible({ timeout: 10000 });
 }
 
 async function listen(server) {
@@ -608,15 +608,29 @@ async function verifySuiteProgress(page) {
     await expect(dialog.getByText(/No se pudo actualizar el estado/)).toBeVisible();
 
     await expect(last.getByText('Esperando turno…', { exact: true })).toBeVisible();
-    await expect(dialog.getByRole('button', { name: 'Cerrar', exact: true })).toBeDisabled();
-    await expect(dialog.getByRole('button', { name: 'Ver reporte', exact: true })).toBeDisabled();
-    await page.keyboard.press('Escape');
+    const close = dialog.getByRole('button', { name: 'Cerrar', exact: true });
+    const report = dialog.getByRole('button', { name: 'Ver reporte', exact: true });
+    await expect(close).toBeEnabled();
+    await expect(report).toBeDisabled();
+    await close.click();
+    await expect(dialog).toBeHidden();
+
+    await page.getByRole('tab', { name: /^Escenarios/ }).click();
+    await page.getByRole('button', { name: 'Ver suite', exact: true }).click();
     await expect(dialog).toBeVisible();
+    await expect(report).toBeDisabled();
+    await close.click();
+    await expect(dialog).toBeHidden();
+
     assert.equal(scenarioRuns.length - initialRuns, 1);
     const passed = scenarioRuns[initialRuns];
     assert.deepEqual(trackedRunRequests[firstPoll], [passed.id]);
     completeFixtureRun(passed);
+    await expect.poll(() => scenarioRuns.length - initialRuns, { timeout: 10000 }).toBe(2);
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await page.getByRole('button', { name: 'Ver suite', exact: true }).click();
     await expect(first.getByText('Pasó', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(report).toBeDisabled();
     await expect(last.getByText('Procesando…', { exact: true })).toBeVisible({ timeout: 10000 });
     await expect(dialog.getByText(/^Procesando… 2 de 3/)).toBeVisible();
     await expect(dialog.getByText(/No se pudo actualizar el estado/)).toHaveCount(0);
@@ -642,7 +656,7 @@ async function verifySuiteProgress(page) {
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
-  console.log('PASS suite espera turno, continúa al liberarse cupo, conserva el rechazo real y habilita las acciones al terminar.');
+  console.log('PASS Cerrar oculta la suite y la ejecución sigue; Ver reporte se habilita al terminar.');
 }
 
 async function verifyAutomationToolbar(page) {

@@ -11,9 +11,8 @@ import { can } from '../../permissions';
 import { scenarioSpecSignature } from './automation-export';
 import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
-import { useScenarioHeader } from './project-tabs';
+import { useScenarioHeader, useScenarioSuite } from './project-tabs';
 import { featureText, isManualScenario, type ScenarioRun } from './scenario-presentation';
-import { ScenarioRunDialog } from './scenario-run-dialog';
 import { ScenarioWorkspace } from './scenario-workspace';
 
 type RequirementOption = { id: string; title: string; externalKey: string | null };
@@ -31,6 +30,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const environments = project.environments.filter(environment => !scenarioRunEnvironmentError(environment));
   const runnable = project.status === 'READY' && environments.length > 0;
   const header = useScenarioHeader();
+  const runner = useScenarioSuite();
   const updateCount = header?.setCount;
   const [items, setItems] = useState<ScenarioListItem[] | null>(null);
   const [listError, setListError] = useState('');
@@ -38,7 +38,6 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [runs, setRuns] = useState<ScenarioRun[]>([]);
   const [runsAvailable, setRunsAvailable] = useState(false);
   const [runsWarning, setRunsWarning] = useState('');
-  const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
   const [requirements, setRequirements] = useState<RequirementOption[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
@@ -71,7 +70,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       setRuns(await response.json()); setRunsAvailable(true); setRunsWarning('');
     } catch { setRunsAvailable(false); setRunsWarning('No se pudo consultar el historial. Los estados de ejecución no están disponibles.'); }
   }, [projectId]);
-  useEffect(() => { void loadRuns(); }, [loadRuns]);
+  useEffect(() => { void loadRuns(); }, [loadRuns, runner?.historyVersion]);
 
   function exportFeature() {
     const exported = (items ?? []).filter(item => checked.size === 0 || checked.has(item.id));
@@ -348,8 +347,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
-        {canRun && <button type="button" disabled={!runnable || !suiteReady || !!listError} onClick={() => setRunSelection(suite)}>
-          Ejecutar suite ({suite.length})<ArrowRight size={14} />
+        {canRun && runner && <button type="button" disabled={!runner.hasSuite && (!runnable || !suiteReady || !!listError)} onClick={() => runner.open(suite)}>
+          {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
         </button>}
       </>} />, header.element)}
 
@@ -381,12 +380,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
       : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
-        hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun ? scenarios => setRunSelection(scenarios) : undefined}
+        hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun ? runner?.open : undefined}
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
-    {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={header?.specs}
-      onClose={() => setRunSelection(null)} onRunsChanged={loadRuns} />}
 
     {/* El bloque "Generar y sugerir escenarios con IA" se removió: ahora
        el CTA de arriba dispara la generación con todos los tipos del plan

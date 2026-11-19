@@ -25,10 +25,10 @@ function resultLabel(state: SuiteState) {
   }
 }
 
-export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, onRunsChanged }: {
+export function ScenarioRunDialog({ project, role, scenarios, specs, open, onHide, onClose, onRunsChanged }: {
   project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
-  onClose: () => void; onRunsChanged?: () => void;
+  open: boolean; onHide: () => void; onClose: () => void; onRunsChanged?: () => void;
 }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -52,9 +52,17 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
   const canConfigureWrites = !!environment && !allowsWrites && supportsScenarioWrites(environment.type)
     && currentProject.status !== 'ARCHIVED' && can(role, 'project.update');
   useEffect(() => {
-    dialog.current?.showModal();
-    return () => suite.current?.abort();
-  }, []);
+    const element = dialog.current;
+    if (!element) return;
+    if (open) element.showModal();
+    else element.close();
+  }, [open]);
+  useEffect(() => () => suite.current?.abort(), []);
+
+  function close() {
+    if (suite.current) onHide();
+    else onClose();
+  }
 
   function environmentSaved(updated: Project) {
     setSavedProject(updated);
@@ -91,7 +99,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
   }
 
   return <><dialog ref={dialog} className="scenario-run-dialog" aria-labelledby="suite-title"
-    onCancel={event => { if (busy) event.preventDefault(); else onClose(); }}>
+    onCancel={event => { event.preventDefault(); close(); }}>
     <h2 id="suite-title">Ejecutar suite ({scenarios.length})</h2>
     {!results ? <>
       <p>Se solicitará una ejecución por escenario. La API comprobará autorización, alcance, plan y cuotas.</p>
@@ -134,7 +142,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, on
       <div className="actions">
         {busy ? <button type="button" disabled>Ver reporte</button>
           : <Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>}
-        <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cerrar</button>
+        <button type="button" className="secondary" onClick={close}>Cerrar</button>
       </div>
     </>}
   </dialog>

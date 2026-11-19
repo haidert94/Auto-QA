@@ -1,10 +1,21 @@
 'use client';
 
-import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 
+import type { OrgRole } from '../../autoqa-server';
+import type { Project } from '../onboarding';
 import type { GeneratedSpec } from './automation-export';
+import type { ScenarioListItem } from './scenario-card';
+import { ScenarioRunDialog } from './scenario-run-dialog';
 
 type ScenarioSpecs = Record<string, GeneratedSpec>;
+
+const ScenarioSuiteContext = createContext<{
+  open: (scenarios: ScenarioListItem[]) => void;
+  hasSuite: boolean;
+  historyVersion: number;
+} | null>(null);
+export function useScenarioSuite() { return useContext(ScenarioSuiteContext); }
 
 const ScenarioHeaderContext = createContext<{
   element: HTMLDivElement | null;
@@ -48,11 +59,15 @@ function readHashTab(available: TabId[]): TabId {
 }
 
 export function ProjectTabs({
+  project,
+  role,
   showExploration,
   context,
   heading,
   children,
 }: {
+  project: Project;
+  role?: OrgRole;
   showExploration: boolean;
   context?: ReactNode;
   heading?: ReactNode;
@@ -64,6 +79,15 @@ export function ProjectTabs({
   const [headerElement, setHeaderElement] = useState<HTMLDivElement | null>(null);
   const [scenarioCount, setScenarioCount] = useState<number | null>(null);
   const [specs, setSpecs] = useState<ScenarioSpecs>({});
+  const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
+  const [suiteOpen, setSuiteOpen] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const hasSuite = runSelection !== null;
+  const openSuite = useCallback((scenarios: ScenarioListItem[]) => {
+    setRunSelection(current => current ?? scenarios);
+    setSuiteOpen(true);
+  }, []);
+  const suiteContext = useMemo(() => ({ open: openSuite, hasSuite, historyVersion }), [openSuite, hasSuite, historyVersion]);
   const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount, specs }), [headerElement, specs]);
   const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
   const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion', specs, setSpecs }), [automationElement, active, specs]);
@@ -89,6 +113,7 @@ export function ProjectTabs({
   }
 
   return (
+    <ScenarioSuiteContext.Provider value={suiteContext}>
     <ScenarioHeaderContext.Provider value={scenarioHeader}>
     <AutomationHeaderContext.Provider value={automationHeader}>
     <ReportHeaderContext.Provider value={reportHeader}>
@@ -131,10 +156,14 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
+      {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs}
+        open={suiteOpen} onHide={() => setSuiteOpen(false)} onClose={() => { setSuiteOpen(false); setRunSelection(null); }}
+        onRunsChanged={() => setHistoryVersion(version => version + 1)} />}
     </ExplorationHeaderContext.Provider>
     </QualityHeaderContext.Provider>
     </ReportHeaderContext.Provider>
     </AutomationHeaderContext.Provider>
     </ScenarioHeaderContext.Provider>
+    </ScenarioSuiteContext.Provider>
   );
 }

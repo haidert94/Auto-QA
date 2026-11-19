@@ -63,7 +63,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
 
   return (
     <div className="project-detail">
-    <ProjectTabs heading={<ProjectHeading project={project} />} showExploration={showExploration} context={
+    <ProjectTabs key={project.id} project={project} role={role} heading={<ProjectHeading project={project} />} showExploration={showExploration} context={
       <span className="project-environment-context"><i aria-hidden="true" />{project.environments.length} {project.environments.length === 1 ? 'entorno' : 'entornos'} registrados</span>
     }>
       {{

@@ -10,10 +10,9 @@ import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
-import { useAutomationHeader } from './project-tabs';
+import { useAutomationHeader, useScenarioSuite } from './project-tabs';
 import { AutomationCodeViewer } from './automation-code-viewer';
 import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
-import { ScenarioRunDialog } from './scenario-run-dialog';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
 import { ScenarioListToolbar } from './scenario-list-toolbar';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
@@ -49,6 +48,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const canGenerate = can(role, 'automation.generate');
   const canRunSuite = can(role, 'run.execute');
   const header = useAutomationHeader();
+  const runner = useScenarioSuite();
   const specs = header?.specs ?? {};
   const setSpecs = header?.setSpecs;
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
@@ -59,7 +59,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState('');
@@ -207,7 +206,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Generador de código Playwright TypeScript a partir de los escenarios guardados. Revisa el código antes de solicitar su ejecución."
       actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
-        {canRunSuite && <button type="button" disabled={busy || !canRun} onClick={() => setRunSelection(ready)}><ArrowRight size={14} />Ejecutar en runners ({ready.length})</button>}</>} />, header.element)}
+        {canRunSuite && runner && <button type="button" disabled={!runner.hasSuite && (busy || !canRun)} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar en runners (${ready.length})`}</button>}</>} />, header.element)}
     {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
       <button type="button" disabled={generationDisabled} onClick={() => void prepare()}>
         <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
@@ -262,6 +261,5 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
       </div>
     </div>
-    {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs} onClose={() => setRunSelection(null)} />}
   </section>;
 }
