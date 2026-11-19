@@ -6,7 +6,20 @@ export type CatalogPlan = Prisma.PlanGetPayload<{ include: typeof planInclude }>
 
 // Runtime support is separate from the proposed entitlement stored in the catalog.
 // Enable a code here only when its engine, worker and integration tests are ready.
-const implemented = new Set<CapabilityCode>(['DOCUMENT_ANALYSIS', 'IPA', 'BROWSER_TESTS']);
+// Ampliado el 2026-11-18 tras cablear el AiDocumentAnalyzer y verificar que
+// cada agente (functional-web, mobile, compatibility, availability,
+// performance, ux) + runners (Lighthouse, k6, ux-runner, ipa, icsp) y las
+// operaciones IA (document-analysis, scenario-generation, failure-
+// explanation, ux-analysis) están en producción. Una capability afuera de
+// este set responde UPCOMING aunque el plan la venda como OPERATIONAL.
+const implemented = new Set<CapabilityCode>([
+  'DOCUMENT_ANALYSIS', 'IPA', 'ICSP', 'TRACEABILITY',
+  'BROWSER_TESTS', 'RESPONSIVE_TESTS', 'CROSS_BROWSER',
+  'LIGHTHOUSE_AUDITS', 'LOAD_TESTS', 'UPTIME_MONITORS',
+  'AI_DOCUMENT_ANALYSIS', 'AI_SCENARIO_GENERATION',
+  'AI_FAILURE_EXPLANATION', 'UX_ANALYSIS',
+  'ADVANCED_REPORTS',
+]);
 
 export function availability(capability: Pick<PlanCapability, 'code' | 'availability'>) {
   return capability.availability === 'NOT_INCLUDED' || implemented.has(capability.code)
