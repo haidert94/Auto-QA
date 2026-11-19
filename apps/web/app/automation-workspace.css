@@ -38,6 +38,9 @@
 .automation-list-message h3 { font-size: 14px; margin-top: 10px; }
 .automation-list-message > svg { color: var(--blue); }
 .automation-preview-column { min-width: 0; }
+.automation-run-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 9px 12px; margin-bottom: 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; font-size: 12px; }
+.automation-run-status p { margin: 0; color: var(--muted); }
+.automation-run-status[data-state="running"] p { color: var(--blue); }
 .automation-editor { background: #101421; color: #e1e7fa; border: 1px solid #29324b; border-radius: 3px; min-width: 0; overflow: hidden; }
 .automation-editor__head { display: flex; align-items: center; min-width: 0; gap: 8px; background: #0c101b; border-bottom: 1px solid #29324b; }
 .automation-file-tabs { display: flex; align-items: stretch; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #40517d #0c101b; }

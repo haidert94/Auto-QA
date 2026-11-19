@@ -108,6 +108,7 @@ const savedPlaywright = new Map();
 const previewRequests = [];
 const trackedRunRequests = [];
 let trackingFailures = 0;
+let activityUnavailable = false;
 let runCapacity = Infinity;
 const scenarioVersion = scenario => JSON.stringify([scenario.title, scenario.expectedResult, scenario.steps]);
 
@@ -197,6 +198,13 @@ const api = createServer(async (request, response) => {
         status: 'QUEUED', createdAt: '2026-11-18T12:00:00Z', completedAt: null, startedAt: null, errorCode: null, environmentId: payload.environmentId, results: [] };
       scenarioRuns.push(run); return send(run, 201);
     }
+  }
+  if (path === base + '/runs/activity') {
+    if (activityUnavailable) return send({ message: 'Actividad no disponible.' }, 503);
+    return send({
+      running: scenarioRuns.filter(run => run.status === 'RUNNING').length,
+      queued: scenarioRuns.filter(run => run.status === 'QUEUED').length,
+    });
   }
   if (path === base + '/runs') {
     const ids = requestUrl.searchParams.get('ids')?.split(',');
@@ -657,6 +665,38 @@ async function verifySuiteProgress(page) {
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
   console.log('PASS Cerrar oculta la suite y la ejecución sigue; Ver reporte se habilita al terminar.');
+}
+
+async function verifyAutomationRunStatus(page) {
+  const initialRuns = scenarioRuns.length;
+  const queued = { ...scenarioRuns[0], id: randomUUID(), status: 'QUEUED', results: [] };
+
+  try {
+    scenarioRuns.push(queued);
+    activityUnavailable = true;
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    const indicator = page.getByRole('region', { name: 'Estado de ejecución', exact: true });
+    const status = indicator.getByRole('status');
+    const viewer = page.getByRole('region', { name: 'Visor de código Playwright', exact: true });
+    await expect(status).toHaveText('No se pudo consultar el estado.');
+    const indicatorBounds = await indicator.boundingBox();
+    const viewerBounds = await viewer.boundingBox();
+    assert.ok(indicatorBounds.y + indicatorBounds.height <= viewerBounds.y);
+
+    activityUnavailable = false;
+    await expect(status).toHaveText('0 en ejecución · 1 en cola', { timeout: 10000 });
+    queued.status = 'RUNNING';
+    await expect(status).toHaveText('1 en ejecución · 0 en cola', { timeout: 10000 });
+    completeFixtureRun(queued);
+    await expect(status).toHaveText('Sin ejecuciones en curso ni en cola.', { timeout: 10000 });
+  } finally {
+    activityUnavailable = false;
+    scenarioRuns.length = initialRuns;
+  }
+
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS el indicador sobre el visor muestra consulta fallida, cola, ejecución y ausencia de actividad.');
 }
 
 async function verifyAutomationToolbar(page) {
@@ -1169,6 +1209,7 @@ async function run() {
     await verifyAutomationToolbar(page);
     await verifyWritableExecution(page);
     await verifySuiteProgress(page);
+    await verifyAutomationRunStatus(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();

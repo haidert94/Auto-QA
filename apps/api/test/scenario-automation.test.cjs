@@ -104,6 +104,28 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.equal(calls, 2);
 });
 
+test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto autorizado', async () => {
+  let counts = [{ status: 'QUEUED', _count: { _all: 2 } }];
+  const prisma = {
+    project: { async findFirst({ where }) {
+      assert.deepEqual(where, { id: 'project', organizationId: workspace.organizationId });
+      return { id: 'project' };
+    } },
+    testRun: { async groupBy(query) {
+      assert.deepEqual(query, {
+        by: ['status'], where: { projectId: 'project', status: { in: ['RUNNING', 'QUEUED'] } }, _count: { _all: true },
+      });
+      return counts;
+    } },
+  };
+  const controller = new RunsController(new RunsService(prisma, {}, {}, {}));
+  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 2 });
+  counts = [{ status: 'RUNNING', _count: { _all: 1 } }];
+  assert.deepEqual(await controller.activity('project', workspace), { running: 1, queued: 0 });
+  counts = [];
+  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 0 });
+});
+
 test('consulta las ejecuciones pedidas sin salir del alcance del proyecto', async () => {
   const first = '10000000-0000-4000-8000-000000000001';
   const second = '10000000-0000-4000-8000-000000000002';

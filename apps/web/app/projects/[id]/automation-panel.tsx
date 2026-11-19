@@ -12,6 +12,7 @@ import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader, useScenarioSuite } from './project-tabs';
 import { AutomationCodeViewer } from './automation-code-viewer';
+import { AutomationRunStatus } from './automation-run-status';
 import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
 import { ScenarioListToolbar } from './scenario-list-toolbar';
@@ -255,7 +256,9 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
           })}</ul>}
         {scenarios && !listError && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
       </section>
-      <div className="automation-preview-column"><AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} loading={generating.size > 0 || (!!activeId && activeId !== 'configuration' && !selectedSpec && !listError)} />
+      <div className="automation-preview-column">
+        {header?.active && <AutomationRunStatus projectId={project.id} />}
+        <AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} loading={generating.size > 0 || (!!activeId && activeId !== 'configuration' && !selectedSpec && !listError)} />
         {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}
         {selectedSpec?.review.length ? <p className="automation-preview-note">Pendientes detectados: {selectedSpec.review.join(' · ')}. Se incluye el código en la descarga para su revisión, pero no en la solicitud de ejecución.</p> : null}
         {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}

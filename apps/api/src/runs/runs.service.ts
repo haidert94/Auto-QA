@@ -85,6 +85,19 @@ export class RunsService {
     });
   }
 
+  async activity(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const counts = await this.prisma.testRun.groupBy({
+      by: ['status'],
+      where: { projectId, status: { in: ['RUNNING', 'QUEUED'] } },
+      _count: { _all: true },
+    });
+    return {
+      running: counts.find(row => row.status === 'RUNNING')?._count._all ?? 0,
+      queued: counts.find(row => row.status === 'QUEUED')?._count._all ?? 0,
+    };
+  }
+
   async get(projectId: string, runId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const run = await this.prisma.testRun.findFirst({

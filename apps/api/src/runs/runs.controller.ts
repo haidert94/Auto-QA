@@ -26,6 +26,12 @@ export class RunsController {
     return this.service.list(projectId, workspace, runIds);
   }
 
+  @Get('projects/:projectId/runs/activity')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  activity(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.activity(projectId, workspace);
+  }
+
   @Get('projects/:projectId/runs/:runId')
   @RequiresPlanCapability('BROWSER_TESTS')
   get(
