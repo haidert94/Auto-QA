@@ -6,12 +6,12 @@
 .automation-scenarios h2 { font-size: 18px; line-height: 1.35; margin: 0 0 5px; }
 .automation-scenarios > header p { color: var(--blue); font: 400 9px/1.6 var(--mono); margin: 0; }
 .automation-suite-count { background: var(--quiet); padding: 3px 6px; color: var(--muted); font: 400 9px/1.5 var(--mono); text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
-.automation-bulk-select { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--quiet); border-block: 1px solid #eeede8; }
-.automation-bulk-select label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 550; }
-.automation-bulk-select input, .automation-pick-list input { accent-color: var(--blue); }
-.automation-bulk-select button { min-width: 28px; min-height: 28px; padding: 5px; background: transparent; color: var(--muted); border: 0; border-radius: 2px; }
-.automation-bulk-select button:hover { color: var(--blue); background: var(--surface); }
-.automation-pick-list { list-style: none; padding: 0; margin: 0; }
+.automation-scenarios__tools { display: flex; align-items: center; gap: 8px; }
+.automation-pick-list input, .automation-panel .scenario-select-all input { accent-color: var(--blue); }
+.automation-scenarios__tools button { min-width: 28px; min-height: 28px; padding: 5px; background: transparent; color: var(--muted); border: 0; border-radius: 2px; }
+.automation-scenarios__tools button:hover { color: var(--blue); background: var(--quiet); }
+.automation-pick-list { list-style: none; padding: 0; margin: 0; scroll-margin-top: 80px; }
+.automation-scenarios .scenario-pagination { margin: 8px; }
 .automation-pick-list > li { display: flex; align-items: flex-start; gap: 9px; padding: 16px 12px; border-bottom: 1px solid #eeede8; border-left: 3px solid transparent; }
 .automation-pick-list > li.automation-pick--active { border-left-color: var(--blue); background: #f9faff; }
 .automation-pick-list > li > input { margin-top: 3px; flex-shrink: 0; }

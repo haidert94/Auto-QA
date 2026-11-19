@@ -200,7 +200,7 @@ const api = createServer(async (request, response) => {
   return send({ message: 'No encontrado' }, 404);
 });
 
-async function verifyScenarioPagination(page) {
+async function verifyScenarioPagination(page, automation = false) {
   const original = scenarios;
   scenarios = Array.from({ length: 35 }, (_, i) => ({
     id: '73000000-0000-4000-8000-' + String(i + 1).padStart(12, '0'),
@@ -210,14 +210,16 @@ async function verifyScenarioPagination(page) {
   }));
   try {
     await page.reload();
-    await page.getByRole('tab', { name: 'Escenarios (35)', exact: true }).click();
-    const pagination = page.getByRole('navigation', { name: 'Paginación de escenarios' });
+    await page.getByRole('tab', { name: automation ? 'Automatización' : 'Escenarios (35)', exact: true }).click();
+    const panel = page.getByRole('region', { name: automation ? 'Automatización Playwright' : 'Gestión de escenarios', exact: true });
+    const pagination = panel.getByRole('navigation', { name: automation ? 'Paginación de automatización' : 'Paginación de escenarios' });
     const pageSize = pagination.getByRole('combobox', { name: 'Escenarios por página' });
     const nextPage = pagination.getByRole('button', { name: 'Página siguiente' });
     const previousPage = pagination.getByRole('button', { name: 'Página anterior' });
-    const list = page.getByRole('list', { name: 'Escenarios del proyecto' });
-    const rows = list.locator('.scenario-result');
-    const search = page.getByRole('searchbox', { name: 'Buscar escenarios' });
+    const list = panel.getByRole('list', { name: automation ? 'Escenarios para Playwright' : 'Escenarios del proyecto', exact: true });
+    const rows = list.locator(':scope > li');
+    const search = panel.getByRole('searchbox', { name: automation ? 'Buscar escenarios para Playwright' : 'Buscar escenarios', exact: true });
+    const toolbar = panel.getByRole('region', { name: automation ? 'Buscar y filtrar automatización' : 'Buscar y filtrar escenarios', exact: true });
     await expect(pageSize).toHaveValue('10');
     await expect(rows).toHaveCount(10);
     await expect(previousPage).toBeDisabled();
@@ -225,14 +227,15 @@ async function verifyScenarioPagination(page) {
     const paginationBounds = await pagination.boundingBox();
     assert.ok(paginationBounds.y >= listBounds.y + listBounds.height, 'La paginaci\u00f3n queda debajo del listado.');
     await expect(pagination.getByRole('status')).toHaveText('1–10 de 35 · Página 1 de 4');
-    await page.getByRole('checkbox', { name: 'Seleccionar visibles (10)', exact: true }).uncheck();
+    await toolbar.getByRole('checkbox', { name: 'Seleccionar visibles (10)', exact: true }).uncheck();
+    if (automation) await expect(panel.getByRole('button', { name: 'Generar seleccionados (25)', exact: true })).toBeEnabled();
 
     await nextPage.click();
     await expect(rows.first()).toContainText('Caso paginado 11');
     await expect(list).toBeFocused();
     await expect(rows.first()).toBeInViewport();
     await expect(rows.first().getByRole('checkbox')).toBeChecked();
-    await expect(page.locator('.scenario-selection-count')).toContainText('25 seleccionados');
+    await expect(toolbar.getByRole('status')).toContainText('25 seleccionados');
     await previousPage.click();
     await expect(rows.first().getByRole('checkbox')).not.toBeChecked();
 
@@ -254,13 +257,13 @@ async function verifyScenarioPagination(page) {
     await search.clear();
     await pageSize.selectOption('10');
     await nextPage.click();
-    await page.getByRole('button', { name: '@par (17)', exact: true }).click();
+    await toolbar.getByRole('button', { name: '@par (17)', exact: true }).click();
     await expect(pagination.getByRole('status')).toHaveText('1–10 de 17 · Página 1 de 2');
     await expect(rows.first()).toContainText('Caso paginado 2');
 
     await page.setViewportSize({ width: 320, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
-    console.log('PASS paginación: tamaños, navegación, búsqueda, filtros y selección por página.');
+    console.log('PASS paginación de ' + (automation ? 'Automatización' : 'Escenarios') + ': tamaños, navegación, búsqueda, filtros y selección por página.');
   } finally {
     scenarios = original;
     await page.setViewportSize({ width: 1440, height: 1100 });
@@ -369,7 +372,7 @@ async function verifyScenarios(page, screenshots) {
   await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
   const automation = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
   await expect(automation.locator('.automation-pick-list > li')).toHaveCount(4);
-  await automation.getByRole('checkbox', { name: 'Seleccionar todos', exact: true }).check();
+  await automation.getByRole('checkbox', { name: 'Seleccionar visibles (4)', exact: true }).check();
   await automation.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
   await expect(automation.getByText('4 archivos generados. Revisa los pendientes antes de ejecutar.', { exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Escenarios (4)', exact: true }).click();
@@ -468,6 +471,62 @@ async function verifyManualScenario(page) {
   await page.reload();
 }
 
+async function verifyAutomationToolbar(page) {
+  await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+  const section = page.getByRole('region', { name: 'Automatización Playwright' });
+  const toolbar = section.getByRole('region', { name: 'Buscar y filtrar automatización' });
+  const states = toolbar.getByRole('group', { name: 'Filtrar por estado del código' });
+  const tags = toolbar.getByRole('group', { name: 'Filtrar por etiqueta' });
+  const search = toolbar.getByRole('searchbox', { name: 'Buscar escenarios para Playwright' });
+  const rows = section.locator('.automation-pick-list > li');
+  await expect(rows).toHaveCount(3);
+  await expect(states.getByRole('button', { name: 'Generado (1)', exact: true })).toBeVisible();
+  await states.getByRole('button', { name: 'Pendiente (2)', exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await tags.getByRole('button', { name: '@apiRest (1)', exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await toolbar.getByRole('checkbox', { name: 'Seleccionar visibles (1)', exact: true }).uncheck();
+  await expect(toolbar.getByRole('status')).toHaveText('2 seleccionados · 1 visibles');
+  await expect(section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true })).toBeEnabled();
+
+  await tags.getByRole('button', { name: 'Todos (3)', exact: true }).click();
+  await states.getByRole('button', { name: 'Todos (3)', exact: true }).click();
+  await page.keyboard.press('Control+k');
+  await expect(search).toBeFocused();
+  await search.fill(fixtureSpec(scenarios[0]).filename);
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(scenarios[0].title);
+  await search.clear();
+
+  specFailure = true;
+  try {
+    await rows.getByRole('button', { name: scenarios[1].title, exact: true }).click();
+    await states.getByRole('button', { name: 'Error (1)', exact: true }).click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(scenarios[1].title);
+  } finally {
+    specFailure = false;
+  }
+  await states.getByRole('button', { name: 'Todos (3)', exact: true }).click();
+  await rows.getByRole('button', { name: scenarios[2].title, exact: true }).click();
+  await states.getByRole('button', { name: 'Requiere revisión (1)', exact: true }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(scenarios[2].title);
+  await search.fill('ninguna coincidencia');
+  await expect(section.getByRole('heading', { name: 'No hay coincidencias', exact: true })).toBeVisible();
+  await section.getByRole('button', { name: 'Limpiar filtros', exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first().getByRole('checkbox')).toBeChecked();
+  await expect(rows.nth(1).getByRole('checkbox')).not.toBeChecked();
+
+  await page.setViewportSize({ width: 320, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 320);
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS filtros de automatización: búsqueda por archivo, estado, etiquetas y selección visible.');
+}
+
 async function verifyAutomation(page, screenshots) {
   const section = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
   const rows = section.locator('.automation-pick-list > li');
@@ -549,7 +608,7 @@ async function verifyAutomation(page, screenshots) {
     }
   }
   await page.setViewportSize({ width: 1440, height: 1100 });
-  const all = section.getByRole('checkbox', { name: 'Seleccionar todos', exact: true });
+  const all = section.getByRole('checkbox', { name: 'Seleccionar visibles (4)', exact: true });
   await all.uncheck();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).check();
   const execute = page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true });
@@ -839,6 +898,8 @@ async function run() {
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(`${website}/projects/${projectId}`);
     await verifyScenarioPagination(page);
+    await verifyScenarioPagination(page, true);
+    await verifyAutomationToolbar(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();
