@@ -1,4 +1,16 @@
-import { gherkinKeyword, type ScenarioListItem, type ScenarioStep } from './scenario-card';
+import type { ScenarioListItem, ScenarioStep } from './scenario-card';
+
+// Infiere la keyword Gherkin a partir del contenido del paso. Heurística
+// mientras el schema no guarde la keyword como campo propio.
+export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Dado' | 'Cuando' | 'Entonces' | 'Y' {
+  const action = step.action.toLowerCase();
+  if (step.expected) return 'Entonces';
+  if (/^(goto|navega|abrir|visita|preconditi)/.test(action)) return 'Dado';
+  if (/^(click|fill|type|press|selecciona|ingresa|escribe)/.test(action)) return 'Cuando';
+  if (/^(expect|verifica|debe|verify)/.test(action)) return 'Entonces';
+  if (previous) return 'Y';
+  return 'Dado';
+}
 
 const controlLabels = new Map(Object.entries({
   'user name': 'nombre de usuario',
@@ -21,11 +33,28 @@ function controlLabel(selector: string) {
   return controlLabels.get(name.toLowerCase()) ?? name;
 }
 
-export function scenarioStepText(step: ScenarioStep) {
-  const action = step.action.trim();
+function stepInstruction(action: string) {
   const separator = action.indexOf(':');
   const target = separator === -1 ? '' : action.slice(separator + 1).trim();
   const command = target ? action.slice(0, separator).trim().toLowerCase() : '';
+  return { command, target };
+}
+
+function sensitiveField(label: string) {
+  const normalized = label.normalize('NFD').replace(/\p{M}/gu, '');
+  if (/\b(password|passwd|pwd|contrasena)\b/i.test(normalized)) return 'password';
+  if (/\b(token|secret|pin)\b/i.test(normalized)) return 'secret';
+  return null;
+}
+
+export function isSensitiveScenarioStep(step: ScenarioStep) {
+  const { command, target } = stepInstruction(step.action);
+  return command === 'fill' && sensitiveField(controlLabel(target)) !== null;
+}
+
+export function scenarioStepText(step: ScenarioStep) {
+  const action = step.action.trim();
+  const { command, target } = stepInstruction(action);
   const page = target === '/' ? 'la página de inicio' : `la página «${target}»`;
   switch (command) {
     case 'navigate':
@@ -45,9 +74,9 @@ export function scenarioStepText(step: ScenarioStep) {
       const label = controlLabel(target);
       const field = label ? `el campo «${label}»` : 'el campo indicado';
       if (!step.data) return `Deja vacío ${field}.`;
-      const normalized = label.normalize('NFD').replace(/\p{M}/gu, '');
-      if (/\b(password|passwd|pwd|contrasena)\b/i.test(normalized)) return 'Ingresa la contraseña.';
-      if (/\b(token|secret|pin)\b/i.test(normalized)) return `Ingresa el dato confidencial en ${field}.`;
+      const sensitive = sensitiveField(label);
+      if (sensitive === 'password') return 'Ingresa la contraseña.';
+      if (sensitive === 'secret') return `Ingresa el dato confidencial en ${field}.`;
       return `Escribe «${step.data}» en ${field}.`;
     }
     case 'press':

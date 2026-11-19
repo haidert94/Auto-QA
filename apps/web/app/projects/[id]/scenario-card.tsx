@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
+import { gherkinKeyword, isSensitiveScenarioStep, scenarioStepText } from './scenario-presentation';
 
 export type ScenarioStep = { ordinal: number; action: string; data?: string | null; expected?: string | null };
 
@@ -22,18 +23,6 @@ export type ScenarioListItem = {
 // representa flujo básico o alterno, no ambos a la vez.
 const FLOW_TAGS = ['@flujoBasico', '@flujoAlterno'] as const;
 
-// Infiere la keyword Gherkin a partir del contenido del paso. Heurística
-// mientras el schema no guarde la keyword como campo propio.
-export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Dado' | 'Cuando' | 'Entonces' | 'Y' {
-  const action = step.action.toLowerCase();
-  if (step.expected) return 'Entonces';
-  if (/^(goto|navega|abrir|visita|preconditi)/.test(action)) return 'Dado';
-  if (/^(click|fill|type|press|selecciona|ingresa|escribe)/.test(action)) return 'Cuando';
-  if (/^(expect|verifica|debe|verify)/.test(action)) return 'Entonces';
-  if (previous) return 'Y';
-  return 'Dado';
-}
-
 export function ScenarioCard({ projectId, scenario, onChange, initialEditing = false, onEditComplete, role }: {
   projectId: string;
   scenario: ScenarioListItem;
@@ -49,6 +38,7 @@ export function ScenarioCard({ projectId, scenario, onChange, initialEditing = f
   const [tags, setTags] = useState<string[]>(scenario.tags ?? []);
   const [customTag, setCustomTag] = useState('');
   const [steps, setSteps] = useState<ScenarioStep[]>(scenario.steps ?? []);
+  const [showTechnicalSteps, setShowTechnicalSteps] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -58,6 +48,7 @@ export function ScenarioCard({ projectId, scenario, onChange, initialEditing = f
     setTags(scenario.tags ?? []);
     setCustomTag('');
     setSteps(scenario.steps ?? []);
+    setShowTechnicalSteps(false);
     setError('');
   }
 
@@ -98,6 +89,7 @@ export function ScenarioCard({ projectId, scenario, onChange, initialEditing = f
 
   function addStep() {
     setSteps(previous => [...previous, { ordinal: previous.length + 1, action: '', data: '', expected: '' }]);
+    setShowTechnicalSteps(true);
   }
 
   function removeStep(index: number) {
@@ -225,21 +217,27 @@ export function ScenarioCard({ projectId, scenario, onChange, initialEditing = f
           {steps.map((step, index) => (
             <li key={index}>
               <div className="scenario-edit-step__row">
-                <input value={step.action} placeholder="Acción (goto:/click:/fill:/expect:…)" maxLength={1000}
-                  onChange={e => updateStep(index, { action: e.target.value })}/>
+                {showTechnicalSteps ? <input value={step.action} placeholder="Acción (goto:/click:/fill:/expect:…)" maxLength={1000}
+                  onChange={e => updateStep(index, { action: e.target.value })}/> : <span>{scenarioStepText(step) || 'Paso sin acción'}</span>}
                 <button type="button" className="secondary" onClick={() => removeStep(index)}
                   aria-label={`Quitar paso ${index + 1}`}>×</button>
               </div>
-              <div className="scenario-edit-step__row">
-                <input value={step.data ?? ''} placeholder="Dato (opcional)" maxLength={1000}
+              {showTechnicalSteps ? <div className="scenario-edit-step__row">
+                <input type={isSensitiveScenarioStep(step) ? 'password' : 'text'} value={step.data ?? ''} placeholder="Dato (opcional)" maxLength={1000}
                   onChange={e => updateStep(index, { data: e.target.value })}/>
                 <input value={step.expected ?? ''} placeholder="Esperado (opcional)" maxLength={1000}
                   onChange={e => updateStep(index, { expected: e.target.value })}/>
-              </div>
+              </div> : step.expected && <small className="muted">Resultado esperado · {step.expected}</small>}
             </li>
           ))}
         </ol>
-        <button type="button" className="secondary" onClick={addStep}>Agregar paso</button>
+        <div className="actions">
+          <button type="button" className="secondary" onClick={addStep}>Agregar paso</button>
+          {steps.length > 0 && <button type="button" className="secondary" aria-expanded={showTechnicalSteps}
+            onClick={() => setShowTechnicalSteps(value => !value)}>
+            {showTechnicalSteps ? 'Ver en lenguaje natural' : 'Editar pasos técnicos'}
+          </button>}
+        </div>
       </fieldset>
 
       {error && <p className="error" role="alert">{error}</p>}

@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { Code2, ExternalLink, FileText, Pencil, PlayCircle, Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { gherkinKeyword, ScenarioCard, type ScenarioListItem } from './scenario-card';
-import { durationLabel, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
+import { ScenarioCard, type ScenarioListItem } from './scenario-card';
+import { durationLabel, gherkinKeyword, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
