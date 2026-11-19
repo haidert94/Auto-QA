@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useScenarioSuite } from './project-tabs';
 
-type RunCounts = { running: number; queued: number; stopping: number };
+type RunCounts = { running: number; queued: number; stopping: number; oldestQueuedSeconds?: number };
 type RunActivity = RunCounts | 'unavailable' | null;
 
 export async function readRunActivity(projectId: string, signal = AbortSignal.timeout(8000)): Promise<RunCounts> {
@@ -12,7 +12,8 @@ export async function readRunActivity(projectId: string, signal = AbortSignal.ti
   const counts: RunCounts = await response.json();
   if (!counts || !Number.isSafeInteger(counts.running) || counts.running < 0
     || !Number.isSafeInteger(counts.queued) || counts.queued < 0
-    || !Number.isSafeInteger(counts.stopping) || counts.stopping < 0) {
+    || !Number.isSafeInteger(counts.stopping) || counts.stopping < 0
+    || (counts.oldestQueuedSeconds !== undefined && (!Number.isSafeInteger(counts.oldestQueuedSeconds) || counts.oldestQueuedSeconds < 0))) {
     throw new Error('La API devolvió un estado inválido.');
   }
   return counts;

@@ -107,7 +107,7 @@ export function scenarioStepText(step: ScenarioStep) {
 
 export type ScenarioRun = {
   id: string; scenarioId: string | null; status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
-  createdAt: string; completedAt?: string | null;
+  createdAt: string; completedAt?: string | null; errorCode?: string | null;
   results: { status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED'; durationMs: number | null }[];
 };
 

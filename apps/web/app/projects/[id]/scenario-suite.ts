@@ -1,8 +1,9 @@
+import { RUN_STOP_REQUESTED } from '../../../../api/src/runs/run-cancellation';
 import type { ScenarioRun } from './scenario-presentation';
 
 export type SuiteState =
   | { kind: 'waiting' }
-  | { kind: 'active'; runId: string }
+  | { kind: 'active'; runId: string; phase: 'queued' | 'running' | 'stopping' }
   | { kind: 'finished'; run: ScenarioRun }
   | { kind: 'rejected' | 'unknown'; detail: string };
 
@@ -64,7 +65,7 @@ export async function runScenarioSuite({
         return { kind: 'rejected', detail: typeof detail === 'string' && detail ? detail : 'La API rechazó la ejecución.' };
       }
       if (response.ok && typeof payload.id === 'string' && runIdPattern.test(payload.id)) {
-        return { kind: 'active', runId: payload.id };
+        return { kind: 'active', runId: payload.id, phase: 'queued' };
       }
     } catch { /* El servidor pudo recibir la solicitud. */ }
     return unknownSubmission;
@@ -91,15 +92,28 @@ export async function runScenarioSuite({
     }
 
     onWarning('');
+    const previousActiveCount = active.size;
+    let phaseChanged = false;
     for (const [id, index] of active) {
       const run = runs.get(id);
       if (!run) update(index, { kind: 'unknown', detail: 'La ejecución no está disponible. Consulta el reporte.' });
       else if (run.status === 'COMPLETED' || run.status === 'FAILED' || run.status === 'CANCELED') {
         update(index, { kind: 'finished', run });
-      } else continue;
+      } else {
+        if (run.status !== 'QUEUED' && run.status !== 'RUNNING') continue;
+        const phase = run.status === 'QUEUED' ? 'queued' : run.errorCode === RUN_STOP_REQUESTED ? 'stopping' : 'running';
+        const previous = results[index].state;
+        if (previous.kind === 'active' && previous.phase !== phase) {
+          update(index, { ...previous, phase });
+          phaseChanged = true;
+        }
+        continue;
+      }
       active.delete(id);
     }
-    return active.size < ids.length;
+    const settled = active.size < previousActiveCount;
+    if (settled || phaseChanged) onProgress([...results]);
+    return settled;
   }
 
   onProgress([...results]);
@@ -113,10 +127,7 @@ export async function runScenarioSuite({
     }
 
     if (signal.aborted) return;
-    if (active.size && await refreshActive()) {
-      onProgress([...results]);
-      if (next < scenarios.length) continue;
-    }
+    if (active.size && await refreshActive() && next < scenarios.length) continue;
     if (next < scenarios.length || active.size) await waitForUpdate(signal);
   }
 }

@@ -92,11 +92,16 @@ export class RunsService {
       by: ['status', 'errorCode'],
       where: { projectId, status: { in: ['RUNNING', 'QUEUED'] } },
       _count: { _all: true },
+      _min: { createdAt: true },
     });
-    const activity = { running: 0, queued: 0, stopping: 0 };
+    const activity = { running: 0, queued: 0, stopping: 0, oldestQueuedSeconds: 0 };
+    const now = Date.now();
     for (const row of counts) {
       const bucket = row.status === 'QUEUED' ? 'queued' : row.errorCode === RUN_STOP_REQUESTED ? 'stopping' : 'running';
       activity[bucket] += row._count._all;
+      if (bucket === 'queued' && row._min.createdAt) {
+        activity.oldestQueuedSeconds = Math.max(activity.oldestQueuedSeconds, Math.floor((now - row._min.createdAt.getTime()) / 1000));
+      }
     }
     return activity;
   }

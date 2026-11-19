@@ -7,6 +7,7 @@ import type { Project } from '../onboarding';
 import type { GeneratedSpec } from './automation-export';
 import type { ScenarioListItem } from './scenario-card';
 import { ScenarioRunDialog, type ScenarioSuiteControl } from './scenario-run-dialog';
+import type { SuiteResult } from './scenario-suite';
 
 type ScenarioSpecs = Record<string, GeneratedSpec>;
 
@@ -14,6 +15,8 @@ const ScenarioSuiteContext = createContext<{
   open: (scenarios: ScenarioListItem[]) => void;
   hasSuite: boolean;
   suiteRunning: boolean;
+  progress: SuiteResult[] | null;
+  trackingWarning: string;
   stopping: boolean;
   stop: () => Promise<void>;
   historyVersion: number;
@@ -85,6 +88,8 @@ export function ProjectTabs({
   const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [suiteRunning, setSuiteRunning] = useState(false);
+  const [suiteProgress, setSuiteProgress] = useState<SuiteResult[] | null>(null);
+  const [suiteTrackingWarning, setSuiteTrackingWarning] = useState('');
   const [stopping, setStopping] = useState(false);
   const stopRequest = useRef(false);
   const suiteControl = useRef<ScenarioSuiteControl>(null);
@@ -104,6 +109,8 @@ export function ProjectTabs({
       setSuiteOpen(false);
       setRunSelection(null);
       setSuiteRunning(false);
+      setSuiteProgress(null);
+      setSuiteTrackingWarning('');
       const response = await fetch(`/api/projects/${project.id}/runs/cancel`, {
         method: 'POST', signal: AbortSignal.timeout(15000),
       });
@@ -115,8 +122,8 @@ export function ProjectTabs({
     }
   }, [project.id]);
   const suiteContext = useMemo(() => ({
-    open: openSuite, hasSuite, suiteRunning, stopping, stop: stopSuite, historyVersion,
-  }), [openSuite, hasSuite, suiteRunning, stopping, stopSuite, historyVersion]);
+    open: openSuite, hasSuite, suiteRunning, progress: suiteProgress, trackingWarning: suiteTrackingWarning, stopping, stop: stopSuite, historyVersion,
+  }), [openSuite, hasSuite, suiteRunning, suiteProgress, suiteTrackingWarning, stopping, stopSuite, historyVersion]);
   const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount, specs }), [headerElement, specs]);
   const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
   const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion', specs, setSpecs }), [automationElement, active, specs]);
@@ -188,7 +195,8 @@ export function ProjectTabs({
       {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs}
         control={suiteControl} open={suiteOpen} onHide={() => setSuiteOpen(false)}
         onClose={() => { setSuiteOpen(false); setRunSelection(null); }} onRunningChange={setSuiteRunning}
-        onRunsChanged={() => setHistoryVersion(version => version + 1)} />}
+        onRunsChanged={() => setHistoryVersion(version => version + 1)}
+        onProgress={setSuiteProgress} onTrackingWarning={setSuiteTrackingWarning} />}
     </ExplorationHeaderContext.Provider>
     </QualityHeaderContext.Provider>
     </ReportHeaderContext.Provider>

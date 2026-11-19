@@ -16,7 +16,7 @@ import { runScenarioSuite, type SuiteResult, type SuiteState } from './scenario-
 function resultLabel(state: SuiteState) {
   switch (state.kind) {
     case 'waiting': return { label: 'Esperando turno…', className: 'muted' };
-    case 'active': return { label: 'Procesando…', className: 'muted' };
+    case 'active': return { label: { queued: 'En cola', running: 'En ejecución', stopping: 'Deteniéndose' }[state.phase], className: 'muted' };
     case 'rejected': return { label: 'No ejecutado', className: 'error' };
     case 'unknown': return { label: 'Estado sin confirmar', className: 'muted' };
     case 'finished': {
@@ -28,12 +28,14 @@ function resultLabel(state: SuiteState) {
 
 export type ScenarioSuiteControl = { stop: () => Promise<void> };
 
-export function ScenarioRunDialog({ project, role, scenarios, specs, control, open, onHide, onClose, onRunningChange, onRunsChanged }: {
+export function ScenarioRunDialog({ project, role, scenarios, specs, control, open, onHide, onClose, onRunningChange, onRunsChanged, onProgress, onTrackingWarning }: {
   project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
   control: Ref<ScenarioSuiteControl>;
   open: boolean; onHide: () => void; onClose: () => void;
   onRunningChange: (running: boolean) => void; onRunsChanged?: () => void;
+  onProgress: (results: SuiteResult[]) => void;
+  onTrackingWarning: (warning: string) => void;
 }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -91,6 +93,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
     const controller = new AbortController();
     setBusy(true);
     onRunningChange(true);
+    onTrackingWarning('');
     const finished = runScenarioSuite({
       projectId: project.id,
       scenarios: scenarios.map(scenario => ({
@@ -101,8 +104,8 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
       environmentId,
       writeAuthorizationAt: allowsWrites ? environment.authorizedAt ?? undefined : undefined,
       signal: controller.signal,
-      onProgress: setResults,
-      onWarning: setTrackingWarning,
+      onProgress: next => { setResults(next); onProgress(next); },
+      onWarning: warning => { setTrackingWarning(warning); onTrackingWarning(warning); },
     });
     suite.current = { controller, finished };
     try {
@@ -146,7 +149,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
           <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancelar</button></div>
       </form>
     </> : <>
-      <p role="status">{busy || pending ? `Procesando… ${results.length - pending} de ${results.length} escenarios con estado final.`
+      <p role="status">{busy || pending ? `Suite en curso · ${finished} de ${results.length} pruebas finalizadas.`
         : hasUnknown ? 'Hay ejecuciones con estado sin confirmar.'
         : finished === 0 ? 'La suite no se inició.'
         : `Ejecuciones finalizadas (${finished}/${results.length}).`}</p>

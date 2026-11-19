@@ -205,7 +205,9 @@ const api = createServer(async (request, response) => {
   if (path === base + '/runs/activity') {
     if (activityUnavailable) return send({ message: 'Actividad no disponible.' }, 503);
     const activityRuns = reportMode ? reportRuns : scenarioRuns;
+    const queuedAges = activityRuns.filter(run => run.status === 'QUEUED').map(run => Math.floor((Date.now() - Date.parse(run.createdAt)) / 1000));
     return send({
+      oldestQueuedSeconds: Math.max(0, ...queuedAges),
       running: activityRuns.filter(run => run.status === 'RUNNING' && run.errorCode !== 'cancel-requested').length,
       queued: activityRuns.filter(run => run.status === 'QUEUED').length,
       stopping: activityRuns.filter(run => run.status === 'RUNNING' && run.errorCode === 'cancel-requested').length,
@@ -481,7 +483,7 @@ async function verifyScenarios(page, screenshots) {
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
-  await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('En cola', { exact: true })).toBeVisible();
   assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id, automationId: fixtureSpec(scenarios[0]).automationId }]);
   await finishFixtureRun(dialog);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
@@ -641,9 +643,10 @@ async function verifySuiteProgress(page) {
     const last = rows.filter({ hasText: extra.title });
     await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
     await expect(dialog.getByText('No ejecutado', { exact: true })).toHaveCount(1);
-    await expect(dialog.getByText(/^Procesando… 1 de 3/)).toBeVisible();
+    await expect(dialog.getByText('Suite en curso · 0 de 3 pruebas finalizadas.', { exact: true })).toBeVisible();
     await expect(dialog.getByText(/No se pudo actualizar el estado/)).toBeVisible();
 
+    await expect(first.getByText('En cola', { exact: true })).toBeVisible();
     await expect(last.getByText('Esperando turno…', { exact: true })).toBeVisible();
     const close = dialog.getByRole('button', { name: 'Cerrar', exact: true });
     const report = dialog.getByRole('button', { name: 'Ver reporte', exact: true });
@@ -651,25 +654,34 @@ async function verifySuiteProgress(page) {
     await expect(report).toBeDisabled();
     await close.click();
     await expect(dialog).toBeHidden();
+    const indicator = page.getByRole('region', { name: 'Estado de ejecución', exact: true });
+    await expect(indicator.getByText('0 de 3 pruebas finalizadas', { exact: true })).toBeVisible();
+    await expect(indicator.getByText('0 en ejecución · 1 en cola · 1 por enviar · 1 no ejecutada', { exact: true })).toBeVisible();
+    const passed = scenarioRuns[initialRuns];
+    passed.status = 'RUNNING';
+    await expect(indicator.getByText('En ejecución · ' + scenarios[0].title, { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(indicator.getByText('1 en ejecución · 0 en cola · 1 por enviar · 1 no ejecutada', { exact: true })).toBeVisible();
 
     await page.getByRole('tab', { name: /^Escenarios/ }).click();
     await page.getByRole('button', { name: 'Ver suite', exact: true }).click();
     await expect(dialog).toBeVisible();
+    await expect(first.getByText('En ejecución', { exact: true })).toBeVisible();
     await expect(report).toBeDisabled();
     await close.click();
     await expect(dialog).toBeHidden();
 
     assert.equal(scenarioRuns.length - initialRuns, 1);
-    const passed = scenarioRuns[initialRuns];
     assert.deepEqual(trackedRunRequests[firstPoll], [passed.id]);
     completeFixtureRun(passed);
     await expect.poll(() => scenarioRuns.length - initialRuns, { timeout: 10000 }).toBe(2);
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await expect(indicator.getByText('1 de 3 pruebas finalizadas', { exact: true })).toBeVisible();
+    await expect(indicator.getByText('0 en ejecución · 1 en cola · 1 no ejecutada', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Ver suite', exact: true }).click();
     await expect(first.getByText('Pasó', { exact: true })).toBeVisible({ timeout: 10000 });
     await expect(report).toBeDisabled();
-    await expect(last.getByText('Procesando…', { exact: true })).toBeVisible({ timeout: 10000 });
-    await expect(dialog.getByText(/^Procesando… 2 de 3/)).toBeVisible();
+    await expect(last.getByText('En cola', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(dialog.getByText('Suite en curso · 1 de 3 pruebas finalizadas.', { exact: true })).toBeVisible();
     await expect(dialog.getByText(/No se pudo actualizar el estado/)).toHaveCount(0);
 
     const failed = scenarioRuns[initialRuns + 1];
@@ -683,6 +695,8 @@ async function verifySuiteProgress(page) {
     assert.deepEqual(trackedRunRequests.at(-1), [failed.id]);
     await expect(dialog.getByRole('link', { name: 'Ver reporte', exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await expect(indicator.getByText('2 de 3 pruebas finalizadas', { exact: true })).toBeVisible();
+    await expect(indicator.getByRole('progressbar')).toHaveAttribute('value', '2');
   } finally {
     trackingFailures = 0;
     runCapacity = Infinity;
@@ -698,7 +712,7 @@ async function verifySuiteProgress(page) {
 
 async function verifyAutomationRunStatus(page) {
   const initialRuns = scenarioRuns.length;
-  const queued = { ...scenarioRuns[0], id: randomUUID(), status: 'QUEUED', results: [] };
+  const queued = { ...scenarioRuns[0], id: randomUUID(), status: 'QUEUED', results: [], createdAt: new Date(Date.now() - 125000).toISOString() };
 
   try {
     scenarioRuns.push(queued);
@@ -707,22 +721,24 @@ async function verifyAutomationRunStatus(page) {
     const indicator = page.getByRole('region', { name: 'Estado de ejecución', exact: true });
     const status = indicator.getByRole('status');
     const viewer = page.getByRole('region', { name: 'Visor de código Playwright', exact: true });
-    await expect(status).toHaveText('No se pudo consultar el estado.');
+    await expect(status.getByText('No se pudo consultar el estado. Reintentando…', { exact: true })).toBeVisible();
     const indicatorBounds = await indicator.boundingBox();
     const viewerBounds = await viewer.boundingBox();
     assert.ok(indicatorBounds.y + indicatorBounds.height <= viewerBounds.y);
 
     activityUnavailable = false;
-    await expect(status).toHaveText('0 en ejecución · 1 en cola', { timeout: 10000 });
+    await expect(status.getByText('0 en ejecución · 1 en cola', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(status.getByText('La prueba más antigua lleva 2 min en cola.', { exact: true })).toBeVisible();
     const stop = indicator.getByRole('button', { name: 'Detener ejecución', exact: true });
     await expect(stop).toBeEnabled();
     queued.status = 'RUNNING';
     const pending = { ...queued, id: randomUUID(), status: 'QUEUED' };
     scenarioRuns.push(pending);
-    await expect(status).toHaveText('1 en ejecución · 1 en cola', { timeout: 10000 });
+    await expect(status.getByText('1 en ejecución · 1 en cola', { exact: true })).toBeVisible({ timeout: 10000 });
+    await expect(status.getByText('El runner ya tomó pruebas del proyecto.', { exact: true })).toBeVisible();
     const initialStops = stopRequests;
     await stop.click();
-    await expect(status).toHaveText('0 en ejecución · 0 en cola · 1 deteniéndose');
+    await expect(status.getByText('0 en ejecución · 0 en cola · 1 deteniéndose', { exact: true })).toBeVisible();
     await expect(indicator.getByRole('button', { name: 'Deteniendo…' })).toBeDisabled();
     assert.equal(stopRequests, initialStops + 1);
     assert.equal(pending.status, 'CANCELED');
@@ -888,7 +904,7 @@ async function verifyWritableExecution(page) {
     await expect(confirm).toBeDisabled();
     await dialog.getByRole('checkbox', { name: /cambios en los datos de prueba/ }).check();
     await confirm.click();
-    await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('En cola', { exact: true })).toBeVisible();
     assert.deepEqual(queuedRequests.at(-1), {
       scenarioId: scenarioA,
       environmentId: qa.id,
@@ -1004,7 +1020,7 @@ async function verifyAutomation(page, screenshots) {
   await execute.click(); dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
-  await expect(dialog.getByText('Procesando…', { exact: true })).toBeVisible();
+  await expect(dialog.getByText('En cola', { exact: true })).toBeVisible();
   assert.equal(queuedRequests.at(-1).environmentId, environment.id);
   await finishFixtureRun(dialog);
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();

@@ -142,7 +142,8 @@ test('el reporte consolidado espera la primera ejecución finalizada e ignora la
 });
 
 test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto autorizado', async () => {
-  let counts = [{ status: 'QUEUED', errorCode: null, _count: { _all: 2 } }];
+  const queuedAt = new Date(Date.now() - 125000);
+  let counts = [{ status: 'QUEUED', errorCode: null, _count: { _all: 2 }, _min: { createdAt: queuedAt } }];
   const prisma = {
     project: { async findFirst({ where }) {
       assert.deepEqual(where, { id: 'project', organizationId: workspace.organizationId });
@@ -150,20 +151,22 @@ test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto a
     } },
     testRun: { async groupBy(query) {
       assert.deepEqual(query, {
-        by: ['status', 'errorCode'], where: { projectId: 'project', status: { in: ['RUNNING', 'QUEUED'] } }, _count: { _all: true },
+        by: ['status', 'errorCode'], where: { projectId: 'project', status: { in: ['RUNNING', 'QUEUED'] } }, _count: { _all: true }, _min: { createdAt: true },
       });
       return counts;
     } },
   };
   const controller = new RunsController(new RunsService(prisma, {}, {}, {}));
-  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 2, stopping: 0 });
+  const { oldestQueuedSeconds, ...queuedActivity } = await controller.activity('project', workspace);
+  assert.deepEqual(queuedActivity, { running: 0, queued: 2, stopping: 0 });
+  assert.ok(oldestQueuedSeconds >= 125 && oldestQueuedSeconds < 180);
   counts = [
     { status: 'RUNNING', errorCode: null, _count: { _all: 1 } },
     { status: 'RUNNING', errorCode: 'cancel-requested', _count: { _all: 2 } },
   ];
-  assert.deepEqual(await controller.activity('project', workspace), { running: 1, queued: 0, stopping: 2 });
+  assert.deepEqual(await controller.activity('project', workspace), { running: 1, queued: 0, stopping: 2, oldestQueuedSeconds: 0 });
   counts = [];
-  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 0, stopping: 0 });
+  assert.deepEqual(await controller.activity('project', workspace), { running: 0, queued: 0, stopping: 0, oldestQueuedSeconds: 0 });
 });
 
 test('detener cancela la cola, libera solo sus reservas y solicita detener las activas del proyecto', async () => {
