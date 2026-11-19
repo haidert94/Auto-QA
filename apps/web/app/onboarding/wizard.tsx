@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, type FormEvent } from 'react';
+import { supportsScenarioWrites } from '../projects/onboarding';
 
 const ENV_TYPES = [
   { value: 'DEVELOPMENT', label: 'Desarrollo' },
@@ -26,6 +27,7 @@ type Form = {
   accessMode: typeof ACCESS_MODES[number]['value'] | '';
   allowedHosts: string;
   authorizationConfirmed: boolean;
+  readOnly: boolean;
   credentialUser: string;
   credentialPassword: string;
 };
@@ -33,13 +35,13 @@ type Form = {
 const EMPTY: Form = {
   name: '', description: '', ownerLabel: '',
   envType: 'QA', baseUrl: '', accessMode: '',
-  allowedHosts: '', authorizationConfirmed: false,
+  allowedHosts: '', authorizationConfirmed: false, readOnly: true,
   credentialUser: '', credentialPassword: '',
 };
 
 // Campos cuyo cambio invalida la autorización declarada por el usuario:
 // cualquier ajuste al alcance exige que se vuelva a marcar la casilla.
-const SCOPE_FIELDS = ['envType', 'baseUrl', 'accessMode', 'allowedHosts'] as const;
+const SCOPE_FIELDS = ['envType', 'baseUrl', 'accessMode', 'allowedHosts', 'readOnly'] as const;
 
 function hostFromUrl(value: string): string {
   try { return new URL(value).hostname; } catch { return ''; }
@@ -58,6 +60,7 @@ export function OnboardingWizard() {
   function update<K extends keyof Form>(key: K, value: Form[K]) {
     setForm(prev => {
       const next = { ...prev, [key]: value };
+      if (key === 'envType' && !supportsScenarioWrites(next.envType)) next.readOnly = true;
       if ((SCOPE_FIELDS as readonly string[]).includes(key as string) && prev.authorizationConfirmed) {
         next.authorizationConfirmed = false;
       }
@@ -110,7 +113,7 @@ export function OnboardingWizard() {
             baseUrl: form.baseUrl.trim(),
             accessMode: form.accessMode,
             authorizationConfirmed: form.authorizationConfirmed,
-            readOnly: true,
+            readOnly: form.readOnly,
             allowedHosts,
             allowedPaths,
             excludedPaths: [],
@@ -237,11 +240,10 @@ export function OnboardingWizard() {
                  onChange={e => update('authorizationConfirmed', e.target.checked)}/>
           <span>Confirmo que soy dueño o estoy expresamente autorizado para probar esta aplicación en el entorno declarado.</span>
         </label>
-        <p className="muted">
-          AutoQA ejecuta solo pruebas no destructivas: no envía formularios de pago, no crea ni borra registros reales
-          y no modifica el estado del sistema. También bloquea direcciones IP privadas, metadatos de nube y hosts fuera
-          de esta lista. Las credenciales nunca se registran en logs ni en traces.
-        </p>
+        {supportsScenarioWrites(form.envType) && <label className="check">
+          <input type="checkbox" checked={!form.readOnly} onChange={event => update('readOnly', !event.target.checked)} />
+          Permitir cambios con datos de prueba
+        </label>}
       </fieldset>
     </section>}
 
@@ -261,7 +263,7 @@ export function OnboardingWizard() {
               .map((h, i) => <li key={i}><code>{h}</code></li>)}
           </ul>
         </dd></div>
-        <div><dt>Autorización</dt><dd>Confirmada · modo solo lectura</dd></div>
+        <div><dt>Autorización</dt><dd>Confirmada · {form.readOnly ? 'Solo lectura' : 'Cambios con datos de prueba'}</dd></div>
       </dl>
       <p className="muted">
         Después de crear el proyecto podrás subir documentación, crear escenarios y encolar exploraciones.

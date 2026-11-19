@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountFetch, requireAccount, type OrgRole } from '../../../../autoqa-server';
 import { RunsPanel, type EnvironmentOption } from './runs-panel';
+import { scenarioRunEnvironmentError } from '../../../onboarding';
 import { isManualScenario } from '../../scenario-presentation';
 import { ScenarioEditor, type RequirementOption, type Scenario } from './scenario-editor';
 
@@ -11,7 +12,7 @@ type ProjectForRuns = {
   id: string;
   environments: Array<{
     id: string; type?: string | null; baseUrl?: string | null;
-    authorizationConfirmed?: boolean; readOnly?: boolean;
+    authorizationConfirmed?: boolean; readOnly?: boolean; authorizedAt?: string | null;
   }>;
 };
 
@@ -40,8 +41,11 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
   const requirements: RequirementOption[] = requirementsResponse?.ok ? await requirementsResponse.json() : [];
   const project: ProjectForRuns | null = projectResponse?.ok ? await projectResponse.json() : null;
   const environments: EnvironmentOption[] = (project?.environments ?? [])
-    .filter(env => env.authorizationConfirmed && env.readOnly !== false)
-    .map(env => ({ id: env.id, type: env.type ?? null, baseUrl: env.baseUrl ?? null }));
+    .filter(env => !scenarioRunEnvironmentError(env))
+    .map(env => ({
+      id: env.id, type: env.type ?? null, baseUrl: env.baseUrl ?? null,
+      readOnly: env.readOnly !== false, authorizedAt: env.authorizedAt ?? null,
+    }));
 
   let role: OrgRole = 'VIEWER';
   try { role = (await requireAccount()).role; } catch {}

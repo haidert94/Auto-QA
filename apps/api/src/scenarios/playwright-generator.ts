@@ -166,11 +166,19 @@ export function generateSpec(scenario: GeneratorScenario): string {
   return lines.join('\n');
 }
 
+type HarnessPath = string | { host: string; path: string };
+
+function harnessPathLiteral(rule: HarnessPath): string {
+  return typeof rule === 'string' ? `'${escapeJsString(rule)}'`
+    : `{ host: '${escapeJsString(rule.host)}', path: '${escapeJsString(rule.path)}' }`;
+}
+
 export type HarnessEnvironment = {
   baseUrl: string | null;
   allowedHosts: string[];
-  allowedPaths: string[];
-  excludedPaths: string[];
+  allowedPaths: HarnessPath[];
+  excludedPaths: HarnessPath[];
+  allowWrites?: boolean;
 };
 
 export type HarnessTarget = {
@@ -248,8 +256,8 @@ export function generateHarnessedSpec(
   const title = escapeJsString(scenario.title);
   const baseURL = env.baseUrl ? escapeJsString(env.baseUrl) : '';
   const hosts = env.allowedHosts.map(h => `'${escapeJsString(h)}'`).join(', ');
-  const allowed = env.allowedPaths.map(p => `'${escapeJsString(p)}'`).join(', ');
-  const excluded = env.excludedPaths.map(p => `'${escapeJsString(p)}'`).join(', ');
+  const allowed = env.allowedPaths.map(harnessPathLiteral).join(', ');
+  const excluded = env.excludedPaths.map(harnessPathLiteral).join(', ');
   const device = isSupportedDevice(target.device) ? (target.device ?? null) : null;
 
   const lines: string[] = [];
@@ -265,11 +273,13 @@ export function generateHarnessedSpec(
     lines.push(`test.use({ baseURL: '${baseURL}' });`);
   }
   lines.push('');
-  lines.push('// Filtro de requests: idéntico contrato que la exploración.');
+  lines.push('// Filtro de requests según el alcance y el modo autorizado del entorno.');
   lines.push('// Bloquea hosts fuera del allowlist, paths excluidos y esquemas no HTTP(S).');
   lines.push(`const ALLOWED_HOSTS = new Set<string>([${hosts}]);`);
-  lines.push(`const ALLOWED_PATHS: string[] = [${allowed}];`);
-  lines.push(`const EXCLUDED_PATHS: string[] = [${excluded}];`);
+  lines.push('type ScopePath = string | { host: string; path: string };');
+  lines.push(`const ALLOWED_PATHS: ScopePath[] = [${allowed}];`);
+  lines.push(`const EXCLUDED_PATHS: ScopePath[] = [${excluded}];`);
+  lines.push(`const ALLOW_WRITES = ${env.allowWrites === true};`);
   lines.push('');
   lines.push('function hostAllowed(host: string): boolean {');
   lines.push('  if (ALLOWED_HOSTS.has(host)) return true;');
@@ -282,23 +292,37 @@ export function generateHarnessedSpec(
   lines.push('  return false;');
   lines.push('}');
   lines.push('');
-  lines.push('function pathAllowed(pathname: string): boolean {');
-  lines.push('  if (EXCLUDED_PATHS.some(p => pathname === p || pathname.startsWith(p.endsWith("/") ? p : p + "/"))) return false;');
-  lines.push('  if (ALLOWED_PATHS.length === 0) return true;');
-  lines.push('  return ALLOWED_PATHS.some(p => pathname === p || pathname.startsWith(p.endsWith("/") ? p : p + "/"));');
+  lines.push('function pathMatches(target: URL, rule: ScopePath): boolean {');
+  lines.push('  if (typeof rule !== "string" && rule.host !== target.hostname) return false;');
+  lines.push('  const path = typeof rule === "string" ? rule : rule.path;');
+  lines.push('  return target.pathname === path || target.pathname.startsWith(path.endsWith("/") ? path : path + "/");');
+  lines.push('}');
+  lines.push('');
+  lines.push('function scopeAllowed(target: URL): boolean {');
+  lines.push("  if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password || target.port) return false;");
+  lines.push("  if (target.hostname.startsWith('[') || /^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(target.hostname)) return false;");
+  lines.push('  if (!hostAllowed(target.hostname) || EXCLUDED_PATHS.some(rule => pathMatches(target, rule))) return false;');
+  lines.push('  return ALLOWED_PATHS.length === 0 || ALLOWED_PATHS.some(rule => pathMatches(target, rule));');
   lines.push('}');
   lines.push('');
   lines.push('test.beforeEach(async ({ context }) => {');
   lines.push("  await context.route('**/*', async route => {");
   lines.push('    const request = route.request();');
-  lines.push('    let target: URL;');
-  lines.push('    try { target = new URL(request.url()); }');
-  lines.push("    catch { await route.abort('blockedbyclient'); return; }");
-  lines.push("    if (!['http:', 'https:'].includes(target.protocol)) { await route.abort('blockedbyclient'); return; }");
-  lines.push("    if (/^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(target.hostname)) { await route.abort('blockedbyclient'); return; }");
-  lines.push("    if (!hostAllowed(target.hostname)) { await route.abort('blockedbyclient'); return; }");
-  lines.push("    if (!pathAllowed(target.pathname)) { await route.abort('blockedbyclient'); return; }");
-  lines.push('    await route.continue();');
+  lines.push('    const method = request.method().toUpperCase();');
+  lines.push("    const readRequest = ['GET', 'HEAD', 'OPTIONS'].includes(method);");
+  lines.push('    try {');
+  lines.push('      const target = new URL(request.url());');
+  lines.push("      if (!scopeAllowed(target) || (!readRequest && !ALLOW_WRITES)) { await route.abort('blockedbyclient'); return; }");
+  lines.push('      if (readRequest) { await route.continue(); return; }');
+  lines.push('      const response = await route.fetch({ maxRedirects: 0 });');
+  lines.push('      const status = response.status();');
+  lines.push("      const location = response.headers()['location'];");
+  lines.push('      if (location && [301, 302, 303, 307, 308].includes(status)) {');
+  lines.push("        const switchesToGet = status === 303 || (method === 'POST' && [301, 302].includes(status));");
+  lines.push("        if (!switchesToGet || !scopeAllowed(new URL(location, target))) { await route.abort('blockedbyclient'); return; }");
+  lines.push('      }');
+  lines.push('      await route.fulfill({ response });');
+  lines.push("    } catch { await route.abort('blockedbyclient'); }");
   lines.push('  });');
   lines.push('});');
   lines.push('');
@@ -363,6 +387,7 @@ export function generatePlaywrightConfig(options: {
     `    { name: '${engine}', use: { browserName: '${engine}' } },`,
     '  ],',
     '  use: {',
+    "    serviceWorkers: 'block',",
     ...useBlock,
     '  },',
     '});',

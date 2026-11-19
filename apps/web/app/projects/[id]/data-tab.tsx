@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Check, Copy, FileCode2, FileText, KeyRound, Pencil, PlusCircle, ShieldCheck } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { accessModes, environmentTypes, type Project } from '../onboarding';
@@ -26,6 +27,7 @@ function DetailCard({ number, title, action, children }: {
 }
 
 export function DataTab({ project: initial, ipa, role }: { project: Project; ipa: IpaSummary | null; role?: OrgRole }) {
+  const router = useRouter();
   const [project, setProject] = useState(initial);
   const canEdit = can(role, 'project.update');
   const [editing, setEditing] = useState(initial.status !== 'READY' && canEdit);
@@ -98,6 +100,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
     <ProjectForm initial={project} role={role} onSaved={saved => {
       setProject(saved);
       if (saved.status === 'READY') setEditing(false);
+      router.refresh();
     }} />
   </div>;
 
@@ -128,7 +131,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
           </dd></div>
           <div><dt>Autorización de pruebas</dt><dd className={environment.authorizationConfirmed ? 'success' : 'error'}>
             {environment.authorizationConfirmed ? 'Confirmada' : 'Pendiente de confirmación'}</dd></div>
-          <div><dt>Modo de operación</dt><dd>{environment.readOnly ? 'Solo lectura' : 'Según restricciones declaradas'}</dd></div>
+          <div><dt>Modo de operación</dt><dd>{environment.readOnly ? 'Solo lectura' : 'Cambios con datos de prueba'}</dd></div>
           <div className="detail-fields__wide"><dt>Rutas permitidas</dt><dd className="detail-tags">{environment.allowedPaths.length
             ? environment.allowedPaths.map((route, i) => <code key={i}>{route.host}{route.path}</code>) : <span className="muted">Sin rutas específicas declaradas</span>}</dd></div>
           {(environment.excludedPaths.length > 0 || environment.prohibitedActions.length > 0) && <div className="detail-fields__wide">
@@ -195,7 +198,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
               : 'El análisis se dispara automáticamente al subir un módulo. Si no aparece aquí en unos segundos, reintenta la carga.'} />
     </aside>
     {envDialogOpen && <EnvironmentsDialog project={project} onClose={() => setEnvDialogOpen(false)}
-      onSaved={saved => { setProject(saved); setEnvDialogOpen(false); }} />}
+      onSaved={saved => { setProject(saved); setEnvDialogOpen(false); router.refresh(); }} />}
     {docDialogOpen && <DocumentsDialog projectId={project.id} role={role}
       onClose={() => setDocDialogOpen(false)}
       onChanged={() => setReload(value => value + 1)} />}

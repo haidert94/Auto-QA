@@ -5,7 +5,7 @@ import { ArrowRight, Code2, Plus, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ScenarioListItem } from './scenario-card';
-import type { Project } from '../onboarding';
+import { scenarioRunEnvironmentError, type Project } from '../onboarding';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { scenarioSpecSignature } from './automation-export';
@@ -28,7 +28,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const canGenerate = can(role, 'automation.generate');
   const projectId = project.id;
   const projectBaseUrl = project.environments.find(environment => environment.authorizationConfirmed)?.baseUrl ?? null;
-  const environments = project.environments.filter(environment => environment.authorizationConfirmed && environment.readOnly);
+  const environments = project.environments.filter(environment => !scenarioRunEnvironmentError(environment));
   const runnable = project.status === 'READY' && environments.length > 0;
   const header = useScenarioHeader();
   const updateCount = header?.setCount;
@@ -384,7 +384,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun ? scenarios => setRunSelection(scenarios) : undefined}
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
-    {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}
+    {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
     {runSelection && <ScenarioRunDialog projectId={projectId} scenarios={runSelection} environments={environments} specs={header?.specs}
       onClose={() => setRunSelection(null)} onQueued={() => { void loadRuns(); void load(); }} />}
 

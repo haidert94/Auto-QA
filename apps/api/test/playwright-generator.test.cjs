@@ -2,6 +2,8 @@
 
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const { runInNewContext } = require('node:vm');
+const ts = require('typescript');
 
 const { escapeJsString, generateHarnessedSpec, generatePlaywrightConfig, generateSpec, generateStepLines, suggestedFilename } = require('../dist/scenarios/playwright-generator');
 
@@ -107,11 +109,11 @@ test('generateHarnessedSpec incluye baseURL y filtro de requests', () => {
   });
   assert.ok(spec.includes("test.use({ baseURL: 'https://staging.example.com' });"));
   assert.ok(spec.includes("new Set<string>(['staging.example.com', '*.cdn.example.com'])"));
-  assert.ok(spec.includes("ALLOWED_PATHS: string[] = ['/cart']"));
-  assert.ok(spec.includes("EXCLUDED_PATHS: string[] = ['/admin']"));
+  assert.ok(spec.includes("ALLOWED_PATHS: ScopePath[] = ['/cart']"));
+  assert.ok(spec.includes("EXCLUDED_PATHS: ScopePath[] = ['/admin']"));
   assert.ok(spec.includes('test.beforeEach(async ({ context }) => {'));
   assert.ok(spec.includes("await context.route('**/*'"));
-  assert.ok(spec.includes("if (!hostAllowed(target.hostname))"));
+  assert.ok(spec.includes("if (!hostAllowed(target.hostname) || EXCLUDED_PATHS"));
   assert.ok(spec.includes("await page.goto('/cart');"));
 });
 
@@ -120,8 +122,59 @@ test('generateHarnessedSpec sin hosts/paths produce arrays vacíos válidos', ()
     id: 'x', title: 'vacio', steps: [],
   }, { baseUrl: '', allowedHosts: [], allowedPaths: [], excludedPaths: [] });
   assert.ok(spec.includes("new Set<string>([])"));
-  assert.ok(spec.includes("ALLOWED_PATHS: string[] = []"));
+  assert.ok(spec.includes("ALLOWED_PATHS: ScopePath[] = []"));
   assert.ok(spec.includes('// Escenario sin pasos: nada que ejecutar.'));
+});
+
+async function interceptedRequests(allowWrites) {
+  const calls = [];
+  const testFunction = Object.assign(() => {}, {
+    use() {},
+    beforeEach(setup) { this.setup = setup; },
+  });
+  const spec = generateHarnessedSpec({ id: 'x', title: 'Prueba del arnés', steps: [] }, {
+    baseUrl: 'https://qa.example.test',
+    allowedHosts: ['qa.example.test', 'assets.example.test'],
+    allowedPaths: [
+      { host: 'qa.example.test', path: '/orders' },
+      { host: 'assets.example.test', path: '/static' },
+    ],
+    excludedPaths: [{ host: 'qa.example.test', path: '/orders/real' }],
+    allowWrites,
+  });
+  runInNewContext(ts.transpileModule(spec, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, {
+    exports: {}, URL, Set, require: () => ({ test: testFunction }),
+  });
+  let handle;
+  await testFunction.setup({ context: { async route(pattern, handler) { handle = handler; } } });
+  return async (method, url, status = 200, location) => {
+    calls.length = 0;
+    await handle({
+      request: () => ({ method: () => method, url: () => url }),
+      async abort() { calls.push('abort'); },
+      async continue() { calls.push('continue'); },
+      async fetch({ maxRedirects }) {
+        assert.equal(maxRedirects, 0);
+        calls.push('fetch');
+        return { status: () => status, headers: () => ({ location }) };
+      },
+      async fulfill() { calls.push('fulfill'); },
+    });
+    return [...calls];
+  };
+}
+
+test('el arnés solo permite escritura cuando está autorizada y conserva el alcance', async () => {
+  const readOnly = await interceptedRequests(false);
+  assert.deepEqual(await readOnly('GET', 'https://qa.example.test/orders'), ['continue']);
+  assert.deepEqual(await readOnly('POST', 'https://qa.example.test/orders'), ['abort']);
+  const writable = await interceptedRequests(true);
+  assert.deepEqual(await writable('POST', 'https://qa.example.test/orders'), ['fetch', 'fulfill']);
+  assert.deepEqual(await writable('POST', 'https://qa.example.test/orders/real'), ['abort']);
+  assert.deepEqual(await writable('POST', 'https://assets.example.test/orders'), ['abort']);
+  assert.deepEqual(await writable('POST', 'https://qa.example.test/orders', 303, '/orders/confirmation'), ['fetch', 'fulfill']);
+  assert.deepEqual(await writable('POST', 'https://qa.example.test/orders', 303, 'https://outside.example.test/'), ['fetch', 'abort']);
+  assert.deepEqual(await writable('POST', 'https://qa.example.test/orders', 307, '/orders/confirmation'), ['fetch', 'abort']);
 });
 
 test('generatePlaywrightConfig escapa el outputDir y emite JSON reporter', () => {

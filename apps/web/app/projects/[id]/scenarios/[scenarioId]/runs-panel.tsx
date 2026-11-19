@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { OrgRole } from '../../../../autoqa-server';
 import { can } from '../../../../permissions';
 
-export type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null };
+export type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null; readOnly: boolean; authorizedAt: string | null };
 
 type RunResult = {
   id: string;
@@ -84,6 +84,9 @@ export function RunsPanel({ projectId, scenarioId, environments, role, manual = 
   const canRun = !manual && can(role, 'run.execute');
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
+  const [confirmed, setConfirmed] = useState(false);
+  const environment = environments.find(item => item.id === envId);
+  const allowsWrites = environment?.readOnly === false;
   const [targetBrowser, setTargetBrowser] = useState<'CHROMIUM' | 'FIREFOX' | 'WEBKIT'>('CHROMIUM');
   const [targetDevice, setTargetDevice] = useState('');
   const [targetProvider, setTargetProvider] = useState<'LOCAL' | 'BROWSERSTACK'>('LOCAL');
@@ -127,12 +130,14 @@ export function RunsPanel({ projectId, scenarioId, environments, role, manual = 
 
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy || !environment || (allowsWrites && (!confirmed || !environment.authorizedAt))) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const response = await fetch(`/api/projects/${projectId}/scenarios/${scenarioId}/runs`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           environmentId: envId,
+          writeAuthorizationAt: allowsWrites ? environment.authorizedAt : undefined,
           targetBrowser,
           targetDevice: targetDevice || undefined,
           targetProvider,
@@ -150,7 +155,7 @@ export function RunsPanel({ projectId, scenarioId, environments, role, manual = 
     return <section className="runs-panel">
       <h2>Ejecuciones</h2>
       <p className="muted">
-        Registra al menos un entorno autorizado en modo solo lectura para ejecutar el escenario.
+        Registra al menos un entorno autorizado para ejecutar el escenario.
       </p>
     </section>;
   }
@@ -163,9 +168,9 @@ export function RunsPanel({ projectId, scenarioId, environments, role, manual = 
     </p>
 
     {canRun && <form onSubmit={queue} className="run-form">
-      <label>Entorno<select value={envId} onChange={e => setEnvId(e.target.value)} required>
+      <label>Entorno<select value={envId} onChange={e => { setEnvId(e.target.value); setConfirmed(false); }} disabled={busy} required>
         {environments.map(env => <option key={env.id} value={env.id}>
-          {env.type ?? 'Entorno'} · {env.baseUrl ?? env.id.slice(0, 8)}
+          {env.type ?? 'Entorno'} · {env.baseUrl ?? env.id.slice(0, 8)}{!env.readOnly && ' · Cambios con datos de prueba'}
         </option>)}
       </select></label>
       <label>Navegador<select value={targetBrowser} onChange={e => setTargetBrowser(e.target.value as typeof targetBrowser)}>
@@ -177,8 +182,12 @@ export function RunsPanel({ projectId, scenarioId, environments, role, manual = 
       <label>Dónde se ejecuta<select value={targetProvider} onChange={e => setTargetProvider(e.target.value as typeof targetProvider)}>
         {PROVIDER_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
       </select></label>
+      {allowsWrites && <label className="check">
+        <input type="checkbox" required checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />
+        Confirmo ejecutar este escenario con cambios en los datos de prueba, dentro del alcance autorizado.
+      </label>}
       <div className="actions">
-        <button type="submit" disabled={busy}>{busy ? 'Encolando…' : 'Ejecutar'}</button>
+        <button type="submit" disabled={busy || (allowsWrites && !confirmed)}>{busy ? 'Encolando…' : 'Ejecutar'}</button>
         <button type="button" className="secondary" onClick={load}>Actualizar</button>
       </div>
     </form>}

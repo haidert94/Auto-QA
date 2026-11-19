@@ -341,6 +341,7 @@ model TestRun {
   createdBy       User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   specText          String?
   automation        Json?
+  writeAuthorizationAt DateTime?
   targetBrowser     String?
   targetDevice      String?
   targetProvider    String?

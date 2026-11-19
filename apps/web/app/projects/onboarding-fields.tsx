@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import {
-  accessModes, browserLabels, environmentTypes, limitFields,
+  accessModes, browserLabels, environmentTypes, limitFields, supportsScenarioWrites,
   type EnvironmentForm, type ExecutionForm, type RoleForm,
 } from './onboarding';
 
@@ -65,7 +65,10 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
       <legend>Entorno {index + 1}</legend>
       <div className="form-grid">
         <SelectField label="Tipo de entorno" value={value.type} options={environmentTypes}
-          onChange={next => change('type', next, true)} />
+          onChange={next => onChange({
+            ...value, type: next, readOnly: !supportsScenarioWrites(next) || value.readOnly,
+            authorizationConfirmed: false, authorizedAt: null,
+          })} />
         <SelectField label="Modo de acceso" value={value.accessMode} options={accessModes}
           onChange={next => change('accessMode', next, true)} />
       </div>
@@ -114,11 +117,10 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
           )}
         </fieldset>
       )}
-      <p className="muted">
-        AutoQA ejecuta solo pruebas no destructivas. No envía formularios de pago, no crea ni borra registros
-        reales, ni modifica estado del sitio. Para habilitar flujos de escritura se requiere una autorización
-        granular por acción que aún no está implementada.
-      </p>
+      {supportsScenarioWrites(value.type) && <label className="check">
+        <input type="checkbox" checked={!value.readOnly} onChange={event => change('readOnly', !event.target.checked, true)} />
+        Permitir cambios con datos de prueba
+      </label>}
       <label className="check">
         <input type="checkbox" checked={value.authorizationConfirmed} disabled={!value.baseUrl.trim()}
           onChange={event => change('authorizationConfirmed', event.target.checked)} />

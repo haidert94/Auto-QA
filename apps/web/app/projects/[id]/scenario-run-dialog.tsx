@@ -13,19 +13,25 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, specs, o
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '');
+  const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<{ title: string; queued: boolean; detail: string }[] | null>(null);
+  const environment = environments.find(item => item.id === environmentId);
+  const allowsWrites = environment?.readOnly === false;
   useEffect(() => { dialog.current?.showModal(); }, []);
 
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || results || !environments.some(environment => environment.id === environmentId)) return;
+    if (busy || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
     setBusy(true);
     const next = [];
     for (const scenario of scenarios) {
       try {
         const response = await fetch(`/api/projects/${projectId}/scenarios/${scenario.id}/runs`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ environmentId, automationId: specs?.[scenario.id]?.automationId }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            environmentId, automationId: specs?.[scenario.id]?.automationId,
+            writeAuthorizationAt: allowsWrites ? environment.authorizedAt : undefined,
+          }),
           signal: AbortSignal.timeout(15000),
         });
         const payload = await response.json().catch(() => ({}));
@@ -44,13 +50,19 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, specs, o
     <p>Se solicitará una ejecución por escenario. La API comprobará autorización, alcance, plan y cuotas.</p>
     <ul className="scenario-run-targets">{scenarios.map(scenario => <li key={scenario.id}>{scenario.title}</li>)}</ul>
     {!results ? <form onSubmit={queue}>
-      <label>Entorno autorizado<select value={environmentId} onChange={event => setEnvironmentId(event.target.value)} disabled={busy} required>
+      <label>Entorno autorizado<select value={environmentId} onChange={event => { setEnvironmentId(event.target.value); setConfirmed(false); }} disabled={busy} required>
         {environments.map(environment => <option key={environment.id} value={environment.id}>
           {environment.type ? environmentTypes[environment.type] : 'Entorno'} · {environment.baseUrl}
+          {!environment.readOnly && ' · Cambios con datos de prueba'}
         </option>)}
       </select></label>
-      <label className="check"><input type="checkbox" required disabled={busy} />Confirmo ejecutar los escenarios seleccionados dentro del alcance autorizado y en modo de solo lectura.</label>
-      <div className="actions"><button type="submit" disabled={busy || !environmentId}>{busy ? 'Encolando…' : 'Confirmar ejecución'}</button>
+      <label className="check">
+        <input type="checkbox" required checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />
+        {allowsWrites
+          ? 'Confirmo ejecutar los escenarios seleccionados con cambios en los datos de prueba, dentro del alcance autorizado.'
+          : 'Confirmo ejecutar los escenarios seleccionados en solo lectura, dentro del alcance autorizado.'}
+      </label>
+      <div className="actions"><button type="submit" disabled={busy || !environment || !confirmed}>{busy ? 'Encolando…' : 'Confirmar ejecución'}</button>
         <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancelar</button></div>
     </form> : <>
       <ul className="scenario-queue-results" aria-live="polite">{results.map((result, i) => <li key={i}>

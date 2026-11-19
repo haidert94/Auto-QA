@@ -47,7 +47,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
   } catch { showExploration = false; }
 
   const readOnlyEnvs: PanelEnvironment[] = project.environments
-    .filter(env => env.authorizationConfirmed)
+    .filter(env => env.authorizationConfirmed && env.readOnly)
     .map(env => ({ id: env.id, type: env.type, baseUrl: env.baseUrl }));
 
   // IPA estructural: solo se fetchea cuando el proyecto ya está READY, para

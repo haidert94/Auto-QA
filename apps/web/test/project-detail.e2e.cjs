@@ -527,6 +527,52 @@ async function verifyAutomationToolbar(page) {
   console.log('PASS filtros de automatización: búsqueda por archivo, estado, etiquetas y selección visible.');
 }
 
+async function verifyWritableExecution(page) {
+  const originalProject = project;
+  const originalSaveCount = saveCount;
+  const initialQueues = queuedRequests.length;
+  const initialRuns = scenarioRuns.length;
+
+  try {
+    await page.getByRole('button', { name: 'Modificar', exact: true }).first().click();
+    const settings = page.getByRole('dialog', { name: 'Entornos y alcance' });
+    const staging = settings.getByRole('group', { name: 'Entorno 1', exact: true });
+    const authorization = staging.getByRole('checkbox', { name: /Confirmo que tengo autorización/ });
+    await expect(authorization).toBeChecked();
+    await staging.getByRole('checkbox', { name: 'Permitir cambios con datos de prueba' }).check();
+    await expect(authorization).not.toBeChecked();
+    await authorization.check();
+    await settings.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(settings).not.toBeVisible();
+    await expect(page.getByText('Cambios con datos de prueba', { exact: true })).toBeVisible();
+    assert.equal(project.environments[0].readOnly, false);
+
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    const execute = page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true });
+    await execute.click();
+    const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+    const confirm = dialog.getByRole('button', { name: 'Confirmar ejecución' });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByRole('checkbox', { name: /cambios en los datos de prueba/ }).check();
+    await confirm.click();
+    await expect(dialog.getByText(/En cola ·/)).toBeVisible();
+    assert.deepEqual(queuedRequests.at(-1), {
+      scenarioId: scenarioA,
+      environmentId: environment.id,
+      writeAuthorizationAt: project.environments[0].authorizedAt,
+    });
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  } finally {
+    project = originalProject;
+    saveCount = originalSaveCount;
+    queuedRequests.length = initialQueues;
+    scenarioRuns.length = initialRuns;
+  }
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS autorización de cambios desde Datos y confirmación desde Automatización.');
+}
+
 async function verifyAutomation(page, screenshots) {
   const section = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
   const rows = section.locator('.automation-pick-list > li');
@@ -900,6 +946,7 @@ async function run() {
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);
     await verifyAutomationToolbar(page);
+    await verifyWritableExecution(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();

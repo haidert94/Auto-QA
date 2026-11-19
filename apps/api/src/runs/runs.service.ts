@@ -7,6 +7,7 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
+import { scenarioRunEnvironmentError } from './environment-policy';
 import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { CreateRunDto } from './dto/create-run.dto';
@@ -173,11 +174,13 @@ export class RunsService {
       where: { id: dto.environmentId, projectId },
     });
     if (!environment) throw new NotFoundException('Entorno no encontrado en este proyecto.');
-    if (!environment.authorizationConfirmed) {
-      throw new BadRequestException('Confirma la autorización del entorno antes de ejecutar.');
-    }
-    if (!environment.readOnly) {
-      throw new BadRequestException('Solo se permiten ejecuciones sobre entornos de solo lectura.');
+    const environmentError = scenarioRunEnvironmentError(environment);
+    if (environmentError) throw new BadRequestException(environmentError);
+
+    const writeAuthorizationAt = environment.readOnly ? null : environment.authorizedAt;
+    const requestedAuthorization = dto.writeAuthorizationAt ? Date.parse(dto.writeAuthorizationAt) : null;
+    if (requestedAuthorization !== (writeAuthorizationAt?.getTime() ?? null)) {
+      throw new ConflictException('El modo del entorno cambió o falta confirmar los cambios con datos de prueba.');
     }
 
     const runKey = workspace.organizationId ? 'run-' + randomUUID() : null;
@@ -198,6 +201,7 @@ export class RunsService {
         runKey,
         createdByUserId: workspace.userId ?? null,
         automation: prepared ? (prepared as unknown as Prisma.InputJsonValue) : undefined,
+        writeAuthorizationAt,
         targetBrowser: dto.targetBrowser ?? null,
         targetDevice: dto.targetDevice ?? null,
         targetProvider: dto.targetProvider ?? null,

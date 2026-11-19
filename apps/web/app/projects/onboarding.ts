@@ -1,3 +1,6 @@
+import { supportsScenarioWrites } from '../../../api/src/runs/environment-policy';
+export { scenarioRunEnvironmentError, supportsScenarioWrites } from '../../../api/src/runs/environment-policy';
+
 export const environmentTypes = {
   DEVELOPMENT: 'Desarrollo',
   QA: 'QA',
@@ -83,6 +86,7 @@ export type EnvironmentForm = {
   accessMode: AccessMode | '';
   authorizationConfirmed: boolean;
   authorizedAt?: string | null;
+  readOnly: boolean;
   allowedHosts: string;
   allowedPaths: string;
   excludedPaths: string;
@@ -114,6 +118,7 @@ export function environmentForm(environment?: Environment): EnvironmentForm {
     accessMode: environment?.accessMode ?? '',
     authorizedAt: environment?.authorizedAt,
     authorizationConfirmed: environment?.authorizationConfirmed ?? false,
+    readOnly: !supportsScenarioWrites(environment?.type) || environment?.readOnly !== false,
     allowedHosts: environment?.allowedHosts.join('\n') ?? '',
     allowedPaths: environment?.allowedPaths.map(route => route.host + route.path).join('\n') ?? '',
     excludedPaths: environment?.excludedPaths.map(route => route.host + route.path).join('\n') ?? '',
@@ -184,7 +189,7 @@ export function environmentPayload(environment: EnvironmentForm) {
     baseUrl: environment.baseUrl.trim() || undefined,
     accessMode: environment.accessMode || undefined,
     authorizationConfirmed: environment.authorizationConfirmed,
-    readOnly: true,
+    readOnly: !supportsScenarioWrites(environment.type) || environment.readOnly,
     allowedHosts: lines(environment.allowedHosts),
     allowedPaths: routes(environment.allowedPaths),
     excludedPaths: routes(environment.excludedPaths),

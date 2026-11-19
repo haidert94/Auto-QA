@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { AccessMode, EnvironmentType } from '@prisma/client';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
+import { supportsScenarioWrites } from '../runs/environment-policy';
 import { matchesScope, normalizeHost, normalizeScopePaths, parseBaseUrl, ScopePath } from './scope';
 
 type OnboardingDto = CreateProjectDto | UpdateProjectDto;
@@ -89,6 +90,9 @@ export function prepareOnboarding(
         throw new BadRequestException('Los identificadores de entorno deben ser únicos y pertenecer al proyecto');
       }
       usedIds.add(entry.id);
+    }
+    if (entry.readOnly === false && !supportsScenarioWrites(entry.type)) {
+      throw new BadRequestException('Los cambios con datos de prueba solo se permiten en Desarrollo, QA o Preproducción.');
     }
     const allowedHosts = [...new Set((entry.allowedHosts ?? []).map(normalizeHost))];
     const baseUrl = entry.baseUrl ? parseBaseUrl(entry.baseUrl).url : null;

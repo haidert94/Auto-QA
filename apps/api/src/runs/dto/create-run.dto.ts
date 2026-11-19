@@ -1,10 +1,12 @@
-import { IsIn, IsOptional, IsString, IsUUID, Length } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 import { SUPPORTED_BROWSERS, SUPPORTED_DEVICES, SUPPORTED_PROVIDERS } from '../../scenarios/playwright-generator';
 
 export class CreateRunDto {
   @IsUUID() environmentId!: string;
 
   @IsOptional() @IsUUID() automationId?: string | null;
+
+  @IsOptional() @IsDateString() writeAuthorizationAt?: string;
 
   // Motor de Playwright. Default CHROMIUM si se omite.
   @IsOptional() @IsIn(SUPPORTED_BROWSERS) targetBrowser?: typeof SUPPORTED_BROWSERS[number];

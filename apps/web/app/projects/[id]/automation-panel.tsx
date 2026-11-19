@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { ArrowRight, Download, FileCode2, Play, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Project } from '../onboarding';
+import { scenarioRunEnvironmentError, type Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
@@ -68,7 +68,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const specsRef = useRef<Record<string, GeneratedSpec>>({});
   const requests = useRef(new Map<string, Promise<GeneratedSpec>>());
   const mounted = useRef(true);
-  const environments = project.environments.filter(environment => environment.authorizationConfirmed && environment.readOnly);
+  const environments = project.environments.filter(environment => !scenarioRunEnvironmentError(environment));
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
@@ -240,7 +240,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
       <div className="automation-preview-column"><AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} generating={generating.size > 0} />
         {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}
         {selectedSpec?.review.length ? <p className="automation-preview-note">Pendientes detectados: {selectedSpec.review.join(' · ')}. Se incluye el código en la descarga para su revisión, pero no en la solicitud de ejecución.</p> : null}
-        {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado de solo lectura.</p>}
+        {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
       </div>
     </div>
     {runSelection && <ScenarioRunDialog projectId={project.id} scenarios={runSelection} environments={environments} specs={specs} onClose={() => setRunSelection(null)}

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, readGeneratorSteps, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
 import { readPreparedAutomation } from '../../api/src/scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../api/src/scenarios/scenario-tags';
 import { type ScreenshotStorage } from './screenshot-storage';
@@ -28,6 +29,7 @@ export type ExecutionClaim = {
   targetDevice: string | null;
   targetProvider: string | null;
   automation?: unknown;
+  writeAuthorizationAt?: Date | null;
 };
 
 function resolveWsEndpoint(claim: ExecutionClaim): { wsEndpoint: string | null; error: string | null } {
@@ -58,6 +60,12 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : [];
 }
 
+function toHarnessPaths(value: unknown): HarnessEnvironment['allowedPaths'] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is HarnessEnvironment['allowedPaths'][number] =>
+    typeof entry === 'string' || (!!entry && typeof entry.host === 'string' && typeof entry.path === 'string'));
+}
+
 export async function runTestRun(
   prisma: PrismaClient,
   claim: ExecutionClaim,
@@ -85,15 +93,24 @@ export async function runTestRun(
   }
 
   const environment = await prisma.environment.findUnique({
-    where: { id: claim.environmentId },
-    select: { baseUrl: true, allowedHosts: true, allowedPaths: true, excludedPaths: true, authorizationConfirmed: true, readOnly: true },
+    where: { id: claim.environmentId, projectId: claim.projectId },
+    select: {
+      type: true, baseUrl: true, allowedHosts: true, allowedPaths: true, excludedPaths: true,
+      authorizationConfirmed: true, authorizedAt: true, readOnly: true,
+    },
   });
   if (!environment) {
     await failRun(prisma, claim, 'environment-missing', 'El entorno fue borrado.');
     return;
   }
-  if (!environment.authorizationConfirmed || !environment.readOnly) {
-    await failRun(prisma, claim, 'environment-unauthorized', 'El entorno ya no está autorizado o es read-write.');
+  const environmentError = scenarioRunEnvironmentError(environment);
+  if (environmentError) {
+    await failRun(prisma, claim, 'environment-unauthorized', environmentError);
+    return;
+  }
+  const currentAuthorization = environment.readOnly ? null : environment.authorizedAt?.getTime();
+  if ((claim.writeAuthorizationAt?.getTime() ?? null) !== currentAuthorization) {
+    await failRun(prisma, claim, 'environment-mode-changed', 'La autorización del entorno cambió después de encolar la prueba.');
     return;
   }
 
@@ -107,8 +124,9 @@ export async function runTestRun(
   const harness: HarnessEnvironment = {
     baseUrl: environment.baseUrl,
     allowedHosts: toStringArray(environment.allowedHosts),
-    allowedPaths: toStringArray(environment.allowedPaths),
-    excludedPaths: toStringArray(environment.excludedPaths),
+    allowedPaths: toHarnessPaths(environment.allowedPaths),
+    excludedPaths: toHarnessPaths(environment.excludedPaths),
+    allowWrites: !environment.readOnly,
   };
   const spec = generateHarnessedSpec({
     id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,

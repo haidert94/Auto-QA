@@ -25,10 +25,10 @@ const actions = [
   { step: 3, kind: 'expect-text', target: 'Resultados' },
 ];
 
-function fixture(dispatch, row = { ...sample }) {
+function fixture(dispatch, row = { ...sample }, environment = { id: 'qa', authorizationConfirmed: true, readOnly: true }) {
   const prisma = {
     project: { async findFirst() { return { id: 'project' }; } },
-    environment: { async findFirst() { return { id: 'qa', authorizationConfirmed: true, readOnly: true }; } },
+    environment: { async findFirst() { return environment; } },
     testScenario: {
       async findFirst() { return { ...row }; },
       async updateMany({ where, data }) {
@@ -90,6 +90,24 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.equal(snapshot.title, sample.title);
   assert.notEqual((await service.preparePlaywright('project', 'scenario', workspace)).automationId, prepared.automationId);
   assert.equal(calls, 2);
+});
+
+test('exige una confirmación vigente para encolar cambios con datos de prueba', async () => {
+  const authorizedAt = new Date('2026-11-19T12:00:00.000Z');
+  const environment = { id: 'qa', type: 'QA', authorizationConfirmed: true, readOnly: false, authorizedAt };
+  const { runs } = fixture(async () => {}, { ...sample }, environment);
+  const queue = (writeAuthorizationAt) => runs.create('project', 'scenario', { environmentId: 'qa', writeAuthorizationAt }, workspace);
+
+  await assert.rejects(queue(), /falta confirmar/);
+  await assert.rejects(queue('2026-11-18T12:00:00.000Z'), /entorno cambió/);
+  assert.equal((await queue(authorizedAt.toISOString())).writeAuthorizationAt, authorizedAt.toISOString());
+  environment.type = 'PRODUCTION';
+  await assert.rejects(queue(authorizedAt.toISOString()), /Desarrollo, QA o Preproducción/);
+  environment.readOnly = true;
+  await assert.rejects(queue(authorizedAt.toISOString()), /entorno cambió/);
+  assert.equal((await queue()).writeAuthorizationAt, null);
+  environment.authorizationConfirmed = false;
+  await assert.rejects(queue(), /Confirma la autorización/);
 });
 
 test('mantiene en revisión un caso incompleto y omite el agente para un caso manual', async () => {
