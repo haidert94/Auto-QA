@@ -82,6 +82,24 @@
 .scenario-create-form .actions { margin-top: 16px; }
 .scenario-history-warning { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 16px 0 0; }
 .scenario-history-warning button { margin-left: 8px; padding: 3px 8px; min-height: 28px; font-size: 10px; }
+.generate-cta { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; padding: 18px 20px; border: 1px solid #e9e7e1; border-radius: 4px; background: var(--surface); margin: 0 0 18px; align-items: start; }
+.generate-cta--ready { background: linear-gradient(180deg, #f3f8f4 0%, var(--surface) 100%); border-color: #cfe3d4; }
+.generate-cta--disabled { background: #faf9f6; }
+.generate-cta__info { display: grid; gap: 8px; min-width: 0; }
+.generate-cta__eyebrow { font: 500 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--blue); }
+.generate-cta__info h2 { margin: 0; font: 500 16px/1.25 var(--sans); color: var(--ink); }
+.generate-cta__info p { margin: 0; font: 400 12px/1.55 var(--sans); }
+.generate-cta__score { font: 500 11px/1.4 var(--mono); color: var(--ink); text-transform: uppercase; letter-spacing: .04em; }
+.generate-cta__action { display: grid; gap: 10px; align-content: start; }
+.generate-cta__action button { background: var(--ink); color: var(--surface); border: 1px solid var(--ink); padding: 12px 18px; font: 500 12px/1.3 var(--sans); border-radius: 3px; letter-spacing: .02em; cursor: pointer; justify-self: start; }
+.generate-cta--ready .generate-cta__action button { background: var(--success, #2a7a3d); border-color: var(--success, #2a7a3d); }
+.generate-cta__action button:hover:not(:disabled) { filter: brightness(1.1); }
+.generate-cta__action button:disabled { background: #d9d6ce; border-color: #d9d6ce; color: #8a8278; cursor: not-allowed; }
+.generate-cta__reasons { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font: 400 11px/1.5 var(--sans); color: var(--muted); }
+.generate-cta__reasons li::before { content: "· "; color: var(--muted); }
+@media (max-width: 760px) {
+  .generate-cta { grid-template-columns: 1fr; }
+}
 .scenario-ai-tools { padding: 14px 18px; border: 1px solid var(--line); background: var(--surface); border-radius: 3px; margin-top: 20px; }
 .scenario-ai-tools > summary { font-size: 12px; }
 .scenario-ai-tools > summary svg { vertical-align: middle; color: var(--blue); margin-right: 6px; }

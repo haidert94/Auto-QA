@@ -50,6 +50,11 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
   const [types, setTypes] = useState<TestType[] | null>(null);
   const [typesError, setTypesError] = useState('');
+  const [ipaScore, setIpaScore] = useState<number | null>(null);
+  const [ipaStatus, setIpaStatus] = useState<'ASSESSED' | 'BLOCKED' | null>(null);
+  // Umbral para habilitar la generación completa. 70 alinea con el nivel
+  // "Aceptable" que ya define ipa-hero.tsx (score >= 70).
+  const IPA_THRESHOLD = 70;
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -127,6 +132,26 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   }
 
   useEffect(() => { void load(); }, [projectId]);
+
+  // Score del IPA para decidir si el CTA "Generar casos de prueba" está
+  // habilitado. No bloqueamos el panel si falla la consulta: en ese caso el
+  // CTA queda en gris explicándolo.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/ipa`, { cache: 'no-store' });
+        if (!active) return;
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!active) return;
+        const ipa = payload?.ipa ?? payload;
+        if (typeof ipa?.score === 'number') setIpaScore(ipa.score);
+        if (ipa?.status === 'ASSESSED' || ipa?.status === 'BLOCKED') setIpaStatus(ipa.status);
+      } catch {/* CTA queda deshabilitado con mensaje explicando */}
+    })();
+    return () => { active = false; };
+  }, [projectId]);
 
   useEffect(() => {
     let active = true;
@@ -289,6 +314,17 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         </button>}
       </>} />, header.element)}
 
+    <GenerateCta
+      score={ipaScore}
+      status={ipaStatus}
+      projectStatus={project.status}
+      canGenerate={canGenerate}
+      availableTypes={types?.filter(t => t.available).length ?? 0}
+      threshold={IPA_THRESHOLD}
+      generating={generating}
+      onGenerate={() => void generate()}
+    />
+    {generateNotice && <p className="muted scenario-message" role="status">{generateNotice}</p>}
     {showForm && <form onSubmit={create} className="scenario-form scenario-create-form" aria-label="Nuevo escenario manual">
       <header><h2>Nuevo escenario manual</h2><p>Registra únicamente pasos y resultados definidos para tu aplicación.</p></header>
       <label>Título<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={300} autoFocus /></label>
@@ -389,5 +425,48 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     </section>}
 
     </details>}
+  </section>;
+}
+
+function GenerateCta({ score, status, projectStatus, canGenerate, availableTypes, threshold, generating, onGenerate }: {
+  score: number | null;
+  status: 'ASSESSED' | 'BLOCKED' | null;
+  projectStatus: Project['status'];
+  canGenerate: boolean;
+  availableTypes: number;
+  threshold: number;
+  generating: boolean;
+  onGenerate: () => void;
+}) {
+  const reasons: string[] = [];
+  if (!canGenerate) reasons.push('Tu rol actual no permite generar escenarios.');
+  if (projectStatus !== 'READY') reasons.push('El proyecto debe estar en estado READY (completar el registro en Datos).');
+  if (status === 'BLOCKED') reasons.push('Hay bloqueos de autorización o alcance por resolver.');
+  if (score === null) reasons.push('Todavía no hay una evaluación IPA consolidada.');
+  else if (score < threshold) reasons.push(`Preparación actual: ${score}/100. Hace falta llegar al menos a ${threshold} aclarando los pendientes en Datos.`);
+  if (availableTypes === 0) reasons.push('Tu plan no habilita tipos de prueba para generar.');
+  const disabled = reasons.length > 0 || generating;
+  const pctLabel = score === null ? '—' : `${score}/100`;
+
+  return <section className={disabled ? 'generate-cta generate-cta--disabled' : 'generate-cta generate-cta--ready'}>
+    <div className="generate-cta__info">
+      <span className="generate-cta__eyebrow">Automatización con IA</span>
+      <h2>Generar casos de prueba</h2>
+      <p className="muted">
+        Un solo clic crea los casos para los <strong>{availableTypes}</strong> tipos habilitados por tu plan, usando los requisitos ya analizados.
+      </p>
+      <p className="generate-cta__score">
+        Preparación · <strong>{pctLabel}</strong> · umbral mínimo {threshold}
+      </p>
+    </div>
+    <div className="generate-cta__action">
+      <button type="button" disabled={disabled} onClick={onGenerate}
+        aria-describedby={disabled ? 'generate-cta-reason' : undefined}>
+        {generating ? 'Trabajando…' : 'Generar casos de prueba'}
+      </button>
+      {disabled && reasons.length > 0 && <ul id="generate-cta-reason" className="generate-cta__reasons" role="status">
+        {reasons.map(reason => <li key={reason}>{reason}</li>)}
+      </ul>}
+    </div>
   </section>;
 }
