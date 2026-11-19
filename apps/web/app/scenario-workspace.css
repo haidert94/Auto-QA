@@ -150,6 +150,9 @@
    un documento cargado desde la UI en proyectos READY. */
 .documents-dialog__body ul.document-list li .actions > button:first-of-type:not(:last-of-type) { display: none; }
 .documents-dialog__body ul.document-list + button { display: none; }
+/* El reporte IPA ya se muestra en la tarjeta "Análisis documental" del
+   tab Datos; dentro del modal sería info duplicada. */
+.documents-dialog__body section[aria-labelledby="ipa-heading"] { display: none; }
 .modules-panel { border: 1px solid #e9e7e1; border-radius: 4px; padding: 16px; background: var(--surface); display: grid; gap: 14px; }
 .modules-panel__count { display: grid; gap: 6px; }
 .modules-panel__count-label { font: 400 9px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--muted); }
