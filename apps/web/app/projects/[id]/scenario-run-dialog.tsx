@@ -1,24 +1,44 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { environmentTypes, type Environment } from '../onboarding';
+import { environmentTypes, scenarioRunEnvironmentError, supportsScenarioWrites, type Project } from '../onboarding';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
+import { EnvironmentsDialog } from './environments-dialog';
 import type { ScenarioListItem } from './scenario-card';
 import type { GeneratedSpec } from './automation-export';
 
-export function ScenarioRunDialog({ projectId, scenarios, environments, specs, onClose, onQueued }: {
-  projectId: string; scenarios: ScenarioListItem[]; environments: Environment[];
+export function ScenarioRunDialog({ project, role, scenarios, specs, onClose, onQueued }: {
+  project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
   onClose: () => void; onQueued: () => void;
 }) {
+  const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
+  const [savedProject, setSavedProject] = useState<Project | null>(null);
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
+  const currentProject = savedProject && savedProject.revision > project.revision ? savedProject : project;
+  const environments = currentProject.environments.filter(item => !scenarioRunEnvironmentError(item));
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '');
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmedScope, setConfirmedScope] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<{ title: string; queued: boolean; detail: string }[] | null>(null);
   const environment = environments.find(item => item.id === environmentId);
   const allowsWrites = environment?.readOnly === false;
+  const scope = environment ? JSON.stringify([environment.id, environment.readOnly, environment.authorizedAt]) : null;
+  const confirmed = scope !== null && confirmedScope === scope;
+  const canConfigureWrites = !!environment && !allowsWrites && supportsScenarioWrites(environment.type)
+    && currentProject.status !== 'ARCHIVED' && can(role, 'project.update');
   useEffect(() => { dialog.current?.showModal(); }, []);
+
+  function environmentSaved(updated: Project) {
+    setSavedProject(updated);
+    setEditingEnvironmentId(null);
+    setConfirmedScope(null);
+    router.refresh();
+  }
 
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,7 +48,7 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, specs, o
     for (const scenario of scenarios) {
       try {
         const automationId = specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null;
-        const response = await fetch(`/api/projects/${projectId}/scenarios/${scenario.id}/runs`, {
+        const response = await fetch(`/api/projects/${project.id}/scenarios/${scenario.id}/runs`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
             environmentId, automationId,
             writeAuthorizationAt: allowsWrites ? environment.authorizedAt : undefined,
@@ -45,20 +65,26 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, specs, o
     onQueued();
   }
 
-  return <dialog ref={dialog} className="scenario-run-dialog" aria-labelledby="suite-title"
+  return <><dialog ref={dialog} className="scenario-run-dialog" aria-labelledby="suite-title"
     onCancel={event => { if (busy) event.preventDefault(); else onClose(); }}>
     <h2 id="suite-title">Ejecutar suite ({scenarios.length})</h2>
     <p>Se solicitará una ejecución por escenario. La API comprobará autorización, alcance, plan y cuotas.</p>
     <ul className="scenario-run-targets">{scenarios.map(scenario => <li key={scenario.id}>{scenario.title}</li>)}</ul>
     {!results ? <form onSubmit={queue}>
-      <label>Entorno autorizado<select value={environmentId} onChange={event => { setEnvironmentId(event.target.value); setConfirmed(false); }} disabled={busy} required>
+      <label>Entorno autorizado<select value={environment?.id ?? ''} onChange={event => { setEnvironmentId(event.target.value); setConfirmedScope(null); }} disabled={busy} required>
+        {!environment && <option value="" disabled>Selecciona un entorno autorizado</option>}
         {environments.map(environment => <option key={environment.id} value={environment.id}>
           {environment.type ? environmentTypes[environment.type] : 'Entorno'} · {environment.baseUrl}
-          {!environment.readOnly && ' · Cambios con datos de prueba'}
+          {environment.readOnly ? ' · Solo lectura' : ' · Cambios con datos de prueba'}
         </option>)}
       </select></label>
+      {canConfigureWrites && <div className="scenario-run-environment-help">
+        <p>Para probar flujos que guardan datos o confirman pedidos, habilita los cambios en la configuración de este entorno.</p>
+        <button type="button" className="secondary" disabled={busy}
+          onClick={() => setEditingEnvironmentId(environment.id)}>Configurar cambios con datos de prueba</button>
+      </div>}
       <label className="check">
-        <input type="checkbox" required checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />
+        <input type="checkbox" required checked={confirmed} disabled={busy} onChange={event => setConfirmedScope(event.target.checked ? scope : null)} />
         {allowsWrites
           ? 'Confirmo ejecutar los escenarios seleccionados con cambios en los datos de prueba, dentro del alcance autorizado.'
           : 'Confirmo ejecutar los escenarios seleccionados en solo lectura, dentro del alcance autorizado.'}
@@ -73,5 +99,8 @@ export function ScenarioRunDialog({ projectId, scenarios, environments, specs, o
       <div className="actions"><Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>
         <button type="button" className="secondary" onClick={onClose}>Cerrar</button></div>
     </>}
-  </dialog>;
+  </dialog>
+    {editingEnvironmentId && <EnvironmentsDialog project={currentProject} focusEnvironmentId={editingEnvironmentId}
+      onClose={() => setEditingEnvironmentId(null)} onSaved={environmentSaved} />}
+  </>;
 }

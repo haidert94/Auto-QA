@@ -113,6 +113,8 @@
 .scenario-run-dialog::backdrop { background: #10142180; }
 .scenario-run-dialog > p { font-size: 12px; color: var(--muted); line-height: 1.7; }
 .scenario-run-dialog .actions { margin-top: 20px; }
+.scenario-run-environment-help { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
+.scenario-run-environment-help p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.65; }
 .scenario-run-targets { padding-left: 18px; font-size: 12px; line-height: 1.7; max-height: 160px; overflow: auto; }
 .scenario-run-dialog label.check { margin-top: 18px; align-items: flex-start; font-size: 12px; line-height: 1.65; }
 .scenario-run-dialog .check input { flex-shrink: 0; margin-top: 3px; accent-color: var(--blue); }

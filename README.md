@@ -45,7 +45,7 @@ En **Escenarios**, la lista permite buscar por título, ID, requisito o paso (at
 
 Los escenarios generados para Playwright incluyen al menos una aserción ejecutable. El caso base de compatibilidad verifica que la página responda con HTTP 2xx. **Generar casos de prueba** también guarda como `@manual` las comprobaciones web o móviles que el agente fundamenta en el análisis y que requieren intervención humana. Usa los requisitos del análisis vigente cuando están disponibles. El caso queda visible en Escenarios con instrucciones en español y resultado esperado. La etiqueta permite filtrar esos casos y los excluye de Playwright.
 
-**Permitir cambios con datos de prueba** está disponible al registrar o editar un entorno de Desarrollo, QA o Preproducción. Actívalo y confirma la autorización de ese entorno para ejecutar flujos que crean registros u órdenes de prueba. El runner valida el permiso confirmado al encolar y las rutas autorizadas. En Producción, las pruebas usan solo lectura.
+**Permitir cambios con datos de prueba** está disponible al registrar o editar un entorno de Desarrollo, QA o Preproducción. Actívalo y confirma la autorización de ese entorno para ejecutar flujos que crean registros u órdenes de prueba. En el diálogo **Ejecutar suite**, **Configurar cambios con datos de prueba** abre la configuración del entorno seleccionado y permite volver a la misma suite al guardar. El runner valida el permiso confirmado al encolar y las rutas autorizadas. En Producción, las pruebas usan solo lectura.
 
 Datos y Escenarios comparten el mismo contenedor, márgenes, tipografía y cabecera sobre el fondo marfil. Cambiar de pestaña conserva la alineación del nombre y del contenido; solamente cambian las acciones y la información de la sección.
 

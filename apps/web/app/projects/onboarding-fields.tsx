@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import {
   accessModes, browserLabels, environmentTypes, limitFields, supportsScenarioWrites,
   type EnvironmentForm, type ExecutionForm, type RoleForm,
@@ -46,8 +46,9 @@ function RemoveButton({ onClick, children }: { onClick: () => void; children: Re
   return <button type="button" className="secondary" onClick={onClick}>{children}</button>;
 }
 
-export function EnvironmentFields({ index, value, onChange, onRemove }: {
+export function EnvironmentFields({ index, value, writeModeRef, onChange, onRemove }: {
   index: number;
+  writeModeRef?: Ref<HTMLInputElement>;
   value: EnvironmentForm;
   onChange: (value: EnvironmentForm) => void;
   onRemove: () => void;
@@ -118,7 +119,7 @@ export function EnvironmentFields({ index, value, onChange, onRemove }: {
         </fieldset>
       )}
       {supportsScenarioWrites(value.type) && <label className="check">
-        <input type="checkbox" checked={!value.readOnly} onChange={event => change('readOnly', !event.target.checked, true)} />
+        <input type="checkbox" ref={writeModeRef} checked={!value.readOnly} onChange={event => change('readOnly', !event.target.checked, true)} />
         Permitir cambios con datos de prueba
       </label>}
       <label className="check">

@@ -25,19 +25,24 @@ function groupErrors(messages: string[]): { general: string[]; perEnv: Map<numbe
   return { general, perEnv };
 }
 
-export function EnvironmentsDialog({ project, onClose, onSaved }: {
+export function EnvironmentsDialog({ project, focusEnvironmentId, onClose, onSaved }: {
   project: Project;
+  focusEnvironmentId?: string;
   onClose: () => void;
   onSaved: (project: Project) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const writeMode = useRef<HTMLInputElement>(null);
   const envRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [environments, setEnvironments] = useState(() => project.environments.map(environmentForm));
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const grouped = groupErrors(errors);
 
-  useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    dialog.current?.showModal();
+    writeMode.current?.focus();
+  }, []);
 
   // Después de un intento de guardado con errores por entorno, llevamos el
   // foco visual al primer entorno marcado, para que el usuario no tenga que
@@ -121,6 +126,7 @@ export function EnvironmentsDialog({ project, onClose, onSaved }: {
             ref={node => { envRefs.current[index] = node; }}
             className={envMessages.length ? 'env-slot env-slot--invalid' : 'env-slot'}>
             <EnvironmentFields index={index} value={env}
+              writeModeRef={env.id === focusEnvironmentId && focusEnvironmentId ? writeMode : undefined}
               onChange={value => setEnvironments(list => list.map((item, n) => n === index ? value : item))}
               onRemove={() => setEnvironments(list => list.filter((_, n) => n !== index))} />
             {envMessages.length > 0 && <ul className="env-slot__errors" role="alert">

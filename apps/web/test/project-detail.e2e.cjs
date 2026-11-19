@@ -192,7 +192,13 @@ const api = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const payload = JSON.parse(Buffer.concat(chunks).toString());
     project = { ...project, ...payload, revision: project.revision + 1,
-      environments: payload.environments.map((env, i) => ({ ...project.environments[i], ...env })) };
+      environments: payload.environments.map((env, i) => {
+        const previous = project.environments[i];
+        const authorizedAt = env.authorizationConfirmed
+          ? (previous?.readOnly === env.readOnly && previous?.authorizedAt) || '2026-11-19T13:00:00Z'
+          : null;
+        return { ...previous, ...env, authorizedAt };
+      }) };
     saveCount++;
     return send(project);
   }
@@ -610,25 +616,47 @@ async function verifyWritableExecution(page) {
   const originalSaveCount = saveCount;
   const initialQueues = queuedRequests.length;
   const initialRuns = scenarioRuns.length;
+  const qa = { ...project.environments[1], authorizationConfirmed: true, authorizedAt: '2026-11-17T13:00:00Z' };
+  const production = {
+    ...qa, id: '10000000-0000-4000-8000-000000000004', type: 'PRODUCTION', baseUrl: 'https://production.example.test/',
+  };
+  project = { ...project, environments: [environment, qa, production] };
 
   try {
-    await page.getByRole('button', { name: 'Modificar', exact: true }).first().click();
+    await page.reload();
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+    const environmentSelect = dialog.getByLabel('Entorno autorizado');
+    const configure = dialog.getByRole('button', { name: 'Configurar cambios con datos de prueba' });
+    await environmentSelect.selectOption(production.id);
+    await expect(configure).toHaveCount(0);
+    await environmentSelect.selectOption(qa.id);
+    await dialog.getByRole('checkbox', { name: /en solo lectura/ }).check();
+    await configure.click();
     const settings = page.getByRole('dialog', { name: 'Entornos y alcance' });
-    const staging = settings.getByRole('group', { name: 'Entorno 1', exact: true });
-    const authorization = staging.getByRole('checkbox', { name: /Confirmo que tengo autorización/ });
+    await settings.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    await expect(environmentSelect).toHaveValue(qa.id);
+    assert.equal(project.environments[1].readOnly, true);
+    assert.equal(queuedRequests.length, initialQueues);
+    await configure.click();
+
+    const selectedQa = settings.getByRole('group', { name: 'Entorno 2', exact: true });
+    const authorization = selectedQa.getByRole('checkbox', { name: /Confirmo que tengo autorización/ });
+    const writeMode = selectedQa.getByRole('checkbox', { name: 'Permitir cambios con datos de prueba' });
+    await expect(writeMode).toBeFocused();
     await expect(authorization).toBeChecked();
-    await staging.getByRole('checkbox', { name: 'Permitir cambios con datos de prueba' }).check();
+    await writeMode.check();
     await expect(authorization).not.toBeChecked();
     await authorization.check();
     await settings.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(settings).not.toBeVisible();
-    await expect(page.getByText('Cambios con datos de prueba', { exact: true })).toBeVisible();
-    assert.equal(project.environments[0].readOnly, false);
-
-    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    const execute = page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true });
-    await execute.click();
-    const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(environmentSelect).toHaveValue(qa.id);
+    assert.equal(project.environments[1].readOnly, false);
+    assert.equal(project.environments[0].readOnly, true);
+    assert.notEqual(project.environments[1].authorizedAt, qa.authorizedAt);
+    assert.equal(queuedRequests.length, initialQueues);
     const confirm = dialog.getByRole('button', { name: 'Confirmar ejecución' });
     await expect(confirm).toBeDisabled();
     await dialog.getByRole('checkbox', { name: /cambios en los datos de prueba/ }).check();
@@ -636,11 +664,14 @@ async function verifyWritableExecution(page) {
     await expect(dialog.getByText(/En cola ·/)).toBeVisible();
     assert.deepEqual(queuedRequests.at(-1), {
       scenarioId: scenarioA,
-      environmentId: environment.id,
-      writeAuthorizationAt: project.environments[0].authorizedAt,
+      environmentId: qa.id,
+      writeAuthorizationAt: project.environments[1].authorizedAt,
       automationId,
     });
     await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.getByLabel('Entorno seleccionado').selectOption(qa.id);
+    await expect(page.getByText('Cambios con datos de prueba', { exact: true })).toBeVisible();
   } finally {
     savedPlaywright.delete(scenarioA);
     project = originalProject;
@@ -650,7 +681,7 @@ async function verifyWritableExecution(page) {
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
-  console.log('PASS autorización de cambios desde Datos y confirmación desde Automatización.');
+  console.log('PASS autorización de cambios en el QA seleccionado desde la suite, confirmación y sincronización con Datos.');
 }
 
 async function verifyAutomation(page, screenshots) {
