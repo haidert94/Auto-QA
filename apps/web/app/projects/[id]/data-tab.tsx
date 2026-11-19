@@ -180,7 +180,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
             <div className="detail-card__body"><p className="muted">No se pudo consultar la evaluación. No hay una puntuación disponible.</p>
               <Link href={`/projects/${project.id}/ipa`}>Consultar IPA →</Link></div></>}
       </section>
-      <AnalysisCard report={report}
+      <AnalysisCard report={report} documents={documents ?? []}
         pending={documentError
           ? 'No se pudo consultar el análisis documental.'
           : documents === null

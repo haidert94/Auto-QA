@@ -74,11 +74,24 @@
 .detail-ipa { padding: 0 18px 16px; }
 .detail-ipa .ipa-diagnostic-head, .detail-ipa > .detail-card__head { background: #f5f4f0; margin: 0 -18px 18px; padding: 11px 14px; gap: 10px; flex-wrap: nowrap; }
 .detail-analysis .detail-card__head .detail-count { font: 400 10px/1.5 var(--mono); color: var(--blue); letter-spacing: .04em; text-transform: uppercase; }
-.detail-analysis__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 12px; border: 1px solid #e9e7e1; border-radius: 3px; background: #faf9f6; }
+.detail-analysis__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 10px; border: 1px solid #e9e7e1; border-radius: 3px; background: #faf9f6; }
 .detail-analysis__metrics--split { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
-.detail-analysis__metrics > div { display: grid; gap: 3px; min-width: 0; }
-.detail-analysis__metrics dt { font: 400 9px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--muted); margin: 0; }
-.detail-analysis__metrics dd { margin: 0; font: 500 15px/1.2 var(--sans); color: var(--ink); }
+.detail-analysis__metric { display: grid; gap: 3px; min-width: 0; padding: 10px 8px; background: var(--surface); border: 1px solid #e9e7e1; border-radius: 3px; cursor: pointer; text-align: left; font: inherit; color: var(--ink); transition: border-color .12s ease, background-color .12s ease; }
+.detail-analysis__metric:not(:disabled):hover { border-color: var(--blue); }
+.detail-analysis__metric:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.detail-analysis__metric:disabled { cursor: default; opacity: .55; }
+.detail-analysis__metric--active { border-color: var(--blue); background: var(--blue-soft, #eaf1ff); }
+.detail-analysis__metric-label { font: 400 9px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--muted); }
+.detail-analysis__metric-value { font: 500 15px/1.2 var(--sans); color: var(--ink); }
+.detail-analysis__metric--active .detail-analysis__metric-value { color: var(--blue); }
+.detail-analysis__drawer { margin-top: 10px; padding: 12px 14px; border: 1px solid #e9e7e1; border-radius: 3px; background: #faf9f6; }
+.detail-analysis__drawer--empty { background: var(--surface); }
+.detail-analysis__drawer-title { margin: 0 0 10px; font: 400 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--blue); }
+.detail-analysis__doc-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 11px; }
+.detail-analysis__doc-list li { display: grid; gap: 2px; padding: 8px 10px; background: var(--surface); border: 1px solid #e9e7e1; border-radius: 3px; }
+.detail-analysis__doc-list strong { font: 500 12px/1.4 var(--sans); color: var(--ink); overflow-wrap: anywhere; }
+.detail-analysis__doc-list span.muted { font-size: 10.5px; }
+.detail-analysis__more { padding: 6px 2px; font-size: 11px; }
 .detail-analysis__section { margin-top: 14px; border-top: 1px solid #e9e7e1; padding-top: 12px; }
 .detail-analysis__section > summary { font: 400 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--blue); cursor: pointer; padding: 2px 0; }
 .detail-analysis__section[open] > summary { margin-bottom: 10px; }
