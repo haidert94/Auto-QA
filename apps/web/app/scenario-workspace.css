@@ -137,7 +137,7 @@
 .generate-cta__reasons { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font: 400 11px/1.5 var(--sans); color: var(--muted); }
 .generate-cta__reasons li::before { content: "· "; color: var(--muted); }
 @media (width > 760px) {
-  .generate-cta--scenarios .generate-cta__action > button { justify-self: end; }
+  .generate-cta .generate-cta__action > button { justify-self: end; }
 }
 @media (max-width: 760px) {
   .generate-cta { grid-template-columns: 1fr; }

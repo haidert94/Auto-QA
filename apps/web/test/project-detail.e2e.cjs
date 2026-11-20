@@ -1217,9 +1217,17 @@ async function verifyRunReport(page, screenshots) {
   await views.getByRole('button', { name: 'Matriz', exact: true }).click();
   await expect(section.getByRole('table', { name: 'Matriz de estados por escenario', exact: true }).getByRole('row')).toHaveCount(3);
   await views.getByRole('button', { name: 'Ejecuciones', exact: true }).click();
-  await page.getByText('Exportar resultados', { exact: true }).click();
+  const exportTrigger = page.getByText('Exportar resultados', { exact: true });
   const xmlButton = page.getByRole('button', { name: 'Exportar JUnit XML', exact: true });
   const jsonButton = page.getByRole('button', { name: 'Exportar JSON', exact: true });
+  await exportTrigger.click();
+  await expect(xmlButton).toBeVisible();
+  await search.click();
+  await expect(xmlButton).toBeHidden();
+  await exportTrigger.click();
+  await page.keyboard.press('Escape');
+  await expect(xmlButton).toBeHidden();
+  await exportTrigger.click();
   await expect(xmlButton).toBeDisabled();
   await expect(jsonButton).toBeDisabled();
   await expect(page.getByText('El reporte estará disponible cuando finalicen las ejecuciones del proyecto.')).toBeVisible();
@@ -1246,6 +1254,7 @@ async function verifyRunReport(page, screenshots) {
   await selector.selectOption('all');
   await expect(table.getByText(firstCanceled.id.slice(0, 8), { exact: true })).toHaveCount(0);
   await expect(table.getByText(secondCanceled.id.slice(0, 8), { exact: true })).toBeVisible();
+  await exportTrigger.click();
   await expect(xmlButton).toBeDisabled();
   secondCanceled.status = 'CANCELED';
   await expect(xmlButton).toBeEnabled({ timeout: 12000 });

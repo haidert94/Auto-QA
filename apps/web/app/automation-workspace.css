@@ -26,7 +26,6 @@
 .automation-pick-list p.error, .automation-review-reasons { font-size: 10px; line-height: 1.65; margin: 6px 0 0; overflow-wrap: anywhere; }
 .automation-review-reasons { color: var(--warn); }
 .generate-cta--playwright .generate-cta__action button {
-  background: var(--blue); border-color: var(--blue); color: #fff; width: 100%;
   min-height: 34px; font-size: 11px; padding: 7px 10px; border-radius: 2px;
 }
 .automation-operation-notice { color: var(--success); }

@@ -35,6 +35,7 @@ export function ExecutionReport({ project }: { project: Project }) {
   const [detailId, setDetailId] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
   const tagMenu = useRef<HTMLDetailsElement>(null);
+  const exportMenu = useRef<HTMLDetailsElement>(null);
   const latest = overview?.latest ?? [];
   const history = overview?.history ?? [];
   const waiting = activity.waiting || latest.some(run => !isReportableRunStatus(run.status))
@@ -82,20 +83,28 @@ export function ExecutionReport({ project }: { project: Project }) {
     return () => document.removeEventListener('keydown', shortcut);
   }, []);
   useEffect(() => {
-    function closeOnOutside(event: globalThis.MouseEvent) {
-      const menu = tagMenu.current;
-      if (!menu || !menu.open) return;
-      if (menu.contains(event.target as Node)) return;
-      menu.open = false;
+    const menus = [tagMenu, exportMenu];
+
+    function closeOnOutside(event: PointerEvent) {
+      for (const { current: menu } of menus) {
+        if (menu?.open && !menu.contains(event.target as Node)) menu.open = false;
+      }
     }
+
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || !tagMenu.current?.open) return;
-      tagMenu.current.open = false;
+      if (event.key !== 'Escape') return;
+      for (const { current: menu } of menus) {
+        if (!menu?.open) continue;
+        const restoreFocus = menu.contains(document.activeElement);
+        menu.open = false;
+        if (restoreFocus) menu.querySelector('summary')?.focus();
+      }
     }
-    document.addEventListener('click', closeOnOutside);
+
+    document.addEventListener('pointerdown', closeOnOutside);
     document.addEventListener('keydown', closeOnEscape);
     return () => {
-      document.removeEventListener('click', closeOnOutside);
+      document.removeEventListener('pointerdown', closeOnOutside);
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, []);
@@ -158,7 +167,7 @@ export function ExecutionReport({ project }: { project: Project }) {
   return <section className="run-report" aria-label="Reporte de ejecuciones">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Consulta el estado más reciente de cada escenario y accede a sus ejecuciones anteriores."
-      actions={<details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
+      actions={<details ref={exportMenu} className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
         <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'zip')}>Reporte completo (.zip)</button>
