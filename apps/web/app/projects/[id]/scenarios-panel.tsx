@@ -61,6 +61,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateNotice, setGenerateNotice] = useState('');
+  const deletionDisabled = busy || generating || !!listError || !!runner?.suiteRunning || !!runner?.stopping;
 
   useEffect(() => { updateCount?.(items?.length ?? null); }, [updateCount, items?.length]);
 
@@ -325,11 +326,21 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     finally { setBusy(false); }
   }
 
-  async function deleteSelected() {
+  function deleteSelected() {
     const scenarioIds = selected.map(item => item.id);
-    if (!scenarioIds.length) return;
+    if (deletionDisabled || !scenarioIds.length) return;
     const selection = scenarioIds.length === 1 ? 'el escenario seleccionado' : `los ${scenarioIds.length} escenarios seleccionados`;
-    if (!confirm(`¿Eliminar ${selection} y sus ejecuciones de forma definitiva?`)) return;
+    if (confirm(`¿Eliminar ${selection} y sus ejecuciones de forma definitiva?`)) void deleteScenarios(scenarioIds);
+  }
+
+  function deleteScenario(scenario: ScenarioListItem) {
+    if (deletionDisabled) return;
+    if (!confirm(`¿Eliminar el escenario «${scenario.title}» y sus ejecuciones?`)) return;
+    if (!confirm(`¿Confirmas la eliminación definitiva de «${scenario.title}»? Esta acción es irreversible.`)) return;
+    void deleteScenarios([scenario.id]);
+  }
+
+  async function deleteScenarios(scenarioIds: string[]) {
     setBusy(true); setError(''); setGenerateNotice('');
     try {
       const response = await fetch(`/api/projects/${projectId}/scenarios/delete-selected`, {
@@ -364,8 +375,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         {canDelete && !!items?.length && <button type="button" className="secondary"
-          disabled={!selected.length || busy || generating || !!listError || runner?.suiteRunning || runner?.stopping}
-          onClick={() => void deleteSelected()}>Eliminar escenarios</button>}
+          disabled={!selected.length || deletionDisabled}
+          onClick={deleteSelected}>Eliminar escenarios</button>}
         <ScenarioExport projectId={project.id} projectName={project.name} scenarios={checked.size ? selected : items ?? []} />
         {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
@@ -413,6 +424,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
       : <ScenarioWorkspace key={items.length ? 'active' : 'empty'} projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
         hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
+        onDelete={canDelete ? deleteScenario : undefined} deletionDisabled={deletionDisabled}
         onChange={updated => setItems(current => current?.map(item => item.id !== updated.id ? item : {
           ...updated, playwright: scenarioSpecSignature(item) === scenarioSpecSignature(updated) ? item.playwright : null,
         }) ?? null)} />}

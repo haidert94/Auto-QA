@@ -1463,15 +1463,52 @@ async function verifyDeleteScenarios(page) {
     await expect(table.getByText(cases[1].title, { exact: true })).toBeVisible();
     await expect(table.getByText(first.title, { exact: true })).toHaveCount(0);
 
-    await page.goto(new URL(`/projects/${projectId}/scenarios/${cases[1].id}`, page.url()).href);
+    await page.getByRole('tab', { name: 'Escenarios (10)', exact: true }).click();
+    await tab.getByRole('button', { name: cases[1].title, exact: true }).click();
+    const otherSelection = tab.getByRole('checkbox', { name: 'Seleccionar ' + cases[3].title, exact: true });
+    await otherSelection.check();
+    const detail = tab.getByRole('complementary', { name: 'Detalle del escenario seleccionado' });
+    const trash = detail.getByRole('button', { name: 'Eliminar escenario', exact: true });
+
+    for (const acceptCount of [0, 1, 2]) {
+      const prompts = [];
+      const answer = async dialog => {
+        prompts.push(dialog.message());
+        if (prompts.length <= acceptCount) await dialog.accept();
+        else await dialog.dismiss();
+      };
+      const pending = acceptCount === 2
+        ? page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/scenarios/delete-selected'))
+        : null;
+      page.on('dialog', answer);
+      try {
+        await trash.click();
+      } finally {
+        page.off('dialog', answer);
+      }
+      assert.equal(prompts.length, Math.min(acceptCount + 1, 2));
+      assert.ok(prompts[0].includes(cases[1].title) && prompts[0].includes('y sus ejecuciones'));
+      if (prompts.length === 2) assert.ok(prompts[1].includes('eliminación definitiva'));
+      if (pending) {
+        assert.deepEqual((await pending).postDataJSON(), { scenarioIds: [cases[1].id] });
+        await expect(page.getByText('Se eliminó 1 escenario.', { exact: true })).toBeVisible();
+      } else {
+        await expect(tab.getByRole('button', { name: cases[1].title, exact: true })).toBeVisible();
+        assert.equal(scenarios.length, 10);
+      }
+    }
+    await expect(otherSelection).toBeChecked();
+    await expect(tab.getByRole('button', { name: cases[1].title, exact: true })).toHaveCount(0);
+    assert.equal(scenarioRuns.length, 0);
+
+    await page.goto(new URL(`/projects/${projectId}/scenarios/${cases[2].id}`, page.url()).href);
     page.once('dialog', async dialog => {
       assert.match(dialog.message(), /este escenario y sus ejecuciones/);
       await dialog.accept();
     });
     await page.getByRole('button', { name: 'Eliminar escenario', exact: true }).click();
-    await expect(page.getByRole('tab', { name: 'Escenarios (9)', exact: true })).toBeVisible();
-    assert.equal(scenarios.some(scenario => scenario.id === cases[1].id), false);
-    assert.equal(scenarioRuns.length, 0);
+    await expect(page.getByRole('tab', { name: 'Escenarios (8)', exact: true })).toBeVisible();
+    assert.equal(scenarios.some(scenario => scenario.id === cases[2].id), false);
     assert.equal(queuedRequests.length, initialQueues);
   } finally {
     scenarios = saved;

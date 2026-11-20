@@ -70,6 +70,7 @@
 .scenario-detail__head > div > span { background: var(--blue); color: #fff; padding: 3px 5px; font: 500 9px/1.4 var(--mono); }
 .scenario-detail__controls button { background: transparent; color: var(--muted); border: 0; border-radius: 2px; min-width: 28px; min-height: 28px; padding: 5px; }
 .scenario-detail__controls button:hover { color: var(--blue); background: var(--surface); }
+.scenario-detail__controls .scenario-detail__delete:hover:not(:disabled) { color: var(--danger); }
 .scenario-detail__body { padding: 18px 14px; }
 .scenario-detail__body > h3 { font-size: 20px; line-height: 1.35; margin-bottom: 10px; overflow-wrap: anywhere; }
 .scenario-detail__source { display: flex; align-items: flex-start; gap: 7px; color: var(--muted); font: 400 10px/1.65 var(--mono); overflow-wrap: anywhere; margin: 0 0 20px; }

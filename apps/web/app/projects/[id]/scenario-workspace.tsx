@@ -1,6 +1,6 @@
 'use client';
 
-import { Code2, FileText, Pencil, PlayCircle, Search, X } from 'lucide-react';
+import { Code2, FileText, Pencil, PlayCircle, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ScenarioCard, type ScenarioListItem } from './scenario-card';
 import { ScenarioListToolbar, ScenarioVisibleSelection } from './scenario-list-toolbar';
@@ -9,11 +9,12 @@ import { durationLabel, gherkinKeyword, isManualScenario, MANUAL_SCENARIO_MESSAG
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
-export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, hasRunnableSpec, onRun, role }: {
+export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, hasRunnableSpec, onRun, onDelete, deletionDisabled, role }: {
   items: ScenarioListItem[]; runs: ScenarioRun[]; runsAvailable: boolean; checked: Set<string>;
   setChecked: (selection: Set<string>) => void; onChange: (scenario: ScenarioListItem) => void;
   projectId: string; hasRunnableSpec: (scenario: ScenarioListItem) => boolean;
-  onRun?: (scenarios: ScenarioListItem[]) => void; role?: OrgRole;
+  onRun?: (scenarios: ScenarioListItem[]) => void;
+  onDelete?: (scenario: ScenarioListItem) => void; deletionDisabled: boolean; role?: OrgRole;
 }) {
   const canEdit = can(role, 'scenario.update');
   const [query, setQuery] = useState('');
@@ -88,6 +89,8 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
         <header className="scenario-detail__head"><div><span>{active.id.slice(0, 8)}</span><h2>Detalle del escenario</h2></div>
           <div className="scenario-detail__controls">
             {onRun && <button type="button" aria-label="Ejecutar escenario seleccionado" disabled={!hasRunnableSpec(active)} title={isManualScenario(active) ? MANUAL_SCENARIO_MESSAGE : undefined} onClick={() => onRun([active])}><PlayCircle size={16} /></button>}
+            {onDelete && <button type="button" className="scenario-detail__delete" aria-label="Eliminar escenario"
+              title="Eliminar escenario" disabled={deletionDisabled} onClick={() => onDelete(active)}><Trash2 size={16} aria-hidden="true" /></button>}
             <button type="button" aria-label="Cerrar detalle del escenario" onClick={() => { setActiveId(null); setEditing(false); }}><X size={16} /></button>
           </div>
         </header>
