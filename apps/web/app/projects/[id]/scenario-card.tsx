@@ -5,7 +5,7 @@ import { useState } from 'react';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { gherkinKeyword, scenarioStepText } from './scenario-presentation';
-import { saveScenarioSteps, scenarioStepDrafts, ScenarioStepsEditor } from './scenario-steps-editor';
+import { saveScenarioSteps, scenarioStepDrafts, ScenarioStepsEditor, type ScenarioStepSource } from './scenario-steps-editor';
 
 export type ScenarioStep = { ordinal: number; action: string; data?: string | null; expected?: string | null };
 
@@ -25,9 +25,10 @@ export type ScenarioListItem = {
 // representa flujo básico o alterno, no ambos a la vez.
 const FLOW_TAGS = ['@flujoBasico', '@flujoAlterno'] as const;
 
-export function ScenarioCard({ projectId, scenario, onChange, initialEditing = false, onEditComplete, role }: {
+export function ScenarioCard({ projectId, scenario, scenarios, onChange, initialEditing = false, onEditComplete, role }: {
   projectId: string;
   scenario: ScenarioListItem;
+  scenarios: ReadonlyArray<ScenarioStepSource>;
   onChange: (updated: ScenarioListItem) => void;
   initialEditing?: boolean;
   onEditComplete?: () => void;
@@ -192,7 +193,7 @@ export function ScenarioCard({ projectId, scenario, onChange, initialEditing = f
         <textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} maxLength={2000} rows={2}/>
       </label>
 
-      <ScenarioStepsEditor steps={steps} onChange={setSteps} disabled={busy} />
+      <ScenarioStepsEditor steps={steps} scenarios={scenarios} onChange={setSteps} disabled={busy} />
 
       {error && <p className="error" role="alert">{error}</p>}
 

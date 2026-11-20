@@ -5,6 +5,7 @@ import { accountFetch, requireAccount, type OrgRole } from '../../../../autoqa-s
 import { RunsPanel, type EnvironmentOption } from './runs-panel';
 import { scenarioRunEnvironmentError } from '../../../onboarding';
 import { isManualScenario } from '../../scenario-presentation';
+import type { ScenarioStepSource } from '../../scenario-steps-editor';
 import { ScenarioEditor, type RequirementOption, type Scenario } from './scenario-editor';
 
 export const dynamic = 'force-dynamic';
@@ -23,11 +24,13 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
   let scenarioResponse: Response | undefined;
   let requirementsResponse: Response | undefined;
   let projectResponse: Response | undefined;
+  let scenariosResponse: Response | undefined;
   try {
-    [scenarioResponse, requirementsResponse, projectResponse] = await Promise.all([
+    [scenarioResponse, requirementsResponse, projectResponse, scenariosResponse] = await Promise.all([
       accountFetch(`/projects/${id}/scenarios/${scenarioId}`),
       accountFetch(`/projects/${id}/scenarios/requirements`),
       accountFetch(`/projects/${id}`),
+      accountFetch(`/projects/${id}/scenarios`).catch(() => undefined),
     ]);
   } catch {}
 
@@ -39,6 +42,10 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
     </section>;
   }
   const scenario: Scenario = await scenarioResponse.json();
+  const scenariosPayload: unknown = scenariosResponse?.ok ? await scenariosResponse.json().catch(() => null) : null;
+  const scenarios = Array.isArray(scenariosPayload)
+    ? (scenariosPayload as ScenarioStepSource[]).map(({ title, steps }) => ({ title, steps }))
+    : null;
   const requirements: RequirementOption[] = requirementsResponse?.ok ? await requirementsResponse.json() : [];
   const project: ProjectForRuns | null = projectResponse?.ok ? await projectResponse.json() : null;
   const environments: EnvironmentOption[] = (project?.environments ?? [])
@@ -54,7 +61,7 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
   return <section className="panel">
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Editar escenario</h1>
-    <ScenarioEditor initial={{ ...scenario, projectId: id }} requirements={requirements} role={role} />
+    <ScenarioEditor initial={{ ...scenario, projectId: id }} requirements={requirements} scenarios={scenarios} role={role} />
     <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} role={role}
       manual={isManualScenario(scenario)} initialBrowser={defaultScenarioBrowser(scenario)} />
   </section>;

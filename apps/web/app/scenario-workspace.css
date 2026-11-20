@@ -94,14 +94,22 @@
 .scenario-editor-list .scenario-card { border: 0; padding: 0; }
 .scenario-bdd-editor { min-width: 0; background: var(--surface); }
 .scenario-bdd-editor ol { display: grid; gap: 8px; list-style: none; margin: 8px 0 12px; padding: 0; }
-.scenario-bdd-editor li { display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; align-items: start; gap: 6px; }
+.scenario-bdd-editor > ol > li { display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; align-items: start; gap: 6px; }
 .scenario-bdd-editor :is(select, textarea) { margin: 0; min-width: 0; font-size: 12px; }
 .scenario-bdd-editor select { color: var(--blue); font-weight: 600; }
+.scenario-bdd-editor__text { min-width: 0; display: grid; gap: 4px; }
+.scenario-bdd-editor textarea.scenario-bdd-editor__text--new { background: #fff1e1; border-color: #c5752a; }
+.scenario-bdd-editor__text > small { font-size: 10px; color: var(--warn); }
+.scenario-bdd-editor__suggestions { max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 4px; padding: 3px; background: var(--surface); }
+.scenario-bdd-editor__suggestions > button { display: block; width: 100%; padding: 6px 8px; border-color: transparent; text-align: left; font-size: 11px; overflow-wrap: anywhere; }
+.scenario-bdd-editor__suggestions > button:focus-visible { outline-offset: -2px; }
+.scenario-bdd-editor__suggestions strong { color: var(--blue); }
+.scenario-bdd-editor__suggestions small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
 .scenario-bdd-editor__actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .scenario-bdd-editor__actions button { padding-inline: 8px; }
 @media (max-width: 520px) {
-  .scenario-bdd-editor li { grid-template-columns: minmax(0, 1fr) auto; }
-  .scenario-bdd-editor textarea { grid-column: 1 / -1; grid-row: 2; }
+  .scenario-bdd-editor > ol > li { grid-template-columns: minmax(0, 1fr) auto; }
+  .scenario-bdd-editor__text { grid-column: 1 / -1; grid-row: 2; }
   .scenario-bdd-editor select { width: min(100%, 110px); }
 }
 .scenario-no-results { padding: 40px 20px; background: var(--surface); border: 1px dashed var(--line); text-align: center; color: var(--muted); }

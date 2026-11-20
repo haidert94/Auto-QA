@@ -7,7 +7,7 @@ import { can } from '../../../../permissions';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../scenario-presentation';
 
 import type { ScenarioStep } from '../../scenario-card';
-import { saveScenarioSteps, scenarioStepDrafts, ScenarioStepsEditor } from '../../scenario-steps-editor';
+import { saveScenarioSteps, scenarioStepDrafts, ScenarioStepsEditor, type ScenarioStepSource } from '../../scenario-steps-editor';
 
 export type Scenario = {
   id: string;
@@ -22,7 +22,12 @@ export type Scenario = {
 
 export type RequirementOption = { id: string; title: string; externalKey: string | null };
 
-export function ScenarioEditor({ initial, requirements, role }: { initial: Scenario; requirements: RequirementOption[]; role?: OrgRole }) {
+export function ScenarioEditor({ initial, requirements, scenarios, role }: {
+  initial: Scenario;
+  requirements: RequirementOption[];
+  scenarios: ScenarioStepSource[] | null;
+  role?: OrgRole;
+}) {
   const router = useRouter();
   const canEdit = can(role, 'scenario.update');
   const canDelete = can(role, 'scenario.delete');
@@ -120,7 +125,7 @@ export function ScenarioEditor({ initial, requirements, role }: { initial: Scena
       <textarea value={expectedResult} onChange={e => setExpectedResult(e.target.value)} rows={3} maxLength={2000}/>
     </label>
 
-    <ScenarioStepsEditor steps={steps} onChange={setSteps} disabled={!canEdit || busy} reorderable />
+    <ScenarioStepsEditor steps={steps} scenarios={scenarios} onChange={setSteps} disabled={!canEdit || busy} reorderable />
 
     <div className="actions">
       {canEdit && <button type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>}

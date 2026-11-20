@@ -92,7 +92,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
           </div>
         </header>
         <div className="scenario-detail__body">
-          {editing ? <ul className="scenario-editor-list"><ScenarioCard key={active.id} projectId={projectId} scenario={active} initialEditing
+          {editing ? <ul className="scenario-editor-list"><ScenarioCard key={active.id} projectId={projectId} scenario={active} scenarios={items} initialEditing
             onChange={onChange} onEditComplete={() => setEditing(false)} role={role} /></ul> : <>
             <h3>{active.title}</h3>
             {isManualScenario(active) && <p className="scenario-derived-note">{MANUAL_SCENARIO_MESSAGE}</p>}
