@@ -19,6 +19,18 @@ type AlertCounts = { critical: number; high: number; medium: number; low: number
 
 type WorkflowRunSummary = { id: number; status: string; conclusion: string | null; createdAt: string; url: string; headSha: string };
 
+// Detalle por alerta: suficiente para que el usuario decida si abrirla en
+// GitHub o ir directo al archivo. No incluimos la descripción completa para
+// evitar inflar el payload; está en el enlace.
+export type AlertDetail = {
+  id: number;
+  severity: string;
+  title: string;
+  location: string | null;
+  url: string;
+  package?: string;
+};
+
 type CodeHealthResult = {
   configured: boolean;
   repository: string | null;
@@ -28,10 +40,12 @@ type CodeHealthResult = {
     recent: WorkflowRunSummary[];
     successRate: number | null;
   } | null;
-  codeql: { enabled: boolean; counts: AlertCounts; url: string | null } | null;
-  dependabot: { enabled: boolean; counts: AlertCounts; url: string | null } | null;
+  codeql: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
+  dependabot: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
   message?: string;
 };
+
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, note: 4, other: 5 };
 
 const EMPTY_COUNTS: AlertCounts = { critical: 0, high: 0, medium: 0, low: 0, note: 0, other: 0, total: 0 };
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -112,29 +126,53 @@ export class CodeHealthService {
 
   private async fetchCodeqlAlerts(repo: string, token: string): Promise<CodeHealthResult['codeql']> {
     const { status, body } = await this.githubFetch(`/repos/${repo}/code-scanning/alerts?state=open&per_page=100`, token);
-    if (status === 404) return { enabled: false, counts: { ...EMPTY_COUNTS }, url: `https://github.com/${repo}/security/code-scanning` };
+    if (status === 404) return { enabled: false, counts: { ...EMPTY_COUNTS }, url: `https://github.com/${repo}/security/code-scanning`, top: [] };
     if (status !== 200 || !Array.isArray(body)) return null;
     const counts = { ...EMPTY_COUNTS };
+    const details: AlertDetail[] = [];
     for (const alert of body as Array<Record<string, unknown>>) {
-      const sev = (alert.rule as { severity?: string } | null)?.severity ?? 'other';
+      const rule = alert.rule as { severity?: string; description?: string; id?: string } | null;
+      const sev = rule?.severity ?? 'other';
       const key: keyof AlertCounts = (['critical', 'high', 'medium', 'low', 'note'] as const).includes(sev as never)
         ? (sev as keyof AlertCounts) : 'other';
       counts[key]++; counts.total++;
+      const instance = alert.most_recent_instance as { location?: { path?: string; start_line?: number } } | undefined;
+      const loc = instance?.location;
+      details.push({
+        id: typeof alert.number === 'number' ? alert.number : 0,
+        severity: sev,
+        title: typeof rule?.description === 'string' ? rule.description : (typeof rule?.id === 'string' ? rule.id : 'Alerta CodeQL'),
+        location: loc?.path ? `${loc.path}${loc.start_line ? `:${loc.start_line}` : ''}` : null,
+        url: typeof alert.html_url === 'string' ? alert.html_url : `https://github.com/${repo}/security/code-scanning`,
+      });
     }
-    return { enabled: true, counts, url: `https://github.com/${repo}/security/code-scanning` };
+    details.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
+    return { enabled: true, counts, url: `https://github.com/${repo}/security/code-scanning`, top: details.slice(0, 10) };
   }
 
   private async fetchDependabotAlerts(repo: string, token: string): Promise<CodeHealthResult['dependabot']> {
     const { status, body } = await this.githubFetch(`/repos/${repo}/dependabot/alerts?state=open&per_page=100`, token);
-    if (status === 404 || status === 403) return { enabled: false, counts: { ...EMPTY_COUNTS }, url: `https://github.com/${repo}/security/dependabot` };
+    if (status === 404 || status === 403) return { enabled: false, counts: { ...EMPTY_COUNTS }, url: `https://github.com/${repo}/security/dependabot`, top: [] };
     if (status !== 200 || !Array.isArray(body)) return null;
     const counts = { ...EMPTY_COUNTS };
+    const details: AlertDetail[] = [];
     for (const alert of body as Array<Record<string, unknown>>) {
-      const sev = (alert.security_advisory as { severity?: string } | null)?.severity ?? 'other';
+      const advisory = alert.security_advisory as { severity?: string; summary?: string } | null;
+      const dep = (alert.dependency as { package?: { name?: string; ecosystem?: string }; manifest_path?: string } | null) ?? null;
+      const sev = advisory?.severity ?? 'other';
       const key: keyof AlertCounts = (['critical', 'high', 'medium', 'low'] as const).includes(sev as never)
         ? (sev as keyof AlertCounts) : 'other';
       counts[key]++; counts.total++;
+      details.push({
+        id: typeof alert.number === 'number' ? alert.number : 0,
+        severity: sev,
+        title: typeof advisory?.summary === 'string' ? advisory.summary : 'Vulnerabilidad en dependencia',
+        location: dep?.manifest_path ?? null,
+        url: typeof alert.html_url === 'string' ? alert.html_url : `https://github.com/${repo}/security/dependabot`,
+        package: dep?.package?.name,
+      });
     }
-    return { enabled: true, counts, url: `https://github.com/${repo}/security/dependabot` };
+    details.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
+    return { enabled: true, counts, url: `https://github.com/${repo}/security/dependabot`, top: details.slice(0, 10) };
   }
 }

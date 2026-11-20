@@ -115,3 +115,19 @@
 .code-health-alerts ul li { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
 .code-health-alerts ul li strong { color: var(--ink); font: 500 11px/1.2 var(--mono); }
 .code-health-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 1px; }
+
+.code-health-legend { margin-top: 0 !important; }
+.code-health-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.code-health-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; border-left: 2px solid var(--line); padding: 4px 8px; background: var(--quiet); border-radius: 1px; }
+.code-health-item.is-critical, .code-health-item.is-high { border-left-color: #991b1b; }
+.code-health-item.is-medium { border-left-color: #b45309; }
+.code-health-item.is-low, .code-health-item.is-note { border-left-color: #1d4ed8; }
+.code-health-item a { font: 500 11px/1.4 var(--sans); color: var(--ink); text-decoration: none; }
+.code-health-item a:hover { color: var(--blue); text-decoration: underline; }
+.code-health-item small { color: var(--muted); font: 400 10px/1.4 var(--mono); }
+.code-health-item small code { color: var(--ink); background: transparent; padding: 0; }
+.code-health-badge { font: 500 9px/1.3 var(--mono); padding: 1px 6px; border-radius: 1px; background: var(--surface); color: var(--muted); text-transform: uppercase; }
+.code-health-badge.is-critical, .code-health-badge.is-high { background: #991b1b; color: #fff; }
+.code-health-badge.is-medium { background: #b45309; color: #fff; }
+.code-health-badge.is-low { background: #1d4ed8; color: #fff; }
+.code-health-badge.is-note { background: #4b5563; color: #fff; }

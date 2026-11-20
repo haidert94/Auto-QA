@@ -5,15 +5,20 @@ import { AlertTriangle, CheckCircle2, ExternalLink, GitBranch, ShieldAlert } fro
 
 type AlertCounts = { critical: number; high: number; medium: number; low: number; note: number; other: number; total: number };
 type WorkflowRun = { id: number; status: string; conclusion: string | null; createdAt: string; url: string; headSha: string };
+type AlertDetail = { id: number; severity: string; title: string; location: string | null; url: string; package?: string };
 type CodeHealth = {
   configured: boolean;
   repository: string | null;
   fetchedAt: string;
   workflow: { name: string; recent: WorkflowRun[]; successRate: number | null } | null;
-  codeql: { enabled: boolean; counts: AlertCounts; url: string | null } | null;
-  dependabot: { enabled: boolean; counts: AlertCounts; url: string | null } | null;
+  codeql: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
+  dependabot: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
   message?: string;
 };
+
+function severityLabel(severity: string): string {
+  return ({ critical: 'Crítica', high: 'Alta', medium: 'Media', low: 'Baja', note: 'Nota', warning: 'Aviso' } as Record<string, string>)[severity] ?? severity;
+}
 
 function runColor(run: WorkflowRun): string {
   if (run.conclusion === 'success') return 'var(--success, #15803d)';
@@ -22,9 +27,10 @@ function runColor(run: WorkflowRun): string {
   return 'var(--warn, #b45309)';
 }
 
-function AlertsChart({ title, counts, url }: { title: string; counts: AlertCounts; url: string | null }) {
-  // Barras horizontales apiladas: la mezcla crítico/alto/medio/bajo es
-  // más legible que una tabla cuando los números son pequeños.
+function AlertsChart({ title, counts, url, top }: { title: string; counts: AlertCounts; url: string | null; top: AlertDetail[] }) {
+  // Barra apilada + lista de alertas priorizadas. La tabla por sí sola
+  // perdería la lectura rápida de severidad; el chart solo no permite
+  // decidir qué atender primero. Juntos dan ambos.
   const palette: Array<[keyof AlertCounts, string, string]> = [
     ['critical', '#991b1b', 'Críticas'], ['high', '#b91c1c', 'Altas'],
     ['medium', '#b45309', 'Medias'], ['low', '#1d4ed8', 'Bajas'],
@@ -37,9 +43,16 @@ function AlertsChart({ title, counts, url }: { title: string; counts: AlertCount
     <div className="code-health-bar" role="img" aria-label={palette.map(([k, , label]) => `${label}: ${counts[k]}`).join(', ')}>
       {palette.map(([key, color]) => counts[key] > 0 && <span key={key} style={{ background: color, width: `${(counts[key] / total) * 100}%` }} />)}
     </div>
-    <ul>{palette.filter(([key]) => counts[key] > 0).map(([key, color, label]) => <li key={key}>
+    <ul className="code-health-legend">{palette.filter(([key]) => counts[key] > 0).map(([key, color, label]) => <li key={key}>
       <span className="code-health-swatch" style={{ background: color }} />{label}<strong>{counts[key]}</strong></li>)}
       {counts.total === 0 && <li className="muted">Sin alertas abiertas.</li>}</ul>
+    {top.length > 0 && <ol className="code-health-list">{top.map(alert => <li key={alert.id} className={`code-health-item is-${alert.severity}`}>
+      <a href={alert.url} target="_blank" rel="noreferrer">{alert.title}</a>
+      <span className={`code-health-badge is-${alert.severity}`}>{severityLabel(alert.severity)}</span>
+      {alert.package && <small>{alert.package}</small>}
+      {alert.location && <small><code>{alert.location}</code></small>}
+    </li>)}
+      {counts.total > top.length && <li className="muted">y {counts.total - top.length} más en GitHub.</li>}</ol>}
   </div>;
 }
 
@@ -95,12 +108,12 @@ export function CodeHealthCard({ active }: { active: boolean }) {
         </div>
         <div className="code-health-widget">
           <header><ShieldAlert size={14} /><h3>CodeQL</h3></header>
-          {data.codeql?.enabled ? <AlertsChart title="Alertas CodeQL" counts={data.codeql.counts} url={data.codeql.url} />
+          {data.codeql?.enabled ? <AlertsChart title="Alertas CodeQL" counts={data.codeql.counts} url={data.codeql.url} top={data.codeql.top ?? []} />
             : <p className="muted">CodeQL no habilitado todavía. Activa el workflow <code>codeql.yml</code> en GitHub.</p>}
         </div>
         <div className="code-health-widget">
           <header><ShieldAlert size={14} /><h3>Dependabot</h3></header>
-          {data.dependabot?.enabled ? <AlertsChart title="Alertas Dependabot" counts={data.dependabot.counts} url={data.dependabot.url} />
+          {data.dependabot?.enabled ? <AlertsChart title="Alertas Dependabot" counts={data.dependabot.counts} url={data.dependabot.url} top={data.dependabot.top ?? []} />
             : <p className="muted">Dependabot no habilitado o sin permisos. Actívalo en Security → Dependabot alerts.</p>}
         </div>
       </div>}
