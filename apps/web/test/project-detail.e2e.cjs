@@ -662,7 +662,7 @@ async function verifySavedAutomationAfterReload(page) {
   const states = section.getByRole('group', { name: 'Filtrar por estado del código' });
   const rows = section.locator('.automation-pick-list > li');
   const second = rows.filter({ hasText: scenarios[1].title });
-  const runner = page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true });
+  const runner = page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true });
 
   try {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
@@ -724,7 +724,7 @@ async function verifySuiteProgress(page) {
     trackingFailures = 1;
     runCapacity = 1;
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    await page.getByRole('button', { name: 'Ejecutar en runners (3)', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar suite (3)', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (3)', exact: true });
     await dialog.getByRole('checkbox').check();
     await dialog.getByRole('button', { name: 'Confirmar ejecución' }).click();
@@ -856,7 +856,7 @@ async function verifyStopSuiteDuringSubmission(page) {
     scenarios.slice(0, 2).forEach(persistFixtureSpec);
     runAdmission = new Promise(resolve => { release = resolve; });
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    await page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true }).click();
     const suite = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
     await suite.getByRole('checkbox').check();
     await suite.getByRole('button', { name: 'Confirmar ejecución' }).click();
@@ -869,7 +869,7 @@ async function verifyStopSuiteDuringSubmission(page) {
     release();
 
     await expect(indicator.getByRole('button', { name: 'Deteniendo…' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true })).toBeEnabled();
     assert.equal(stopRequests, initialStops + 1);
     assert.equal(queuedRequests.length - initialQueues, 1);
     assert.equal(scenarioRuns[initialRuns].status, 'CANCELED');
@@ -964,7 +964,7 @@ async function verifyWritableExecution(page) {
   try {
     await page.reload();
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    await page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
     const environmentSelect = dialog.getByLabel('Entorno autorizado');
     const configure = dialog.getByRole('button', { name: 'Configurar cambios con datos de prueba' });
@@ -1089,7 +1089,7 @@ async function verifyAutomation(page, screenshots) {
   const all = section.getByRole('checkbox', { name: 'Seleccionar visibles (4)', exact: true });
   await all.uncheck();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).check();
-  const execute = page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true });
+  const execute = page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true });
   await execute.click();
   let dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
@@ -1103,7 +1103,7 @@ async function verifyAutomation(page, screenshots) {
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[0].title}`, exact: true }).uncheck();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[2].title}`, exact: true }).check();
-  await expect(page.getByRole('button', { name: 'Ejecutar en runners (0)', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Ejecutar suite (0)', exact: true })).toBeDisabled();
   await expect(section.getByText('Sin pasos definidos', { exact: false }).first()).toBeVisible();
 
   scenarios[1].title += ' · contrato actualizado';
@@ -1128,7 +1128,7 @@ async function verifyAutomation(page, screenshots) {
   await section.getByRole('button', { name: 'Reintentar archivo', exact: true }).click();
   await expect(rows.filter({ hasText: scenarios[1].title }).getByText('Generado', { exact: true })).toBeVisible();
   await expect(section.locator('pre')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true }).click();
+  await page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('checkbox').check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
@@ -1148,7 +1148,7 @@ async function verifyAutomation(page, screenshots) {
   project.status = 'DRAFT';
   await page.reload();
   await section.getByRole('button', { name: 'Generar seleccionados (4)', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Ejecutar en runners (2)', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true })).toBeDisabled();
   project.status = 'READY';
   await page.reload();
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
@@ -1294,10 +1294,7 @@ async function verifyRunReport(page, screenshots) {
     if (width === 390) await page.screenshot({ path: join(screenshots, 'project-runs-mobile.png'), fullPage: true, animations: 'disabled' });
   }
   await page.setViewportSize({ width: 1440, height: 1100 });
-  await page.getByRole('link', { name: 'Nueva ejecución →', exact: true }).click();
-  await expect(page.getByRole('tab', { name: 'Automatización', exact: true })).toHaveAttribute('aria-selected', 'true');
-  assert.equal(queuedRequests.length, initialQueues, 'Nueva ejecución navega al flujo de preparación, sin lanzar trabajos.');
-  await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+  assert.equal(queuedRequests.length, initialQueues, 'Ningún trabajo se encola al abrir el reporte.');
   historyFail = true;
   await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
   await expect(section.getByText('No se pudo consultar el historial de ejecuciones.', { exact: true })).toBeVisible();

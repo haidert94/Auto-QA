@@ -196,7 +196,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Genera, descarga y ejecuta el código Playwright de los escenarios seleccionados."
       actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
-        {canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar en runners (${ready.length})`}</button>}</>} />, header.element)}
+        {canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${ready.length})`}</button>}</>} />, header.element)}
     {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
       <button type="button" disabled={generationDisabled} onClick={() => void prepare()}>
         <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
