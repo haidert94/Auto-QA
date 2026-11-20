@@ -41,7 +41,23 @@
 .run-report-views button[aria-pressed="true"], .run-report-filter-options button[aria-pressed="true"] { color: #fff; background: var(--ink); }
 .run-report-views button:hover, .run-report-filter-options button:hover { border-color: var(--blue); }
 .run-report-filter-options { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
-.run-report-tag-options button { color: var(--blue); }
+.run-report-tag-menu { position: relative; margin-top: 9px; }
+.run-report-tag-menu > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); color: var(--ink); font: 500 11px/1.4 var(--mono); cursor: pointer; list-style: none; max-width: 100%; }
+.run-report-tag-menu > summary::-webkit-details-marker, .run-report-tag-menu > summary::marker { display: none; content: ""; }
+.run-report-tag-menu > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-report-tag-menu > summary:hover { border-color: var(--blue); color: var(--blue); }
+.run-report-tag-menu > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.run-report-tag-menu[open] > summary { border-color: var(--blue); color: var(--blue); }
+.run-report-tag-menu[open] .run-report-tag-menu__chevron { transform: rotate(180deg); }
+.run-report-tag-menu__chevron { transition: transform .12s ease; }
+.run-report-tag-menu__options { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; min-width: 240px; max-width: min(420px, calc(100vw - 32px)); padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 8px 24px #10142118; max-height: 320px; overflow-y: auto; }
+.run-report-tag-menu__options button { min-height: 25px; padding: 4px 8px; border: 1px solid transparent; border-radius: 1px; background: var(--quiet); color: var(--blue); font: 400 10px/1.4 var(--mono); cursor: pointer; }
+.run-report-tag-menu__options button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.run-report-tag-menu__options button:hover { border-color: var(--blue); }
+@media (max-width: 760px) {
+  .run-report-tag-menu { width: 100%; }
+  .run-report-tag-menu > summary { width: 100%; justify-content: space-between; }
+}
 .run-report-filters > p { color: var(--muted); font: 400 9px/1.6 var(--mono); margin: 10px 0 0; }
 .run-report-content { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
 .run-report-main, .run-report-aside { min-width: 0; }

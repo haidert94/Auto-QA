@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { Activity, Clock, Download, HelpCircle, Play, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { Activity, ChevronDown, Clock, Download, Filter, HelpCircle, Play, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
@@ -33,6 +33,7 @@ export function ExecutionReport({ project }: { project: Project }) {
   const [view, setView] = useState<'table' | 'timeline' | 'matrix'>('table');
   const [detailId, setDetailId] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  const tagMenu = useRef<HTMLDetailsElement>(null);
   const latest = overview?.latest ?? [];
   const history = overview?.history ?? [];
   const waiting = activity.waiting || latest.some(run => !isReportableRunStatus(run.status))
@@ -79,6 +80,29 @@ export function ExecutionReport({ project }: { project: Project }) {
     document.addEventListener('keydown', shortcut);
     return () => document.removeEventListener('keydown', shortcut);
   }, []);
+  useEffect(() => {
+    function closeOnOutside(event: globalThis.MouseEvent) {
+      const menu = tagMenu.current;
+      if (!menu || !menu.open) return;
+      if (menu.contains(event.target as Node)) return;
+      menu.open = false;
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape' || !tagMenu.current?.open) return;
+      tagMenu.current.open = false;
+    }
+    document.addEventListener('click', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('click', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  function pickTag(next: string) {
+    setTag(next);
+    if (tagMenu.current) tagMenu.current.open = false;
+  }
 
   const showLatest = scope === 'latest';
   const scopeLabel = showLatest ? 'escenarios' : 'ejecuciones';
@@ -170,8 +194,18 @@ export function ExecutionReport({ project }: { project: Project }) {
           <div className="run-report-filter-options" role="group" aria-label="Estado de ejecución">{filters.map(value => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
             {filterLabels[value]} ({value === 'all' ? scoped.length : scoped.filter(run => category(run) === value).length})
           </button>)}</div>
-          {availableTags.length > 0 && <div className="run-report-filter-options run-report-tag-options" role="group" aria-label="Etiqueta actual del escenario"><button type="button" aria-pressed={!tag} onClick={() => setTag('')}>Todas las etiquetas</button>
-            {availableTags.map(value => <button type="button" key={value} aria-pressed={tag === value} onClick={() => setTag(tag === value ? '' : value)}>{value}</button>)}</div>}
+          {availableTags.length > 0 && <details ref={tagMenu} className="run-report-tag-menu">
+            <summary aria-label="Filtrar por etiqueta actual del escenario">
+              <Filter size={14} aria-hidden="true" />
+              <span>{tag ? tag : `Todas las etiquetas (${availableTags.length})`}</span>
+              <ChevronDown size={14} aria-hidden="true" className="run-report-tag-menu__chevron" />
+            </summary>
+            <div className="run-report-tag-menu__options" role="group" aria-label="Opciones de etiqueta">
+              <button type="button" aria-pressed={!tag} onClick={() => pickTag('')}>Todas ({availableTags.length})</button>
+              {availableTags.map(value => <button type="button" key={value} aria-pressed={tag === value}
+                onClick={() => pickTag(tag === value ? '' : value)}>{value}</button>)}
+            </div>
+          </details>}
           <p role="status">{visible.length} de {scoped.length} {scopeLabel} visibles.</p>
         </section>
         {tagsWarning && <p className="run-report-warning">{tagsWarning}</p>}
