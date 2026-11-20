@@ -138,3 +138,17 @@
 .code-health-badge.is-medium { background: #b45309; color: #fff; }
 .code-health-badge.is-low { background: #1d4ed8; color: #fff; }
 .code-health-badge.is-note { background: #4b5563; color: #fff; }
+
+/* Plegable "Ver detalle" en tarjetas de calidad (03 y 05). */
+.quality-detail-reveal { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.quality-detail-reveal > summary { cursor: pointer; font: 500 11px/1.4 var(--mono); color: var(--blue); list-style: none; padding: 4px 0; display: inline-flex; align-items: center; gap: 6px; }
+.quality-detail-reveal > summary::-webkit-details-marker, .quality-detail-reveal > summary::marker { display: none; content: ''; }
+.quality-detail-reveal[open] > summary { color: var(--ink); }
+.quality-detail-reveal > *:not(summary) { margin-top: 12px; }
+
+/* Barras por severidad reutilizando quality-dimensions. */
+.quality-dimensions li.code-health-dim.is-critical .quality-progress > span,
+.quality-dimensions li.code-health-dim.is-high .quality-progress > span { background: #991b1b; }
+.quality-dimensions li.code-health-dim.is-medium .quality-progress > span { background: #b45309; }
+.quality-dimensions li.code-health-dim.is-low .quality-progress > span { background: #1d4ed8; }
+.quality-dimensions li.code-health-dim.is-note .quality-progress > span { background: #4b5563; }

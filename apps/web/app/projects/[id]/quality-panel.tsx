@@ -32,13 +32,13 @@ type Audit = { id: string; status: keyof typeof runLabels; createdAt: string; co
 type Data<T> = { value: T | null; error: string; loading: boolean };
 const pending = <T,>(): Data<T> => ({ value: null, error: '', loading: true });
 
-function Score({ value, label }: { value: number | null; label: string }) {
+export function Score({ value, label }: { value: number | null; label: string }) {
   return <div className={`quality-score-ring${value === null ? ' quality-score-ring--empty' : ''}`} role="img" aria-label={`${label}: ${value === null ? 'sin evaluación' : `${value} de 100`}`}
     style={{ '--quality-progress': `${Math.max(0, Math.min(100, value ?? 0)) * 3.6}deg` } as CSSProperties}>
     <strong>{value ?? '—'}</strong><small>/ 100</small>
   </div>;
 }
-function EvaluationCard({ index, title, badge, children }: { index: string; title: string; badge: string; children: ReactNode }) {
+export function EvaluationCard({ index, title, badge, children }: { index: string; title: string; badge: string; children: ReactNode }) {
   return <section className="quality-evaluation" aria-label={title}><header><h2><span>{index} //</span> {title}</h2><span className="quality-badge">{badge}</span></header>{children}</section>;
 }
 
@@ -175,21 +175,52 @@ export function QualityPanel({ project }: { project: Project }) {
           </details>)}</div><Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
       </EvaluationCard>
     </div>
-    <section className="quality-audits" aria-label="Pasos duplicados entre escenarios">
-      <header><h2><span>03 //</span> Pasos duplicados</h2>
-        <small>{insights.data ? `${insights.data.duplicateGroups} grupos · ${insights.data.duplicatedSteps}/${insights.data.steps} pasos repetidos` : insights.loading ? 'Consultando…' : '—'}</small></header>
-      {insights.loading ? <p role="status">Analizando pasos…</p>
-        : insights.error ? <p className="muted">{insights.error}</p>
-        : !insights.data || !insights.data.groups.length ? <p className="muted">No se detectaron pasos duplicados entre los escenarios activos. Buen trabajo.</p>
-        : <ol className="quality-duplicates">{insights.data.groups.slice(0, 10).map(group => <li key={group.normalized}>
-          <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
-            <span>{group.occurrences.length} pasos · {group.scenarioCount} escenarios</span></div>
-          <ul>{group.occurrences.slice(0, 6).map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
-            <Link href={`/projects/${project.id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
-            <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}
-            {group.occurrences.length > 6 && <li className="muted">y {group.occurrences.length - 6} más…</li>}</ul>
-        </li>)}</ol>}
-    </section>
+    {(() => {
+      // El "score" de reutilización mide pasos únicos sobre total. 100 = cero
+      // duplicación. Las dimensiones son los primeros 4 grupos y su peso
+      // relativo dentro del total de pasos duplicados — visualmente idéntico
+      // a las barras de IPA/ICSP.
+      const data = insights.data;
+      const score = data && data.steps > 0 ? Math.max(0, Math.min(100, Math.round(100 - (data.duplicatedSteps / data.steps) * 100))) : null;
+      const level = score === null ? null : score >= 95 ? 'ÓPTIMO' : score >= 80 ? 'ACEPTABLE' : 'MEJORABLE';
+      const badge = insights.loading ? 'Consultando' : level ? `Nivel: ${level} (${score}/100)` : 'Sin evaluación';
+      const headline = score === null ? 'Sin pasos registrados aún.'
+        : score === 100 ? 'No se detectaron pasos duplicados.'
+        : score >= 95 ? 'Baja redundancia: pocos pasos repetidos.'
+        : score >= 80 ? 'Redundancia moderada. Vale la pena reutilizar.'
+        : 'Alta redundancia: muchos pasos se repiten entre escenarios.';
+      const topGroups = data ? data.groups.slice(0, 4) : [];
+      return <EvaluationCard index="03" title="Reutilización de pasos" badge={badge}>
+        {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
+          : insights.error ? <p className="quality-message muted">{insights.error}</p>
+          : !data ? null
+          : <div className="quality-evaluation__body">
+            <div className="quality-score-summary"><Score label="Reutilización" value={score} /><div>
+              <h3>{headline}</h3>
+              <p>{data.steps} pasos registrados · {data.duplicatedSteps} repetidos en {data.duplicateGroups} grupos.</p>
+            </div></div>
+            {topGroups.length > 0 && <ol className="quality-dimensions">{topGroups.map((group, i) => {
+              const pct = data.duplicatedSteps > 0 ? Math.round(100 * group.occurrences.length / data.duplicatedSteps) : 0;
+              return <li key={group.normalized}>
+                <div><strong>{i + 1}. «{group.canonicalText}»</strong>
+                  <span>{pct}% <small>({group.occurrences.length}/{data.duplicatedSteps})</small></span></div>
+                <div className="quality-progress"><span style={{ width: `${Math.max(2, pct)}%` }} /></div>
+                <p>Aparece en {group.scenarioCount} escenarios distintos.</p>
+              </li>;
+            })}</ol>}
+            {data.groups.length > 0 && <details className="quality-detail-reveal"><summary>Ver todos los grupos duplicados →</summary>
+              <ol className="quality-duplicates">{data.groups.map(group => <li key={group.normalized}>
+                <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
+                  <span>{group.occurrences.length} pasos · {group.scenarioCount} escenarios</span></div>
+                <ul>{group.occurrences.map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
+                  <Link href={`/projects/${project.id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
+                  <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}</ul>
+              </li>)}</ol>
+            </details>}
+            {!data.groups.length && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
+          </div>}
+      </EvaluationCard>;
+    })()}
     <section className="quality-audits" aria-label="Auditorías Lighthouse registradas"><header><h2><span>04 //</span> Auditorías Lighthouse</h2><Link href={`/projects/${project.id}/performance`}>Ver auditorías y configuración →</Link></header>
       {audits.loading ? <p role="status">Consultando auditorías…</p> : audits.error ? <p className="muted">{audits.error}</p>
         : <>{lastAudit && <p>Última solicitud: {runLabels[lastAudit.status]} · {dateText(lastAudit.createdAt)}</p>}
