@@ -116,8 +116,6 @@ export function ExecutionReport({ project }: { project: Project }) {
     && (!normalized || [runTitle(run), run.id, run.scenarioId ?? '', run.errorCode ?? '', run.targetBrowser ?? '',
       ...(run.results.map(result => result.errorMessage ?? '')), ...(run.scenarioId ? tags.get(run.scenarioId) ?? [] : [])]
       .join(' ').toLocaleLowerCase('es').includes(normalized)));
-  const selectedRun = showLatest || scope === 'all' ? null : scoped[0];
-  const selectedState = selectedRun ? outcome(selectedRun) : null;
   const detail = scoped.find(run => run.id === detailId);
   const filters = Object.keys(filterLabels) as RunFilter[];
   const finalized = visible.filter(run => isReportableRunStatus(run.status));
@@ -149,22 +147,12 @@ export function ExecutionReport({ project }: { project: Project }) {
   return <section className="run-report" aria-label="Reporte de ejecuciones">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Consulta el estado más reciente de cada escenario y accede a sus ejecuciones anteriores."
-      actions={<><details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
+      actions={<><button className="run-report-refresh" type="button" aria-label="Actualizar reporte" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /></button>
+        <details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
         <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
           <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details>
         <a className="button-like" href="#automatizacion"><Play size={14} />Nueva ejecución →</a></>} />, header.element)}
-    <div className="run-report-selection">
-      <label>Mostrar<select aria-label="Ejecución del reporte" value={scope} disabled={(loading && !overview) || !!error} onChange={event => { setScope(event.target.value); setDetailId(null); setTag(''); }}>
-        <option value="latest">Último estado por escenario ({latest.length})</option>
-        <option value="all">Historial de ejecuciones</option>
-        {history.map(run => <option value={run.id} key={run.id}>{run.id.slice(0, 8)} · {runTitle(run)} · {dateText(run.createdAt)}</option>)}
-      </select></label>
-      <p>{selectedRun ? dateText(selectedRun.createdAt) : showLatest ? 'Última ejecución de cada escenario.' : 'Últimas ejecuciones del proyecto (máximo 100).'}
-        <small>{scoped.length} {scopeLabel} · {stats.results} resultados registrados</small></p>
-      <span className={`run-report-state run-report-state--${selectedState?.tone ?? 'unknown'}`}>{selectedState?.label ?? (showLatest ? 'Estado actual' : 'Historial del proyecto')}</span>
-      <button className="run-report-refresh" type="button" aria-label="Actualizar reporte" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} /></button>
-    </div>
     {exportError && <p className="run-report-warning" role="alert">{exportError}</p>}
     {loading && !overview ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
       : error ? <div className="run-report-message" role="alert"><p className="error">{error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar reporte</button></div>
@@ -219,7 +207,7 @@ export function ExecutionReport({ project }: { project: Project }) {
           <p className="run-report-data-note">Las etiquetas corresponden a la configuración actual de cada escenario.</p>
           {canGenerate && <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>}
         </div><aside className="run-report-aside" aria-label="Historial y detalle de ejecuciones">
-          {detail && <RunDetail run={detail} projectId={project.id} onClose={() => setDetailId(null)} />}
+          {detail && <RunDetail run={detail} projectId={project.id} onClose={() => { setDetailId(null); setScope('latest'); }} />}
           <section className="run-report-history"><header><h2>Ejecuciones recientes</h2></header>
             {!history.length ? <p>No hay historial disponible.</p> : <ol>{history.slice(0, 8).map(run => { const status = outcome(run); return <li key={run.id}>
               <button type="button" aria-pressed={scope === run.id} aria-label={`Seleccionar ejecución ${run.id.slice(0, 8)}`} onClick={() => { setScope(run.id); setDetailId(run.id); setFilter('all'); setTag(''); setQuery(''); }}>

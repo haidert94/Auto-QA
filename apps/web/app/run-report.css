@@ -7,16 +7,13 @@
 .run-report-export > div button { display: block; width: 100%; text-align: left; border: 0; border-radius: 1px; color: var(--ink); background: var(--surface); min-height: 34px; padding: 8px; font-size: 11px; }
 .run-report-export > div button:hover { color: var(--blue); background: var(--quiet); }
 .run-report-export small { display: block; padding: 5px 8px; font-size: 10px; font-weight: 400; color: var(--muted); }
-.run-report-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; background: var(--surface); border: 1px solid var(--line); padding: 12px 14px; margin-bottom: 16px; }
-.run-report-selection > label { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font: 400 9px/1.5 var(--mono); text-transform: uppercase; }
-.run-report-selection select { width: 230px; max-width: 100%; margin: 0; border-radius: 1px; padding: 6px 8px; background: var(--quiet); font: 400 11px/1.6 var(--mono); }
-.run-report-selection > p { flex: 1; margin: 0; color: var(--muted); font: 400 10px/1.7 var(--mono); }
-.run-report-selection > p small { display: block; font-size: 9px; }
 .run-report-state { display: inline-block; padding: 3px 6px; background: var(--quiet); color: var(--muted); font: 400 9px/1.5 var(--mono); white-space: nowrap; }
 .run-report-state--passed { color: var(--success); background: var(--success-bg); }
 .run-report-state--failed { color: var(--danger); background: var(--danger-bg); }
 .run-report-state--pending { color: var(--warn); background: var(--warn-bg); }
-.run-report button.run-report-refresh { min-height: 28px; min-width: 28px; padding: 5px; color: var(--blue); background: transparent; border: 0; border-radius: 1px; }
+.run-report-refresh { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; min-width: 34px; padding: 6px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
+.run-report-refresh:hover:not(:disabled) { color: var(--blue); border-color: var(--blue); }
+.run-report-refresh:disabled { opacity: .5; cursor: not-allowed; }
 .run-report-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
 .run-report-metrics > section { border: 1px solid var(--line); border-radius: 2px; background: var(--surface); padding: 16px 14px; min-width: 0; }
 .run-report-metrics header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
