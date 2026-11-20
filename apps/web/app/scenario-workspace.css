@@ -1,5 +1,8 @@
 /* Scenario workspace. Shares the project palette and the authenticated shell. */
 .scenarios-panel { min-width: 0; }
+.scenario-export { position: relative; }
+.scenario-export__options { position: absolute; top: calc(100% + 5px); right: 0; z-index: 20; width: 100%; padding: 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); box-shadow: 0 8px 24px #10142118; }
+.project-heading__actions .scenario-export__options > button { display: flex; justify-content: flex-start; width: 100%; padding-inline: 6px; border-color: transparent; }
 .scenario-toolbar { padding: 16px; border: 1px solid #eeede8; border-radius: 3px; background: var(--surface); margin-bottom: 16px; }
 .scenario-toolbar__top, .scenario-toolbar__bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .scenario-toolbar__bottom { margin-top: 14px; }
@@ -26,6 +29,8 @@
 .scenario-tag-filters-menu__options button.scenario-tag-filter--flow { color: var(--success); background: var(--success-bg); }
 .scenario-tag-filters-menu__options button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 .scenario-tag-filters-menu__options button:hover { border-color: var(--blue); }
+.scenario-visible-selection { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.scenarios-panel .scenario-visible-selection { margin-bottom: 8px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 3px; }
 .scenario-select-all { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 11px; font-weight: 400; white-space: nowrap; }
 .scenario-selection-count { color: var(--muted); font: 400 9px/1.6 var(--mono); }
 .scenarios-panel input[type="checkbox"] { accent-color: var(--blue); }
@@ -245,6 +250,7 @@
   .scenario-detail__body > h3 { font-size: 18px; }
 }
 @media (max-width: 420px) {
+  .scenario-export, .scenario-export > button { width: 100%; }
   .scenario-gherkin li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .scenario-run-dialog { padding: 18px; }
 }

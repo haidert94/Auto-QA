@@ -1,10 +1,9 @@
 'use client';
 
-import Link from 'next/link';
-import { Code2, ExternalLink, FileText, Pencil, PlayCircle, Search, X } from 'lucide-react';
+import { Code2, FileText, Pencil, PlayCircle, Search, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ScenarioCard, type ScenarioListItem } from './scenario-card';
-import { ScenarioListToolbar } from './scenario-list-toolbar';
+import { ScenarioListToolbar, ScenarioVisibleSelection } from './scenario-list-toolbar';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 import { durationLabel, gherkinKeyword, isManualScenario, MANUAL_SCENARIO_MESSAGE, matchesScenarioQuery, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
 import type { OrgRole } from '../../autoqa-server';
@@ -56,8 +55,8 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
         { value: 'pending', label: 'Sin resultados', count: items.length - withResults },
       ] }}
       items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }}
-      selection={{ visible, selected: checked, onSelectionChange: setChecked }}
     />
+    <ScenarioVisibleSelection visible={visible} selected={checked} onSelectionChange={setChecked} />
     <div className={`scenario-workspace${active ? '' : ' scenario-workspace--list-only'}`}>
       <div className="scenario-list-region">
         <ul ref={results} className="scenario-results" tabIndex={-1} aria-label="Escenarios del proyecto">
@@ -105,8 +104,9 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
             </li>)}</ol>{!active.steps?.length && <p>No hay pasos registrados.</p>}</div>
             <p className="scenario-derived-note">Palabras clave inferidas de las acciones. Revisa esta vista antes de utilizarla como especificación.</p>
             <section className="scenario-expected"><h4>Resultado esperado registrado</h4><p>{active.expectedResult ?? 'No declarado. Pendiente de definir.'}</p></section>
-            <div className="scenario-detail__actions">{canEdit && <button type="button" className="secondary" onClick={() => setEditing(true)}><Pencil size={13} />Editar escenario</button>}
-              <Link href={`/projects/${projectId}/scenarios/${active.id}`}><ExternalLink size={13} />Abrir ficha y ejecuciones</Link></div>
+            {canEdit && <div className="scenario-detail__actions">
+              <button type="button" className="secondary" onClick={() => setEditing(true)}><Pencil size={13} />Editar escenario</button>
+            </div>}
           </>}
         </div>
       </aside>}

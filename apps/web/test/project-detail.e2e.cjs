@@ -343,11 +343,14 @@ async function verifyScenarioPagination(page, automation = false) {
     const rows = list.locator(':scope > li');
     const search = panel.getByRole('searchbox', { name: automation ? 'Buscar escenarios para Playwright' : 'Buscar escenarios', exact: true });
     const toolbar = panel.getByRole('region', { name: automation ? 'Buscar y filtrar automatización' : 'Buscar y filtrar escenarios', exact: true });
-    const selection = automation ? panel.getByRole('region', { name: 'Escenarios para Playwright', exact: true }).locator('header') : toolbar;
+    const selection = panel.getByRole('group', { name: 'Selección de escenarios visibles', exact: true });
+    await expect(toolbar.getByRole('checkbox')).toHaveCount(0);
     await expect(pageSize).toHaveValue('10');
     await expect(rows).toHaveCount(10);
     await expect(previousPage).toBeDisabled();
     const listBounds = await list.boundingBox();
+    const selectionBounds = await selection.boundingBox();
+    assert.ok(selectionBounds.y + selectionBounds.height <= listBounds.y, 'La selección queda encima del listado.');
     const paginationBounds = await pagination.boundingBox();
     assert.ok(paginationBounds.y >= listBounds.y + listBounds.height, 'La paginaci\u00f3n queda debajo del listado.');
     await expect(pagination.getByRole('status')).toHaveText('1–10 de 35 · Página 1 de 4');
@@ -446,31 +449,63 @@ async function verifyScenarios(page, screenshots) {
   const modes = page.getByRole('group', { name: 'Filtrar por resultados' });
   await modes.getByRole('button', { name: 'Con resultados (2)', exact: true }).click();
   await expect(list.locator('.scenario-result')).toHaveCount(2);
-  const tags = page.getByRole('group', { name: 'Filtrar por etiqueta' });
+  const tagMenu = page.locator('summary[aria-label="Filtrar por etiqueta"]:visible');
+  const tags = page.getByRole('group', { name: 'Opciones de etiqueta' });
+  await tagMenu.click();
   await tags.getByRole('button', { name: '@flujoBasico (1)', exact: true }).click();
   await expect(list.locator('.scenario-result')).toHaveCount(1);
+  await tagMenu.click();
   await tags.getByRole('button', { name: 'Todos (3)', exact: true }).click();
   await modes.getByRole('button', { name: 'Todos (3)', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Seleccionar visibles (3)', exact: true }).uncheck();
   await search.fill('tokenizada');
   await page.getByRole('checkbox', { name: 'Seleccionar visibles (1)', exact: true }).check();
   await search.fill('');
-  const featureDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Exportar feature', exact: true }).click();
-  const feature = await featureDownload;
-  assert.equal(feature.suggestedFilename(), 'autoqa-escenarios.feature');
-  const featureContent = await readFile(await feature.path(), 'utf8');
+  const exportButton = page.getByRole('button', { name: 'Exportar', exact: true });
+  const formats = page.getByRole('group', { name: 'Formatos de exportación', exact: true });
+  await exportButton.click();
+  await expect(formats.getByRole('button')).toHaveCount(3);
+  await page.keyboard.press('Escape');
+  await expect(formats).toBeHidden();
+  await expect(exportButton).toBeFocused();
+
+  async function downloadFormat(format, extension) {
+    await exportButton.click();
+    const pending = page.waitForEvent('download');
+    await formats.getByRole('button', { name: format, exact: true }).click();
+    const download = await pending;
+    assert.equal(download.suggestedFilename(), 'autoqa-escenarios.' + extension);
+    await expect(formats).toBeHidden();
+    return readFile(await download.path(), 'utf8');
+  }
+
+  const featureContent = await downloadFormat('Gherkin (.feature)', 'feature');
   assert.ok(featureContent.includes('Vista derivada'));
   assert.ok(featureContent.includes(scenarioA));
   assert.ok(featureContent.includes('goto: /checkout'));
   assert.ok(!featureContent.includes(scenarioB), 'Exporta sólo los escenarios seleccionados.');
+  const csv = await downloadFormat('CSV (.csv)', 'csv');
+  assert.ok(csv.startsWith('\uFEFF"ID","Título","Requisito"') && csv.includes(scenarioA) && !csv.includes(scenarioB));
+  const json = JSON.parse(await downloadFormat('JSON (.json)', 'json'));
+  assert.equal(json.project, project.name);
+  assert.deepEqual(json.scenarios.map(item => item.id), [scenarioA]);
+
+  const selected = list.getByRole('checkbox', { name: 'Seleccionar ' + scenarios[0].title, exact: true });
+  await selected.uncheck();
+  const allScenarios = JSON.parse(await downloadFormat('JSON (.json)', 'json'));
+  assert.deepEqual(allScenarios.scenarios.map(item => item.id), scenarios.map(item => item.id));
+  await selected.check();
   await list.getByRole('button', { name: scenarios[2].title, exact: true }).click();
   await expect(detail.getByText('No declarado. Pendiente de definir.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Cerrar detalle del escenario', exact: true }).click();
   await expect(detail).toHaveCount(0);
   await list.getByRole('button', { name: scenarios[0].title, exact: true }).click();
-  for (const width of [768, 390, 320]) {
+  for (const width of [768, 421, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
+    await exportButton.click();
+    const menuBounds = await formats.boundingBox();
+    assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= width, `El menú Exportar cabe a ${width}px.`);
+    await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Escenarios sin desbordamiento a ${width}px.`);
     if (width === 390) {
       const rows = await list.boundingBox(); const sidebar = await detail.boundingBox();
@@ -548,7 +583,7 @@ async function verifyScenarios(page, screenshots) {
   scenarios = [];
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Aún no hay escenarios', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Exportar feature', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Exportar', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Ejecutar suite (0)', exact: true })).toBeDisabled();
   scenarios = populated;
   project.status = 'DRAFT';
@@ -849,7 +884,8 @@ async function verifyAutomationToolbar(page) {
   await tagMenu.click();
   await tags.getByRole('button', { name: '@apiRest (1)', exact: true }).click();
   await expect(rows).toHaveCount(1);
-  const selection = section.getByRole('region', { name: 'Escenarios para Playwright', exact: true }).locator('header');
+  const selection = section.getByRole('region', { name: 'Escenarios para Playwright', exact: true })
+    .getByRole('group', { name: 'Selección de escenarios visibles', exact: true });
   await selection.getByRole('checkbox', { name: 'Seleccionar visibles (1)', exact: true }).uncheck();
   await expect(selection.getByRole('status')).toHaveText('2 seleccionados · 1 visibles');
   await expect(section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true })).toBeEnabled();
@@ -1379,19 +1415,18 @@ async function verifyDeleteScenarios(page) {
     await page.reload();
     await page.getByRole('tab', { name: 'Escenarios (12)', exact: true }).click();
     const tab = page.getByRole('tabpanel', { name: /^Escenarios/ });
-    const archive = page.getByRole('button', { name: /^Eliminar seleccionados/ });
+    const archive = page.getByRole('button', { name: 'Eliminar escenarios', exact: true });
     const pagination = tab.getByRole('navigation', { name: 'Paginación de escenarios' });
     const first = cases[0], last = cases.at(-1);
-    await expect(archive).toHaveText('Eliminar seleccionados (12)');
+    await expect(archive).toBeEnabled();
     await tab.getByRole('checkbox', { name: 'Seleccionar visibles (10)', exact: true }).uncheck();
     await pagination.getByRole('button', { name: 'Página siguiente' }).click();
     await tab.getByRole('checkbox', { name: 'Seleccionar visibles (2)', exact: true }).uncheck();
-    await expect(archive).toHaveText('Eliminar seleccionados (0)');
     await expect(archive).toBeDisabled();
     await tab.getByRole('checkbox', { name: 'Seleccionar ' + last.title, exact: true }).check();
     await pagination.getByRole('button', { name: 'Página anterior' }).click();
     await tab.getByRole('checkbox', { name: 'Seleccionar ' + first.title, exact: true }).check();
-    await expect(archive).toHaveText('Eliminar seleccionados (2)');
+    await expect(archive).toBeEnabled();
     page.once('dialog', dialog => dialog.dismiss());
     await archive.click();
     assert.equal(scenarios.length, cases.length);

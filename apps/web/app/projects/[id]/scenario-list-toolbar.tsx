@@ -28,11 +28,11 @@ export function ScenarioVisibleSelection({
     onSelectionChange(next);
   }
 
-  return <>
+  return <div className="scenario-visible-selection" role="group" aria-label="Selección de escenarios visibles">
     <label className="scenario-select-all"><input ref={selectAll} type="checkbox" checked={allChecked}
       disabled={selectionDisabled || !visible.length} onChange={toggleVisible} />Seleccionar visibles ({visible.length})</label>
     <span className="scenario-selection-count" role="status">{selected.size} seleccionados · {visible.length} visibles</span>
-  </>;
+  </div>;
 }
 
 type ScenarioListToolbarProps<Status extends string> = {
@@ -50,12 +50,10 @@ type ScenarioListToolbarProps<Status extends string> = {
   items: ReadonlyArray<{ tags?: string[] }>;
   tag: string;
   onTagChange: (tag: string) => void;
-  selection?: ScenarioVisibleSelectionProps;
 };
 
 export function ScenarioListToolbar<Status extends string>({
   label, searchLabel, placeholder, query, onQueryChange, status, items, tag, onTagChange,
-  selection,
 }: ScenarioListToolbarProps<Status>) {
   const search = useRef<HTMLInputElement>(null);
   const tagMenu = useRef<HTMLDetailsElement>(null);
@@ -126,7 +124,6 @@ export function ScenarioListToolbar<Status extends string>({
             onClick={() => pickTag(tag === value ? '' : value)}>{value} ({tagCounts.get(value)})</button>)}
         </div>
       </details>
-      {selection && <ScenarioVisibleSelection {...selection} />}
     </div>
   </section>;
 }

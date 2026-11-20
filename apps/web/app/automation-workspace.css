@@ -3,7 +3,7 @@
 .automation-scenarios { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; min-width: 0; overflow: hidden; }
 .automation-scenarios > header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; padding: 18px 14px; }
 .automation-scenarios h2 { font-size: 18px; line-height: 1.35; margin: 0; }
-.automation-scenarios__selection { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.automation-scenarios > header .scenario-visible-selection { grid-column: 1 / -1; }
 .automation-suite-count { background: var(--quiet); padding: 3px 6px; color: var(--muted); font: 400 9px/1.5 var(--mono); text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
 .automation-scenarios__tools { display: flex; align-items: center; gap: 8px; }
 .automation-pick-list input, .automation-panel .scenario-select-all input { accent-color: var(--blue); }

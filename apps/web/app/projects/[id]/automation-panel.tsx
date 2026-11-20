@@ -224,10 +224,8 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
           <span className="automation-suite-count">Suite {selected.size}/{scenarios?.length ?? '…'}</span>
           <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button>
         </div>
-        <div className="automation-scenarios__selection">
-          <ScenarioVisibleSelection visible={visible.map(row => row.scenario)} selected={selected}
-            onSelectionChange={setSelected} selectionDisabled={busy} />
-        </div>
+        <ScenarioVisibleSelection visible={visible.map(row => row.scenario)} selected={selected}
+          onSelectionChange={setSelected} selectionDisabled={busy} />
       </header>
       {listError ? <div className="automation-list-message" role="alert"><p className="error">{listError}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar automatización</button></div>
         : scenarios === null ? <p className="automation-list-message" role="status">Cargando escenarios…</p>

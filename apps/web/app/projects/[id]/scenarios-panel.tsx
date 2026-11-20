@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { ArrowRight, Code2, Plus, Sparkles } from 'lucide-react';
+import { ArrowRight, Plus, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ScenarioListItem } from './scenario-card';
@@ -12,7 +12,8 @@ import { scenarioSpecSignature } from './automation-export';
 import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader, useScenarioSuite } from './project-tabs';
-import { featureText, isManualScenario, type ScenarioRun } from './scenario-presentation';
+import { ScenarioExport } from './scenario-export';
+import { isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioWorkspace } from './scenario-workspace';
 
 type RequirementOption = { id: string; title: string; externalKey: string | null };
@@ -72,13 +73,6 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     } catch { setRunsAvailable(false); setRunsWarning('No se pudo consultar el historial. Los estados de ejecución no están disponibles.'); }
   }, [projectId]);
   useEffect(() => { void loadRuns(); }, [loadRuns, runner?.historyVersion]);
-
-  function exportFeature() {
-    const exported = (items ?? []).filter(item => checked.size === 0 || checked.has(item.id));
-    const url = URL.createObjectURL(new Blob([featureText(project.name, exported)], { type: 'text/plain;charset=utf-8' }));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'autoqa-escenarios.feature'; anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
 
   async function suggest() {
     if (!requirementId) { setError('Selecciona primero un requisito para sugerir escenarios.'); return; }
@@ -372,8 +366,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         {canDelete && !!items?.length && <button type="button" className="secondary"
           disabled={!selected.length || busy || generating || !!listError || runner?.suiteRunning || runner?.stopping}
-          onClick={() => void deleteSelected()}>Eliminar seleccionados ({selected.length})</button>}
-        <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
+          onClick={() => void deleteSelected()}>Eliminar escenarios</button>}
+        <ScenarioExport projectName={project.name} scenarios={checked.size ? selected : items ?? []} />
         {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
         </button>}
