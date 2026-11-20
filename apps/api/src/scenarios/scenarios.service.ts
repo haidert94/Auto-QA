@@ -8,6 +8,8 @@ import { ACTIVE_RUN_STATUSES } from '../runs/run-report-policy';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
 import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
+import { findReusableAutomation } from './scenario-prelude';
+import { hasBlockingIssue, lintGeneratedCode, lintPreparedSteps, summarizeIssues } from './spec-linter';
 import { ASSERTION_INSTRUCTION } from '../automation/agents/agent-types';
 import { generateSpec, hasPlaywrightAssertion, readGeneratorSteps, suggestedFilename } from './playwright-generator';
 import { buildTestSetPdf, buildTestSetXlsx, type ExportScenario } from './scenario-export';
@@ -303,9 +305,33 @@ export class ScenariosService {
     const existing = currentAutomation(scenario);
     if (existing) return renderPlaywright(scenario, existing);
 
-    const steps = await prepareWithAgent(scenario, this.ai, { projectId, organizationId: workspace.organizationId });
+    // Capa 1: busca si otro escenario del proyecto ya tiene automatización
+    // preparada con el mismo flujo (similitud paso-a-paso ≥ 0.9). Si sí,
+    // reutiliza esos steps y no gasta tokens con el LLM.
+    const siblings = await this.prisma.testScenario.findMany({
+      where: { projectId, archivedAt: null, NOT: { id: scenarioId } },
+      select: { id: true, title: true, expectedResult: true, steps: true, tags: true, automation: true },
+    });
+    const reuse = findReusableAutomation(scenario, siblings);
+    let steps: Awaited<ReturnType<typeof prepareWithAgent>> = null;
+    let issues: ReturnType<typeof lintPreparedSteps> = [];
+    let reusedFrom: string | null = null;
+    if (reuse) {
+      steps = reuse.prepared.steps;
+      reusedFrom = reuse.sourceScenarioTitle;
+    } else {
+      steps = await prepareWithAgent(scenario, this.ai, { projectId, organizationId: workspace.organizationId });
+    }
     if (!steps) {
       return renderPlaywright(scenario, null, 'El agente no pudo completar la automatización. Revisa el código base.');
+    }
+
+    // Capa 3a: linter determinista sobre los steps preparados antes de
+    // guardarlos. Si hay un issue bloqueante, no persiste la automatización
+    // y usa fallback por reglas con el motivo en el notice.
+    issues = lintPreparedSteps(steps);
+    if (hasBlockingIssue(issues)) {
+      return renderPlaywright(scenario, null, summarizeIssues(issues));
     }
 
     const prepared: PreparedAutomation = {
@@ -322,11 +348,25 @@ export class ScenariosService {
       },
       data: { automation: prepared as unknown as Prisma.InputJsonValue },
     });
-    if (saved.count) return renderPlaywright(scenario, prepared);
+    // Compone el notice uniendo reuso + warnings del linter sobre los
+    // steps + warnings del linter sobre el código final renderizado.
+    const render = (target: typeof scenario, automation: PreparedAutomation | null) => {
+      const rendered = renderPlaywright(target, automation);
+      const codeIssues = lintGeneratedCode(rendered.code);
+      // Los errores de código final no deben descartar un spec que ya
+      // guardamos (sería inconsistente): solo se propagan como warning.
+      const notes = [
+        reusedFrom ? `♻ Reutilizado del escenario «${reusedFrom}» (sin llamada a IA).` : undefined,
+        summarizeIssues([...issues, ...codeIssues.map(i => ({ ...i, severity: 'warn' as const }))]),
+      ].filter(Boolean).join(' · ');
+      return { ...rendered, notice: notes || rendered.notice };
+    };
+
+    if (saved.count) return render(scenario, prepared);
 
     const latest = await this.get(projectId, scenarioId, workspace);
     const other = currentAutomation(latest);
-    if (!isManualScenario(latest) && other?.signature === prepared.signature) return renderPlaywright(latest, other);
+    if (!isManualScenario(latest) && other?.signature === prepared.signature) return render(latest, other);
     throw new ConflictException('El escenario cambió durante la generación. Actualiza la lista y vuelve a intentarlo.');
   }
 
