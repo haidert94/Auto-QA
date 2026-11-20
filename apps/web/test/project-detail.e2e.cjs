@@ -161,6 +161,7 @@ const api = createServer(async (request, response) => {
   const base = `/api/projects/${projectId}`;
   if (path === base + '/scenarios/requirements') return send([requirement]);
   if (path === base + '/scenarios') {
+    if (request.method === 'DELETE') return send({ archived: scenarios.splice(0).length });
     if (request.method === 'POST') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString());
@@ -1310,6 +1311,32 @@ async function verifyQuality(page, screenshots) {
   console.log('PASS calidad: IPA/ICSP y fuentes, ceros y ausencia de resultados, histórico, auditorías registradas, exportación JSON, impresión, permisos/errores independientes, geometría común y móvil. Sin auditorías ni ejecuciones automáticas. API simulada.');
 }
 
+async function verifyArchiveScenarios(page) {
+  const saved = [...scenarios];
+  const initialQueues = queuedRequests.length;
+  try {
+    await page.getByRole('tab', { name: /^Escenarios/ }).click();
+    const archive = page.getByRole('button', { name: 'Vaciar escenarios', exact: true });
+    await expect(archive).toBeEnabled();
+    page.once('dialog', dialog => dialog.dismiss());
+    await archive.click();
+    assert.equal(scenarios.length, saved.length);
+    page.once('dialog', async dialog => {
+      assert.match(dialog.message(), /historial de ejecución/);
+      await dialog.accept();
+    });
+    await archive.click();
+    await expect(page.getByRole('heading', { name: 'Aún no hay escenarios', exact: true })).toBeVisible();
+    await expect(page.getByText('Escenarios archivados. Ya puedes generar casos nuevos.', { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Aún no hay escenarios para automatizar', exact: true })).toBeVisible();
+    assert.equal(queuedRequests.length, initialQueues);
+  } finally {
+    scenarios = saved;
+  }
+  console.log('PASS vaciar escenarios requiere confirmación y limpia el catálogo activo sin encolar pruebas. API simulada.');
+}
+
 async function run() {
   const apiPort = await listen(api);
   const reservation = createServer();
@@ -1346,6 +1373,8 @@ async function run() {
     await verifySuiteProgress(page);
     await verifyAutomationRunStatus(page);
     await verifyStopSuiteDuringSubmission(page);
+    await verifyArchiveScenarios(page);
+    await page.goto(`${website}/projects/${projectId}`);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();

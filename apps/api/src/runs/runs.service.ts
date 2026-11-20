@@ -205,7 +205,7 @@ export class RunsService {
   async create(projectId: string, scenarioId: string, dto: CreateRunDto, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const scenario = await this.prisma.testScenario.findFirst({
-      where: { id: scenarioId, projectId },
+      where: { id: scenarioId, projectId, archivedAt: null },
       select: { id: true, tags: true, title: true, expectedResult: true, steps: true, automation: true },
     });
     if (!scenario) throw new NotFoundException('Escenario no encontrado.');

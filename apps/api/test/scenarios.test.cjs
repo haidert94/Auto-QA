@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { randomUUID } = require('node:crypto');
+const { randomBytes, randomUUID } = require('node:crypto');
 const { after, before, test } = require('node:test');
 const { PrismaClient } = require('@prisma/client');
 
@@ -10,10 +10,13 @@ let app;
 let prisma;
 let baseUrl;
 const projectIds = new Set();
+const token = randomBytes(32).toString('hex');
 
 before(async () => {
   process.env.DATABASE_URL = testUrl;
   process.env.AUTOQA_LEGACY_MODE = 'true';
+  process.env.AUTOQA_DEPLOYMENT = 'local';
+  process.env.AUTOQA_DOCUMENTS_TOKEN = token;
   const { createApp } = require('../dist/app');
   prisma = new PrismaClient({ datasourceUrl: testUrl });
   app = await createApp();
@@ -24,6 +27,7 @@ before(async () => {
 after(async () => {
   try {
     if (prisma && projectIds.size) {
+      await prisma.testRun.deleteMany({ where: { projectId: { in: [...projectIds] } } });
       await prisma.project.deleteMany({ where: { id: { in: [...projectIds] } } });
     }
   } finally {
@@ -50,8 +54,12 @@ async function makeRequirement(projectId) {
   return id;
 }
 
+function request(url, options) {
+  return fetch(url, { ...options, headers: { ...options?.headers, Authorization: 'Bearer ' + token } });
+}
+
 async function post(projectId, body) {
-  return fetch(`${baseUrl}/projects/${projectId}/scenarios`, {
+  return request(`${baseUrl}/projects/${projectId}/scenarios`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body), signal: AbortSignal.timeout(10000),
   });
@@ -73,7 +81,7 @@ test('POST crea un escenario con pasos normalizados', async () => {
   assert.equal(created.title, 'Login válido');
   assert.equal(created.expectedResult, 'Usuario entra al dashboard');
 
-  const detail = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
+  const detail = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
   assert.equal(detail.steps.length, 3);
   assert.deepEqual(detail.steps.map(s => s.ordinal), [1, 2, 3]);
   assert.equal(detail.steps[0].action, 'Abrir /login');
@@ -124,7 +132,7 @@ test('GET /requirements lista los requisitos del proyecto', async () => {
   const otherProject = await makeProject();
   await makeRequirement(otherProject);
 
-  const list = await fetch(`${baseUrl}/projects/${projectId}/scenarios/requirements`).then(r => r.json());
+  const list = await request(`${baseUrl}/projects/${projectId}/scenarios/requirements`).then(r => r.json());
   assert.ok(Array.isArray(list));
   assert.equal(list.length, 1);
   assert.equal(list[0].id, reqId);
@@ -137,13 +145,13 @@ test('PATCH actualiza título y reemplaza los pasos completos', async () => {
     steps: [{ ordinal: 1, action: 'Paso A' }, { ordinal: 2, action: 'Paso B' }],
   })).json();
 
-  const response = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`, {
+  const response = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: 'Actualizado', steps: [{ ordinal: 1, action: 'Único paso' }] }),
   });
   assert.equal(response.status, 200);
 
-  const detail = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
+  const detail = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
   assert.equal(detail.title, 'Actualizado');
   assert.equal(detail.steps.length, 1);
   assert.equal(detail.steps[0].action, 'Único paso');
@@ -157,25 +165,66 @@ test('PATCH desconecta el requisito cuando se envía null', async () => {
   })).json();
   assert.equal(created.requirementId, reqId);
 
-  const response = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`, {
+  const response = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requirementId: null }),
   });
   assert.equal(response.status, 200);
 
-  const detail = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
+  const detail = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
   assert.equal(detail.requirementId, null);
 });
 
-test('DELETE elimina el escenario y el listado deja de incluirlo', async () => {
+test('DELETE archiva un escenario con resultados y conserva su historial', async () => {
   const projectId = await makeProject();
   const created = await (await post(projectId, { title: 'Temporal', steps: [{ ordinal: 1, action: 'x' }] })).json();
+  assert.ok(created.id);
+  const run = await prisma.testRun.create({
+    data: {
+      projectId, scenarioId: created.id, status: 'COMPLETED', completedAt: new Date(),
+      results: { create: { scenarioId: created.id, status: 'PASSED', durationMs: 42, evidenceKey: 'fixture-trace' } },
+    },
+  });
 
-  const response = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`, { method: 'DELETE' });
+  const response = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`, { method: 'DELETE' });
   assert.equal(response.status, 204);
 
-  const afterDelete = await fetch(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`);
+  const afterDelete = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`);
   assert.equal(afterDelete.status, 404);
+  const list = await request(`${baseUrl}/projects/${projectId}/scenarios`).then(r => r.json());
+  assert.deepEqual(list, []);
+  const history = await prisma.testRun.findUnique({
+    where: { id: run.id }, include: { scenario: true, results: true },
+  });
+  assert.ok(history.scenario.archivedAt instanceof Date);
+  assert.equal(history.scenario.title, 'Temporal');
+  assert.equal(history.results[0].evidenceKey, 'fixture-trace');
+  const report = await request(`${baseUrl}/projects/${projectId}/runs?view=report`).then(r => r.json());
+  assert.equal(report[0].scenario.title, 'Temporal');
+  assert.equal(report[0].results[0].evidenceKey, 'fixture-trace');
+  const rerun = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}/runs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ environmentId: randomUUID() }),
+  });
+  assert.equal(rerun.status, 404);
+});
+
+test('DELETE del listado vacía solo el catálogo actual y admite escenarios nuevos', async () => {
+  const projectId = await makeProject();
+  const otherProject = await makeProject();
+  const requirementId = await makeRequirement(projectId);
+  const scenario = { title: 'Escenario activo', steps: [{ ordinal: 1, action: 'x' }] };
+  assert.equal((await post(projectId, { ...scenario, requirementId })).status, 201);
+  await post(projectId, scenario);
+  await post(otherProject, scenario);
+  const url = `${baseUrl}/projects/${projectId}/scenarios`;
+  const response = await request(url, { method: 'DELETE' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { archived: 2 });
+  assert.deepEqual(await request(url).then(r => r.json()), []);
+  assert.deepEqual(await request(url, { method: 'DELETE' }).then(r => r.json()), { archived: 0 });
+  assert.equal((await request(`${baseUrl}/projects/${otherProject}/scenarios`).then(r => r.json())).length, 1);
+  assert.equal((await post(projectId, { ...scenario, requirementId })).status, 201);
+  assert.equal((await request(url).then(r => r.json())).length, 1);
 });
 
 test('GET /scenarios solo lista escenarios del propio proyecto', async () => {
@@ -184,7 +233,7 @@ test('GET /scenarios solo lista escenarios del propio proyecto', async () => {
   await (await post(projectA, { title: 'Escenario A', steps: [{ ordinal: 1, action: 'x' }] })).json();
   await (await post(projectB, { title: 'Escenario B', steps: [{ ordinal: 1, action: 'x' }] })).json();
 
-  const listA = await fetch(`${baseUrl}/projects/${projectA}/scenarios`).then(r => r.json());
+  const listA = await request(`${baseUrl}/projects/${projectA}/scenarios`).then(r => r.json());
   assert.equal(listA.length, 1);
   assert.equal(listA[0].title, 'Escenario A');
 });

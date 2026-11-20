@@ -22,6 +22,7 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
   const existing = await deps.prisma.testScenario.findMany({
     where: {
       projectId: ctx.projectId,
+      archivedAt: null,
       NOT: { OR: [
         { title: { startsWith: '[COMPAT]' } },
         { title: { startsWith: '[COMPAT:' } },

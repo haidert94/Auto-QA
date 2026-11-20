@@ -22,6 +22,7 @@ type AutomationSummary = { id: string; status: string; stage: string | null; cre
 
 export function ScenariosPanel({ project, role }: { project: Project; role?: OrgRole }) {
   const canCreate = can(role, 'scenario.create');
+  const canDelete = can(role, 'scenario.delete');
   const canRun = can(role, 'run.execute');
   const canSuggest = can(role, 'scenario.suggest');
   const canGenerate = can(role, 'automation.generate');
@@ -331,6 +332,21 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     finally { setBusy(false); }
   }
 
+  async function archiveAll() {
+    if (!items?.length || !confirm(`¿Vaciar los ${items.length} escenarios del proyecto? Los requisitos y el historial de ejecución se conservarán.`)) return;
+    setBusy(true); setError(''); setGenerateNotice('');
+    try {
+      const response = await fetch(`/api/projects/${projectId}/scenarios`, { method: 'DELETE' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message ?? 'No se pudo vaciar la lista de escenarios.');
+      setChecked(new Set());
+      await load();
+      setGenerateNotice('Escenarios archivados. Ya puedes generar casos nuevos.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo vaciar la lista de escenarios.');
+    } finally { setBusy(false); }
+  }
+
   function hasRunnableSpec(item: ScenarioListItem) {
     if (isManualScenario(item)) return false;
     const spec = header?.specs[item.id];
@@ -346,6 +362,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       summary={items ? `${items.length} escenarios registrados. Consulta sus pasos, requisitos asociados y resultados de ejecución.` : 'Consulta y prepara los escenarios del proyecto.'}
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
+        {canDelete && !!items?.length && <button type="button" className="secondary" disabled={busy || generating || !!listError || runner?.suiteRunning || runner?.stopping} onClick={() => void archiveAll()}>Vaciar escenarios</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
         {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
@@ -379,7 +396,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {listError ? <div className="scenario-message" role="alert"><p className="error">{listError}</p>
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
-      : <ScenarioWorkspace projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
+      : <ScenarioWorkspace key={items.length ? 'active' : 'empty'} projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
         hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
         onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}

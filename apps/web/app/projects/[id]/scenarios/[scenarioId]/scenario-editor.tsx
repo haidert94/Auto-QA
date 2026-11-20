@@ -107,7 +107,7 @@ export function ScenarioEditor({ initial, requirements, role }: { initial: Scena
   }
 
   async function remove() {
-    if (!confirm('¿Eliminar este escenario? La acción no se puede deshacer.')) return;
+    if (!confirm('¿Quitar este escenario de la lista? Sus ejecuciones seguirán en el historial.')) return;
     setBusy(true); setError('');
     try {
       const response = await fetch(`/api/projects/${initial.projectId}/scenarios/${initial.id}`, { method: 'DELETE' });
@@ -116,7 +116,7 @@ export function ScenarioEditor({ initial, requirements, role }: { initial: Scena
         setError(payload.message ?? 'No se pudo eliminar el escenario.');
         return;
       }
-      router.push(`/projects/${initial.projectId}`);
+      router.push(`/projects/${initial.projectId}#escenarios`);
       router.refresh();
     } catch { setError('No se pudo eliminar el escenario.'); }
     finally { setBusy(false); }

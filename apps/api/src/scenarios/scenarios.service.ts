@@ -142,7 +142,7 @@ export class ScenariosService {
   async list(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const scenarios = await this.prisma.testScenario.findMany({
-      where: { projectId },
+      where: { projectId, archivedAt: null },
       orderBy: { title: 'asc' },
       select: {
         id: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true, automation: true,
@@ -162,7 +162,7 @@ export class ScenariosService {
   async get(projectId: string, scenarioId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const scenario = await this.prisma.testScenario.findFirst({
-      where: { id: scenarioId, projectId },
+      where: { id: scenarioId, projectId, archivedAt: null },
       include: {
         requirement: { select: { id: true, title: true, externalKey: true } },
       },
@@ -196,7 +196,7 @@ export class ScenariosService {
 
   async update(projectId: string, scenarioId: string, dto: UpdateScenarioDto, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
-    const existing = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId }, select: { id: true } });
+    const existing = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId, archivedAt: null }, select: { id: true } });
     if (!existing) throw new NotFoundException('Escenario no encontrado.');
     const data: Prisma.TestScenarioUpdateInput = {};
     if (dto.title !== undefined) {
@@ -221,18 +221,36 @@ export class ScenariosService {
     if (dto.tags !== undefined) {
       data.tags = { set: normalizeTags(dto.tags) };
     }
-    return this.prisma.testScenario.update({
-      where: { id: scenarioId },
-      data,
-      select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true },
-    });
+    try {
+      return await this.prisma.testScenario.update({
+        where: { id: scenarioId, projectId, archivedAt: null },
+        data,
+        select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundException('Escenario no encontrado.');
+      }
+      throw error;
+    }
   }
 
   async remove(projectId: string, scenarioId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
-    const existing = await this.prisma.testScenario.findFirst({ where: { id: scenarioId, projectId }, select: { id: true } });
-    if (!existing) throw new NotFoundException('Escenario no encontrado.');
-    await this.prisma.testScenario.delete({ where: { id: scenarioId } });
+    const archived = await this.prisma.testScenario.updateMany({
+      where: { id: scenarioId, projectId, archivedAt: null },
+      data: { archivedAt: new Date() },
+    });
+    if (!archived.count) throw new NotFoundException('Escenario no encontrado.');
+  }
+
+  async archiveAll(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const archived = await this.prisma.testScenario.updateMany({
+      where: { projectId, archivedAt: null },
+      data: { archivedAt: new Date() },
+    });
+    return { archived: archived.count };
   }
 
   async generatePlaywright(projectId: string, scenarioId: string, workspace: Workspace) {
@@ -261,7 +279,7 @@ export class ScenariosService {
     };
     const saved = await this.prisma.testScenario.updateMany({
       where: {
-        id: scenarioId, projectId, title: scenario.title, expectedResult: scenario.expectedResult,
+        id: scenarioId, projectId, archivedAt: null, title: scenario.title, expectedResult: scenario.expectedResult,
         steps: { equals: scenario.steps ?? Prisma.JsonNull }, tags: { equals: scenario.tags },
         automation: { equals: scenario.automation ?? Prisma.DbNull },
       },

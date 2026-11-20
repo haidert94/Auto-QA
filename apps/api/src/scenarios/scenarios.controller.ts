@@ -84,6 +84,13 @@ export class ScenariosController {
     return this.service.update(projectId, id, dto, workspace);
   }
 
+  @Delete()
+  @HttpCode(200)
+  @RequiresRole('EDITOR')
+  archiveAll(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.archiveAll(projectId, workspace);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   @RequiresRole('EDITOR')

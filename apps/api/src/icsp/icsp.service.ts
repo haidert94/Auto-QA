@@ -63,7 +63,7 @@ export class IcspService {
         orderBy: [{ externalKey: 'asc' }, { title: 'asc' }],
       }),
       this.prisma.testScenario.findMany({
-        where: { projectId },
+        where: { projectId, archivedAt: null },
         select: { id: true, title: true, requirementId: true },
         orderBy: { title: 'asc' },
       }),

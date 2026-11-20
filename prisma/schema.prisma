@@ -321,8 +321,11 @@ model TestScenario {
   steps          Json
   expectedResult String?
   automation     Json?
+  archivedAt     DateTime?
   results        TestResult[]
   runs           TestRun[]
+
+  @@index([projectId, archivedAt])
 }
 
 model TestRun {
