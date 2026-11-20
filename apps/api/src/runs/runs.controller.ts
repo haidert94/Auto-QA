@@ -116,4 +116,81 @@ export class RunsController {
     response.setHeader('Content-Disposition', `attachment; filename="trace-${resultId}.zip"`);
     return new StreamableFile(bytes);
   }
+
+  // Reporte consolidado estilo SerenityBDD: zip con index.html + páginas por
+  // escenario + assets. El cliente pasa ids=run1,run2,... (hasta 200).
+  @Get('projects/:projectId/runs/export-report')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  @Header('Content-Type', 'application/zip')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async exportReport(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Query('ids') ids: string | undefined,
+    @CurrentWorkspace() workspace: Workspace,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ) {
+    const runIds = typeof ids === 'string' ? ids.split(',').filter(Boolean) : [];
+    if (!runIds.length || runIds.some(id => !isUUID(id))) {
+      throw new BadRequestException('Especifica entre 1 y 200 identificadores válidos de ejecuciones.');
+    }
+    const { bytes, filename } = await this.service.exportReport(projectId, runIds, workspace);
+    response.setHeader('Content-Length', String(bytes.byteLength));
+    response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return new StreamableFile(bytes);
+  }
+
+  // Manifiesto JSON de evidencias para un resultado. La UI lo pide una vez
+  // y después pide cada screenshot / video por su key opaca.
+  @Get('projects/:projectId/runs/:runId/results/:resultId/evidence')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  evidence(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Param('resultId', ParseUUIDPipe) resultId: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.evidenceManifest(projectId, runId, resultId, workspace);
+  }
+
+  // Devuelve los bytes de un screenshot (PNG). La key debe estar listada en
+  // el manifiesto del result, si no se rechaza con 404.
+  @Get('projects/:projectId/runs/:runId/results/:resultId/screenshot/:key')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  @Header('Content-Type', 'image/png')
+  @Header('Cache-Control', 'private, max-age=86400')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async screenshot(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Param('resultId', ParseUUIDPipe) resultId: string,
+    @Param('key') key: string,
+    @CurrentWorkspace() workspace: Workspace,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ) {
+    if (!/^[0-9a-f]{32}$/.test(key)) throw new BadRequestException('Clave inválida.');
+    const { bytes } = await this.service.evidenceAsset(projectId, runId, resultId, 'screenshot', key, workspace);
+    response.setHeader('Content-Length', String(bytes.byteLength));
+    return new StreamableFile(bytes);
+  }
+
+  // Devuelve los bytes del video (WebM). Solo se graba en fallos
+  // (retain-on-failure); si no hay video el manifiesto devuelve video: null.
+  @Get('projects/:projectId/runs/:runId/results/:resultId/video/:key')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  @Header('Content-Type', 'video/webm')
+  @Header('Cache-Control', 'private, max-age=86400')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async video(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Param('resultId', ParseUUIDPipe) resultId: string,
+    @Param('key') key: string,
+    @CurrentWorkspace() workspace: Workspace,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ) {
+    if (!/^[0-9a-f]{32}$/.test(key)) throw new BadRequestException('Clave inválida.');
+    const { bytes } = await this.service.evidenceAsset(projectId, runId, resultId, 'video', key, workspace);
+    response.setHeader('Content-Length', String(bytes.byteLength));
+    return new StreamableFile(bytes);
+  }
 }

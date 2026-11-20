@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Download, ExternalLink, X } from 'lucide-react';
+import { useState } from 'react';
+import { Download, ExternalLink, Image as ImageIcon, PlayCircle, X } from 'lucide-react';
 import { dateText, durationText, milliseconds, outcome, resultDuration, resultLabels, runLabels, runTitle, runtime, type ReportRun } from './run-report-data';
+import { ScreenshotCarouselModal, VideoPlayerModal } from './evidence-modal';
 
 export type RunFilter = 'all' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'pending' | 'empty';
 export const filterLabels: Record<RunFilter, string> = { all: 'Todos', passed: 'Exitosos', failed: 'Fallidos', blocked: 'Bloqueados', skipped: 'Omitidos', pending: 'En cola / curso', empty: 'Sin resultado' };
@@ -20,6 +22,26 @@ export function TraceLink({ projectId, run, resultId }: { projectId: string; run
     download={`trace-${resultId}.zip`} aria-label={`Descargar traza ${resultId.slice(0, 8)} de ${runTitle(run)}`}><Download size={12} />Traza</a>;
 }
 
+// Botón de evidencias contextual: imagen (carrusel) para PASS, video para FAIL.
+// Si el run no está COMPLETED/FAILED (p.ej. QUEUED) muestra nada. Siempre deja
+// disponible el fallback de descarga del zip de trace para QA avanzado.
+export function EvidenceAction({ projectId, run, result }: {
+  projectId: string; run: ReportRun; result: { id: string; status: string };
+}) {
+  const [open, setOpen] = useState<'carousel' | 'video' | null>(null);
+  const failed = result.status === 'FAILED' || result.status === 'BLOCKED';
+  const label = runTitle(run);
+  return <>
+    {failed
+      ? <button type="button" className="run-trace-link" onClick={() => setOpen('video')}
+        aria-label={`Ver video del fallo de ${label}`}><PlayCircle size={12} /> Video</button>
+      : <button type="button" className="run-trace-link" onClick={() => setOpen('carousel')}
+        aria-label={`Ver screenshots por paso de ${label}`}><ImageIcon size={12} /> Pasos</button>}
+    {open === 'carousel' && <ScreenshotCarouselModal projectId={projectId} runId={run.id} resultId={result.id} title={label} onClose={() => setOpen(null)} />}
+    {open === 'video' && <VideoPlayerModal projectId={projectId} runId={run.id} resultId={result.id} title={label} onClose={() => setOpen(null)} />}
+  </>;
+}
+
 export function RunsTable({ projectId, runs, tags, tagsAvailable, detailId, onDetail }: {
   projectId: string; runs: ReportRun[]; tags: Map<string, string[]>; tagsAvailable: boolean; detailId: string | null; onDetail: (id: string) => void;
 }) {
@@ -34,7 +56,7 @@ export function RunsTable({ projectId, runs, tags, tagsAvailable, detailId, onDe
         <td><span>{run.targetBrowser ?? 'Sin registrar'}</span>{run.targetDevice && <small>{run.targetDevice}</small>}</td>
         <td>{durationText(resultDuration(run))}</td>
         <td><span className={`run-report-state run-report-state--${status.tone}`}>{status.label}</span>{run.errorCode && <small className="error">{run.errorCode}</small>}</td>
-        <td><div className="run-report-traces">{run.results.some(result => result.evidenceKey) ? run.results.filter(result => result.evidenceKey).map(result => <TraceLink key={result.id} projectId={projectId} run={run} resultId={result.id} />) : <small>Sin trazas</small>}</div></td>
+        <td><div className="run-report-traces">{run.results.length ? run.results.map(result => <EvidenceAction key={result.id} projectId={projectId} run={run} result={result} />) : <small>Sin evidencias</small>}</div></td>
       </tr>;
     })}</tbody>
   </table></div>;
@@ -52,7 +74,7 @@ export function RunDetail({ run, projectId, onClose }: { run: ReportRun; project
       {run.errorCode && <p className="error">{run.errorCode}</p>}
       <ul>{run.results.map(result => <li key={result.id}><strong>{resultLabels[result.status]}</strong><span>{durationText(result.durationMs)}</span>
         {result.errorMessage && <details><summary>Ver mensaje de error</summary><pre>{result.errorMessage}</pre></details>}
-        {result.evidenceKey && <TraceLink projectId={projectId} run={run} resultId={result.id} />}
+        <EvidenceAction projectId={projectId} run={run} result={result} />
       </li>)}</ul>
       {!run.results.length && <p className="muted">Esta ejecución aún no tiene resultados registrados.</p>}
       {run.scenarioId && <Link className="run-report-detail__link" href={`/projects/${projectId}/scenarios/${run.scenarioId}`}><ExternalLink size={13} />Abrir escenario y ejecuciones</Link>}

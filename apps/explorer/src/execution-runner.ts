@@ -8,7 +8,7 @@
 // posterior.
 
 import { execFile, spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import type { Prisma, PrismaClient } from '@prisma/client';
@@ -175,16 +175,7 @@ export async function runTestRun(
     }
     const report = await readReport(workdir).catch(() => null);
     const summary = summariseReport(report, outcome.exitCode);
-    const tracePath = extractTracePath(report, outputDir);
-    let evidenceKey: string | null = null;
-    if (tracePath) {
-      try {
-        const zipBytes = await readFile(tracePath);
-        evidenceKey = await storage.put(zipBytes, { contentType: 'application/zip' });
-      } catch (error) {
-        log('WARN', 'No se pudo subir el trace: ' + (error instanceof Error ? error.message : String(error)));
-      }
-    }
+    const { evidence, evidenceKey } = await uploadEvidence(workdir, outputDir, report, storage, summary.status, log);
 
     const providerSessionUrl = extractProviderSessionUrl(report, claim.targetProvider);
     await finishRun(prisma, claim, startedAt, {
@@ -198,6 +189,7 @@ export async function runTestRun(
       durationMs: summary.durationMs,
       errorMessage: summary.errorMessage?.slice(0, 4000) ?? null,
       evidenceKey,
+      evidence: evidence as unknown as Prisma.InputJsonValue,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -336,15 +328,105 @@ function extractProviderSessionUrl(report: any, provider: string | null): string
   return null;
 }
 
-function extractTracePath(report: any, outputDir: string): string | null {
-  const attachments: any[] = report?.suites?.flatMap((s: any) =>
+type EvidenceManifest = {
+  trace: string | null;
+  video: string | null;
+  screenshots: Array<{ step: number; action: string; key: string; status: 'pass' | 'fail' }>;
+};
+
+function flatAttachments(report: any): any[] {
+  return report?.suites?.flatMap((s: any) =>
     s?.specs?.flatMap((spec: any) =>
       spec?.tests?.flatMap((t: any) =>
         t?.results?.flatMap((r: any) => r?.attachments ?? []) ?? []) ?? []) ?? []) ?? [];
+}
+
+// Lee los screenshots manuales que el spec escribió a workdir/screenshots/
+// (uno por paso, nombrados step-N-verb.png). Devuelve un array ordenado por N.
+async function readStepScreenshots(workdir: string): Promise<Array<{ step: number; action: string; path: string }>> {
+  try {
+    const dir = join(workdir, 'screenshots');
+    const entries = await readdir(dir);
+    const items: Array<{ step: number; action: string; path: string }> = [];
+    for (const name of entries) {
+      const match = /^step-(\d+)-(.+)\.png$/i.exec(name);
+      if (!match) continue;
+      items.push({ step: Number(match[1]), action: match[2], path: join(dir, name) });
+    }
+    items.sort((a, b) => a.step - b.step);
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+// Sube trace.zip + video.webm (si existe) + screenshots por paso al storage.
+// Devuelve el manifiesto JSON para TestResult.evidence y el evidenceKey legacy
+// (hex32 del trace zip) para compatibilidad con clientes antiguos.
+async function uploadEvidence(
+  workdir: string,
+  outputDir: string,
+  report: any,
+  storage: ScreenshotStorage,
+  status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED',
+  log: Logger,
+): Promise<{ evidence: EvidenceManifest | null; evidenceKey: string | null }> {
+  const attachments = flatAttachments(report);
+  const manifest: EvidenceManifest = { trace: null, video: null, screenshots: [] };
+
+  // Trace
   const trace = attachments.find(a => a?.name === 'trace' && typeof a.path === 'string');
-  if (trace?.path) return trace.path;
-  // Fallback: Playwright suele poner los traces en outputDir.
-  return null;
+  if (trace?.path) {
+    try {
+      const bytes = await readFile(trace.path);
+      manifest.trace = await storage.put(bytes, { contentType: 'application/zip' });
+    } catch (error) {
+      log('WARN', 'No se pudo subir el trace: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  // Video (solo cuando retain-on-failure dispara; es un .webm en attachments)
+  const video = attachments.find(a => a?.name === 'video' && typeof a.path === 'string');
+  if (video?.path) {
+    try {
+      const bytes = await readFile(video.path);
+      manifest.video = await storage.put(bytes, { contentType: 'video/webm' });
+    } catch (error) {
+      log('WARN', 'No se pudo subir el video: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  // Screenshots por paso (los que el spec capturó con page.screenshot).
+  const steps = await readStepScreenshots(workdir);
+  for (const item of steps) {
+    try {
+      const bytes = await readFile(item.path);
+      const key = await storage.put(bytes, { contentType: 'image/png' });
+      manifest.screenshots.push({ step: item.step, action: item.action, key, status: 'pass' });
+    } catch (error) {
+      log('WARN', 'No se pudo subir screenshot paso ' + item.step + ': ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  // Si falló, sube además el screenshot automático (test-failed-*.png entre attachments).
+  if (status === 'FAILED') {
+    const failShots = attachments.filter(a => a?.name === 'screenshot' && typeof a.path === 'string');
+    const lastStep = manifest.screenshots.reduce((max, s) => Math.max(max, s.step), 0);
+    let offset = 1;
+    for (const shot of failShots) {
+      try {
+        const bytes = await readFile(shot.path);
+        const key = await storage.put(bytes, { contentType: 'image/png' });
+        manifest.screenshots.push({ step: lastStep + offset, action: 'failure', key, status: 'fail' });
+        offset += 1;
+      } catch (error) {
+        log('WARN', 'No se pudo subir screenshot de fallo: ' + (error instanceof Error ? error.message : String(error)));
+      }
+    }
+  }
+
+  const hasAnything = manifest.trace || manifest.video || manifest.screenshots.length;
+  return { evidence: hasAnything ? manifest : null, evidenceKey: manifest.trace };
   void outputDir;
 }
 

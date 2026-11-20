@@ -87,6 +87,11 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
   }
 
   const { verb, rest } = parsed;
+  // Snapshot por paso: se escribe al final para que el worker arme el carrusel.
+  // El nombre lleva el ordinal (orden) y un slug del verbo (para la etiqueta).
+  // .catch(() => {}) evita que un screenshot fallido (p.ej. p\u00e1gina en about:blank)
+  // tire el test; la assert del paso ya decide pass/fail.
+  const screenshotAfter = `${indent}await page.screenshot({ path: 'screenshots/step-${step.ordinal}-${verb.replace(/[^a-z0-9]+/gi, '_')}.png', fullPage: false }).catch(() => {});`;
   const locator = "page.locator('" + escapeJsString(rest) + "')";
   switch (verb) {
     case 'navigate':
@@ -135,6 +140,7 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
     default:
       lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
   }
+  lines.push(screenshotAfter);
   return lines;
 }
 
@@ -367,12 +373,16 @@ export function generatePlaywrightConfig(options: {
 }): string {
   const projectName = (options.browser ?? 'CHROMIUM').toLowerCase();
   const engine = projectName === 'firefox' ? 'firefox' : projectName === 'webkit' ? 'webkit' : 'chromium';
+  // screenshot:'on' captura un auto-screenshot al final del test, pero NO uno
+  // por paso: eso lo hacemos nosotros con page.screenshot() después de cada
+  // acción en generateHarnessedSpec. video:'retain-on-failure' solo guarda el
+  // .webm cuando el test falla (los PASS ya quedan cubiertos por el carrusel).
   const useBlock = options.wsEndpoint
     ? [
       "    headless: true,",
       "    trace: 'on',",
-      "    screenshot: 'only-on-failure',",
-      "    video: 'off',",
+      "    screenshot: 'on',",
+      "    video: 'retain-on-failure',",
       '    actionTimeout: 15000,',
       '    navigationTimeout: 30000,',
       '    connectOptions: {',
@@ -383,8 +393,8 @@ export function generatePlaywrightConfig(options: {
     : [
       "    headless: true,",
       "    trace: 'on',",
-      "    screenshot: 'only-on-failure',",
-      "    video: 'off',",
+      "    screenshot: 'on',",
+      "    video: 'retain-on-failure',",
       '    actionTimeout: 15000,',
       '    navigationTimeout: 30000,',
     ];

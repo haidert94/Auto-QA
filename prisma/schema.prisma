@@ -369,6 +369,12 @@ model TestResult {
   durationMs   Int?
   errorMessage String?
   evidenceKey  String?
+  // Manifiesto de evidencias por paso. Estructura esperada:
+  //   { trace: "hex32", video: "hex32" | null,
+  //     screenshots: [{ step: 1, action: "goto", key: "hex32", status: "pass"|"fail" }] }
+  // Convive con evidenceKey (trace zip) para retro-compatibilidad; evidenceKey
+  // se sigue poblando mientras los clientes antiguos esperen la ruta /trace.
+  evidence     Json?
 }
 
 // Pipeline "Automatizar proyecto": orquesta la cadena de agentes IA

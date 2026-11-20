@@ -128,7 +128,7 @@ export function ExecutionReport({ project }: { project: Project }) {
   const exportNotice = waiting ? REPORT_WHILE_RUNNING
     : activity.statusMessage || (!loading && !error && !hasFinalized ? REPORT_WITHOUT_RUNS : '');
 
-  async function exportResults(event: MouseEvent<HTMLButtonElement>, format: 'xml' | 'json') {
+  async function exportResults(event: MouseEvent<HTMLButtonElement>, format: 'xml' | 'json' | 'zip') {
     if (downloadDisabled) return;
     const menu = event.currentTarget.closest('details');
     setExporting(true);
@@ -138,7 +138,15 @@ export function ExecutionReport({ project }: { project: Project }) {
         setExportError(REPORT_WHILE_RUNNING);
         return;
       }
-      downloadRunReport(project.id, finalized, format);
+      if (format === 'zip') {
+        // Reporte consolidado estilo SerenityBDD: el browser descarga directo
+        // el zip que el API genera (hasta 200 runs). Usamos window.location
+        // porque es un stream grande y evitar un fetch que acumule en memoria.
+        const ids = finalized.map(run => run.id).slice(0, 200).join(',');
+        window.location.href = `/api/projects/${project.id}/runs/export-report?ids=${encodeURIComponent(ids)}`;
+      } else {
+        downloadRunReport(project.id, finalized, format);
+      }
       menu?.removeAttribute('open');
     } catch {
       setExportError('No se pudo confirmar el estado de las ejecuciones.');
@@ -154,6 +162,7 @@ export function ExecutionReport({ project }: { project: Project }) {
         <details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
         <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
+          <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'zip')}>Reporte completo (.zip)</button>
           <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details>
         <a className="button-like" href="#automatizacion"><Play size={14} />Nueva ejecución →</a></>} />, header.element)}
     {exportError && <p className="run-report-warning" role="alert">{exportError}</p>}

@@ -315,8 +315,222 @@ export class RunsService {
     return bytes;
   }
 
+  // Manifiesto de evidencias (trace + video + screenshots por paso).
+  // La UI lo pide una vez y después referencia cada asset por su key opaca.
+  async evidenceManifest(projectId: string, runId: string, resultId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const result = await this.prisma.testResult.findFirst({
+      where: { id: resultId, runId, run: { projectId } },
+      select: { evidence: true, evidenceKey: true, status: true },
+    });
+    if (!result) throw new NotFoundException('Resultado no encontrado.');
+    const manifest = normaliseEvidence(result.evidence, result.evidenceKey);
+    return { status: result.status, ...manifest };
+  }
+
+  // Empaqueta un reporte consolidado en zip estilo SerenityBDD con index.html,
+  // una página por escenario y sus assets (screenshots, video, trace). Usa
+  // el mismo filtro de runs que la pestaña Reportes: ids opcional, filter
+  // por categoría, tag opcional. runIds no debe exceder 200 para evitar zips
+  // enormes que bloqueen el proceso de API.
+  async exportReport(projectId: string, runIds: string[], workspace: Workspace): Promise<{ bytes: Buffer; filename: string }> {
+    await this.ensureProject(projectId, workspace);
+    if (!runIds.length || runIds.length > 200) {
+      throw new BadRequestException('Debes seleccionar entre 1 y 200 ejecuciones.');
+    }
+    const runs = await this.prisma.testRun.findMany({
+      where: { id: { in: runIds }, projectId },
+      select: {
+        id: true, status: true, createdAt: true, startedAt: true, completedAt: true, errorCode: true,
+        targetBrowser: true, targetDevice: true, targetProvider: true,
+        scenario: { select: { id: true, title: true } },
+        results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidence: true, evidenceKey: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!runs.length) throw new NotFoundException('No se encontraron ejecuciones para el reporte.');
+
+    const JSZip = (await import('jszip')).default as unknown as new () => { file(path: string, data: Buffer | string): void; generateAsync(opts: { type: 'nodebuffer'; compression: 'DEFLATE'; compressionOptions: { level: number } }): Promise<Buffer> };
+    const zip = new JSZip();
+
+    const summary = {
+      generatedAt: new Date().toISOString(),
+      projectId,
+      totalRuns: runs.length,
+      byStatus: {
+        passed: runs.filter(r => r.status === 'COMPLETED' && r.results.every(x => x.status === 'PASSED')).length,
+        failed: runs.filter(r => r.status === 'FAILED' || r.results.some(x => x.status === 'FAILED')).length,
+        pending: runs.filter(r => r.status === 'QUEUED' || r.status === 'RUNNING').length,
+      },
+    };
+    zip.file('summary.json', JSON.stringify(summary, null, 2));
+    zip.file('assets/style.css', REPORT_CSS);
+
+    // Un .html por run con sus screenshots inline y links a video/trace.
+    for (const run of runs) {
+      for (const result of run.results) {
+        const manifest = normaliseEvidence(result.evidence, result.evidenceKey);
+        const slug = result.id;
+        // Screenshots inline
+        for (const shot of manifest.screenshots) {
+          try {
+            const bytes = await this.evidence.read(shot.key);
+            if (bytes?.length) zip.file(`tests/${slug}/screenshots/step-${shot.step}-${shot.action}.png`, bytes);
+          } catch { /* ignore */ }
+        }
+        if (manifest.video) {
+          try {
+            const bytes = await this.evidence.read(manifest.video);
+            if (bytes?.length) zip.file(`tests/${slug}/video.webm`, bytes);
+          } catch { /* ignore */ }
+        }
+        if (manifest.trace) {
+          try {
+            const bytes = await this.evidence.read(manifest.trace);
+            if (bytes?.length) zip.file(`tests/${slug}/trace.zip`, bytes);
+          } catch { /* ignore */ }
+        }
+        zip.file(`tests/${slug}/index.html`, renderResultPage(run, result, manifest));
+      }
+    }
+    zip.file('index.html', renderIndexPage(runs));
+
+    const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    const filename = `reporte-autoqa-${new Date().toISOString().slice(0, 10)}.zip`;
+    return { bytes, filename };
+  }
+
+  // Lee un asset individual (screenshot PNG o video WebM). Verifica que la
+  // key esté en el manifiesto para que no se puedan leer objetos arbitrarios
+  // del bucket sólo conociendo su hex32.
+  async evidenceAsset(
+    projectId: string, runId: string, resultId: string, type: 'screenshot' | 'video',
+    key: string, workspace: Workspace,
+  ): Promise<{ bytes: Buffer; contentType: string }> {
+    await this.ensureProject(projectId, workspace);
+    const result = await this.prisma.testResult.findFirst({
+      where: { id: resultId, runId, run: { projectId } },
+      select: { evidence: true },
+    });
+    if (!result?.evidence) throw new NotFoundException('Esta ejecución no tiene evidencias.');
+    const manifest = normaliseEvidence(result.evidence, null);
+    const allowed = type === 'screenshot'
+      ? manifest.screenshots.some(s => s.key === key)
+      : manifest.video === key;
+    if (!allowed) throw new NotFoundException('Asset no pertenece a este resultado.');
+    const bytes = await this.evidence.read(key).catch(() => null);
+    if (!bytes || bytes.length === 0) throw new NotFoundException('Asset no disponible en el almacenamiento.');
+    return { bytes, contentType: type === 'screenshot' ? 'image/png' : 'video/webm' };
+  }
+
   private async ensureProject(projectId: string, workspace: Workspace) {
     const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
+}
+
+const REPORT_CSS = `
+:root { --ink:#1a1a1a; --muted:#6a6a6a; --line:#e3e3e3; --surface:#fafafa; --pass:#15803d; --fail:#b91c1c; --pending:#a16207; }
+* { box-sizing: border-box; }
+body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--surface); margin: 0; padding: 24px; }
+h1, h2, h3 { margin: 0 0 12px; font-weight: 600; }
+h1 { font-size: 22px; }
+h2 { font-size: 18px; }
+h3 { font-size: 15px; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--line); }
+th { background: #f5f5f5; font-weight: 600; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+tr:last-child td { border-bottom: none; }
+.state { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+.state--pass { background: #dcfce7; color: var(--pass); }
+.state--fail { background: #fee2e2; color: var(--fail); }
+.state--pending { background: #fef3c7; color: var(--pending); }
+a { color: #1d4ed8; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.steps { display: grid; gap: 16px; margin-top: 20px; }
+.step { background: white; border: 1px solid var(--line); border-radius: 6px; padding: 14px; }
+.step img { max-width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 4px; margin-top: 8px; }
+.meta dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 18px; margin: 0; }
+.meta dt { font-weight: 500; color: var(--muted); }
+.meta dd { margin: 0; }
+pre { background: #1a1a1a; color: #eee; padding: 12px; border-radius: 4px; overflow: auto; font-size: 12px; }
+.nav { margin-bottom: 20px; }
+.nav a { background: white; border: 1px solid var(--line); padding: 6px 12px; border-radius: 4px; font-size: 12px; }
+`;
+
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+function renderIndexPage(runs: Array<{ id: string; status: string; createdAt: Date; targetBrowser: string | null; scenario: { id: string; title: string } | null; results: Array<{ id: string; status: string; durationMs: number | null }> }>): string {
+  const rows = runs.flatMap(run => run.results.map(result => {
+    const stateClass = result.status === 'PASSED' ? 'pass' : (result.status === 'FAILED' ? 'fail' : 'pending');
+    return `<tr>
+      <td><a href="tests/${esc(result.id)}/index.html">${esc(run.scenario?.title ?? run.id.slice(0, 8))}</a><br><small>${esc(run.id.slice(0, 8))} · ${esc(run.createdAt.toISOString())}</small></td>
+      <td>${esc(run.targetBrowser ?? '—')}</td>
+      <td>${result.durationMs ? result.durationMs + ' ms' : '—'}</td>
+      <td><span class="state state--${stateClass}">${esc(result.status)}</span></td>
+    </tr>`;
+  })).join('\n');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte AutoQA</title><link rel="stylesheet" href="assets/style.css"></head>
+<body><h1>Reporte AutoQA</h1><h3>${runs.length} ejecuciones · ${new Date().toISOString()}</h3>
+<table><thead><tr><th>Escenario / Run</th><th>Navegador</th><th>Duración</th><th>Estado</th></tr></thead>
+<tbody>${rows}</tbody></table></body></html>`;
+}
+
+function renderResultPage(
+  run: { id: string; createdAt: Date; targetBrowser: string | null; targetProvider: string | null; errorCode: string | null; scenario: { id: string; title: string } | null },
+  result: { id: string; status: string; durationMs: number | null; errorMessage: string | null },
+  manifest: EvidenceManifest,
+): string {
+  const title = run.scenario?.title ?? run.id.slice(0, 8);
+  const stateClass = result.status === 'PASSED' ? 'pass' : (result.status === 'FAILED' ? 'fail' : 'pending');
+  const steps = manifest.screenshots.map(s => `<div class="step">
+    <h3>Paso ${s.step} · ${esc(s.action)} <span class="state state--${s.status === 'pass' ? 'pass' : 'fail'}">${s.status.toUpperCase()}</span></h3>
+    <img src="screenshots/step-${s.step}-${esc(s.action)}.png" alt="Paso ${s.step}">
+  </div>`).join('\n');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)} · AutoQA</title><link rel="stylesheet" href="../../assets/style.css"></head>
+<body><div class="nav"><a href="../../index.html">← Volver al índice</a></div>
+<h1>${esc(title)}</h1><span class="state state--${stateClass}">${esc(result.status)}</span>
+<section class="meta"><dl>
+<dt>Run</dt><dd>${esc(run.id)}</dd>
+<dt>Fecha</dt><dd>${esc(run.createdAt.toISOString())}</dd>
+<dt>Navegador</dt><dd>${esc(run.targetBrowser ?? '—')}</dd>
+<dt>Proveedor</dt><dd>${esc(run.targetProvider ?? 'LOCAL')}</dd>
+<dt>Duración</dt><dd>${result.durationMs ? result.durationMs + ' ms' : '—'}</dd>
+${run.errorCode ? `<dt>Error</dt><dd>${esc(run.errorCode)}</dd>` : ''}
+</dl></section>
+${result.errorMessage ? `<h2>Mensaje de error</h2><pre>${esc(result.errorMessage)}</pre>` : ''}
+${manifest.video ? '<h2>Video</h2><video controls style="max-width:100%"><source src="video.webm" type="video/webm"></video>' : ''}
+${manifest.trace ? '<p><a href="trace.zip" download>Descargar trace.zip (visor Playwright)</a></p>' : ''}
+<h2>Pasos (${manifest.screenshots.length})</h2>
+<div class="steps">${steps || '<p>Sin screenshots por paso.</p>'}</div>
+</body></html>`;
+}
+
+export type EvidenceManifest = {
+  trace: string | null;
+  video: string | null;
+  screenshots: Array<{ step: number; action: string; key: string; status: 'pass' | 'fail' }>;
+};
+
+// Normaliza el campo Json del schema a un manifiesto tipado, y acepta el
+// fallback evidenceKey (trace legacy) para runs anteriores al JSON.
+export function normaliseEvidence(raw: unknown, legacyTraceKey: string | null): EvidenceManifest {
+  const base: EvidenceManifest = { trace: legacyTraceKey, video: null, screenshots: [] };
+  if (!raw || typeof raw !== 'object') return base;
+  const obj = raw as Record<string, unknown>;
+  const trace = typeof obj.trace === 'string' ? obj.trace : base.trace;
+  const video = typeof obj.video === 'string' ? obj.video : null;
+  const list = Array.isArray(obj.screenshots) ? obj.screenshots : [];
+  const screenshots = list
+    .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
+    .map(s => ({
+      step: typeof s.step === 'number' ? s.step : 0,
+      action: typeof s.action === 'string' ? s.action : '',
+      key: typeof s.key === 'string' ? s.key : '',
+      status: s.status === 'fail' ? 'fail' : 'pass',
+    }) as EvidenceManifest['screenshots'][number])
+    .filter(s => s.key);
+  return { trace, video, screenshots };
 }
