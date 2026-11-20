@@ -1,4 +1,4 @@
-import { failure, projectProxy } from '../../../../../../autoqa-server';
+import { failure, projectProxy } from '../../../../../autoqa-server';
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
