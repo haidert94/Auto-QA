@@ -6,6 +6,7 @@ import type { OrgRole } from '../../autoqa-server';
 import type { Project } from '../onboarding';
 import type { GeneratedSpec } from './automation-export';
 import type { ScenarioListItem } from './scenario-card';
+import { ProjectHeading } from './project-heading';
 import { ScenarioRunDialog, type ScenarioSuiteControl } from './scenario-run-dialog';
 import type { SuiteResult } from './scenario-suite';
 
@@ -70,14 +71,14 @@ export function ProjectTabs({
   role,
   showExploration,
   context,
-  heading,
+  showScheduleButton,
   children,
 }: {
   project: Project;
   role?: OrgRole;
   showExploration: boolean;
   context?: ReactNode;
-  heading?: ReactNode;
+  showScheduleButton: boolean;
   children: Partial<Record<TabId, ReactNode>>;
 }) {
   const visible: TabId[] = TABS.map(t => t.id).filter(id => id !== 'exploracion' || showExploration);
@@ -167,7 +168,8 @@ export function ProjectTabs({
     <ReportHeaderContext.Provider value={reportHeader}>
     <QualityHeaderContext.Provider value={qualityHeader}>
     <ExplorationHeaderContext.Provider value={explorationHeader}>
-      {!['escenarios', 'automatizacion', 'reporte', 'calidad', 'exploracion'].includes(active) && heading}
+      {(active === 'datos' || active === 'historial') &&
+        <ProjectHeading project={project} showScheduleButton={active === 'datos' && showScheduleButton} />}
       <div ref={setHeaderElement} hidden={active !== 'escenarios'} className="scenario-heading-slot" />
       <div ref={setAutomationElement} hidden={active !== 'automatizacion'} className="automation-heading-slot" />
       <div ref={setReportElement} hidden={active !== 'reporte'} className="report-heading-slot" />

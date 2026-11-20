@@ -154,6 +154,13 @@
 .scenario-run-targets { padding-left: 18px; font-size: 12px; line-height: 1.7; max-height: 160px; overflow: auto; }
 .scenario-run-dialog label.check { margin-top: 18px; align-items: flex-start; font-size: 12px; line-height: 1.65; }
 .scenario-run-dialog .check input { flex-shrink: 0; margin-top: 3px; accent-color: var(--blue); }
+.execution-schedule-timing { min-width: 0; margin: 16px 0 0; }
+.execution-schedule-timing__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(155px, 100%), 1fr)); gap: 10px; }
+.execution-schedule-timing label { min-width: 0; margin: 0; font-size: 12px; }
+.execution-schedule-timing input { min-width: 0; width: 100%; margin: 4px 0 0; }
+.execution-schedule-timing p { margin: 8px 0 0; font-size: 11px; }
+.execution-schedule-stages { display: grid; gap: 8px; list-style: none; margin: 16px 0 0; padding: 0; }
+.execution-schedule-stages label.check { margin: 0; padding: 10px 12px; background: var(--quiet); border: 1px solid var(--line); border-radius: 3px; }
 .scenario-queue-results { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 12px; font-size: 12px; max-height: 45vh; overflow: auto; }
 .scenario-queue-results li { display: grid; gap: 5px; overflow-wrap: anywhere; }
 .environments-dialog { width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid #e9e7e1; padding: 0; border-radius: 4px; color: var(--ink); background: var(--surface); }

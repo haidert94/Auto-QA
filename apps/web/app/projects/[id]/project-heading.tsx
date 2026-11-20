@@ -3,12 +3,26 @@
 import Link from 'next/link';
 import { ArrowRight, ChevronRight, Download } from 'lucide-react';
 import { statusLabels, type Project } from '../onboarding';
-import type { ReactNode } from 'react';
+import { useId, useRef, useState, type ReactNode } from 'react';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
-export function ProjectHeading({ project, actions, summary, role }: { project: Project; actions?: ReactNode; summary?: string; role?: OrgRole }) {
+export function ProjectHeading({ project, actions, summary, role, showScheduleButton = false }: {
+  project: Project; actions?: ReactNode; summary?: string; role?: OrgRole; showScheduleButton?: boolean;
+}) {
   const canGenerate = can(role, 'automation.generate');
+  const scheduleDialog = useRef<HTMLDialogElement>(null);
+  const scheduleId = useId();
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [scheduleTimeZone, setScheduleTimeZone] = useState('');
+  const scheduledAt = scheduleDate && scheduleTime ? new Date(scheduleDate + 'T' + scheduleTime) : null;
+
+  function openSchedule() {
+    setScheduleTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    scheduleDialog.current?.showModal();
+  }
+
   function exportSpecification() {
     // Explicit projection: omit credentials, credential identities and vault references.
     const specification = {
@@ -44,9 +58,39 @@ export function ProjectHeading({ project, actions, summary, role }: { project: P
       <div className="project-heading__actions">
         {actions ?? <>
         <button type="button" className="secondary" onClick={exportSpecification}><Download size={14} /> Exportar especificación</button>
+        {showScheduleButton && <button type="button" className="secondary" aria-haspopup="dialog" aria-controls={scheduleId}
+          onClick={openSchedule}>Programar ejecución</button>}
         {canGenerate && <a className="button-like" href="#automatizacion">Automatizar con IA <ArrowRight size={15} /></a>}
         </>}
       </div>
     </header>
+    {showScheduleButton && <dialog ref={scheduleDialog} id={scheduleId} className="scenario-run-dialog"
+      aria-labelledby={scheduleId + '-title'} aria-describedby={scheduleId + '-description'}>
+      <h2 id={scheduleId + '-title'}>Programar ejecución</h2>
+      <p id={scheduleId + '-description'}>Vista previa del flujo automático.</p>
+      <fieldset className="execution-schedule-timing" aria-describedby={scheduleId + '-timezone'}>
+        <legend>Inicio programado</legend>
+        <div className="execution-schedule-timing__fields">
+          <label>Fecha<input type="date" value={scheduleDate} onChange={event => setScheduleDate(event.target.value)} /></label>
+          <label>Hora<input type="time" value={scheduleTime} onChange={event => setScheduleTime(event.target.value)} /></label>
+        </div>
+        <p id={scheduleId + '-timezone'} className="muted">Zona horaria · {scheduleTimeZone}</p>
+        {scheduledAt && <p role="status">
+          {scheduledAt.getTime() > Date.now()
+            ? <>Inicio previsto · <time dateTime={scheduledAt.toISOString()}>
+                {Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: scheduleTimeZone || undefined }).format(scheduledAt)}
+              </time></>
+            : 'Elige una fecha y una hora futuras.'}
+        </p>}
+      </fieldset>
+      <ol className="execution-schedule-stages" aria-label="Etapas del flujo">
+        <li><label className="check"><input type="checkbox" defaultChecked />Generar escenarios</label></li>
+        <li><label className="check"><input type="checkbox" defaultChecked />Generar código de automatización</label></li>
+        <li><label className="check"><input type="checkbox" defaultChecked />Ejecutar escenarios</label></li>
+      </ol>
+      <form method="dialog" className="actions">
+        <button type="submit" className="secondary">Cerrar</button>
+      </form>
+    </dialog>}
   </>;
 }

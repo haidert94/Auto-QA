@@ -19,11 +19,13 @@ export type IpaSummary = {
   signals: IpaSignal[];
 };
 
+export const IPA_AUTOMATION_THRESHOLD = 70;
+
 export function levelFor(score: number, status: IpaSummary['status']):
   { label: string; css: string; headline: string } {
   if (status === 'BLOCKED') return { label: 'Bloqueado', css: 'insuficiente', headline: 'Resuelve los bloqueos antes de automatizar.' };
   if (score >= 85) return { label: 'Óptimo', css: 'óptimo', headline: 'Preparación óptima para automatizar.' };
-  if (score >= 70) return { label: 'Aceptable', css: 'aceptable', headline: 'Preparación aceptable. Hay recomendaciones por atender.' };
+  if (score >= IPA_AUTOMATION_THRESHOLD) return { label: 'Aceptable', css: 'aceptable', headline: 'Preparación aceptable. Hay recomendaciones por atender.' };
   if (score >= 50) return { label: 'Mejorable', css: 'mejorable', headline: 'Preparación mejorable. Varias señales pendientes.' };
   return { label: 'Insuficiente', css: 'insuficiente', headline: 'Preparación insuficiente. Completa la documentación y el alcance.' };
 }

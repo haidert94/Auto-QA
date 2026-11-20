@@ -14,6 +14,8 @@ La ruta `/projects/[id]` conserva Next.js, las consultas autenticadas de `accoun
 
 Los documentos diferencian declarado, cargado, procesado y validado. Un error de consulta permite reintentar y se distingue de una lista vacía. No se copian del mockup puntajes, nombres, expiraciones JWT ni mensajes de ejecución. El panel oscuro refleja autorizaciones, documentos y evaluación del registro; no es telemetría en vivo ni evidencia de pruebas ejecutadas.
 
+En **Datos**, **Programar ejecución** aparece junto a **Exportar especificación** cuando la evaluación IPA alcanza al menos 70 puntos y permite automatizar. Al pulsarlo se muestra una vista previa con fecha y hora de inicio en la zona horaria del navegador y las etapas marcables de generación de escenarios, generación de código y ejecución, en ese orden. El inicio previsto debe estar en el futuro. La configuración pertenece a la vista previa.
+
 ## Verificación
 
 En PowerShell desde la raíz: `npm.cmd run test:project-detail`. La suite usa Google Chrome headless y una API HTTP simulada en loopback, con datos sintéticos y puertos temporales; cierra sus procesos al finalizar. Verifica resoluciones de 1440, 768, 390 y 320 px, disposición de columnas, estados documentales, selección de entornos, copiar URL, descarga sin secretos, pestañas/teclado, selección y eliminación de archivos pendientes, guardado a través del formulario/proxy, acceso a roles, error/reintento, ausencia de IPA, visibilidad por plan y borradores. Revisa errores JavaScript y captura escritorio/móvil.

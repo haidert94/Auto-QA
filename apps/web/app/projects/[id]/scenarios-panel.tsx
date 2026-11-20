@@ -10,6 +10,7 @@ import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { scenarioSpecSignature } from './automation-export';
 import { GenerationCard } from './generation-card';
+import { IPA_AUTOMATION_THRESHOLD } from './ipa-hero';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader, useScenarioSuite } from './project-tabs';
 import { ScenarioExport } from './scenario-export';
@@ -55,9 +56,6 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [typesError, setTypesError] = useState('');
   const [ipaScore, setIpaScore] = useState<number | null>(null);
   const [ipaStatus, setIpaStatus] = useState<'ASSESSED' | 'BLOCKED' | null>(null);
-  // Umbral para habilitar la generación completa. 70 alinea con el nivel
-  // "Aceptable" que ya define ipa-hero.tsx (score >= 70).
-  const IPA_THRESHOLD = 70;
   const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
   const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -379,7 +377,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       projectStatus={project.status}
       canGenerate={canGenerate}
       availableTypes={types?.filter(t => t.available).length ?? 0}
-      threshold={IPA_THRESHOLD}
+      threshold={IPA_AUTOMATION_THRESHOLD}
       generating={generating}
       onGenerate={() => void generate()}
     />

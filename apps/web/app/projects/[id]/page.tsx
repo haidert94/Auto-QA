@@ -6,9 +6,8 @@ import { AutomationPanel } from './automation-panel';
 import { DataTab } from './data-tab';
 import { ExecutionReport } from './execution-report';
 import { ExplorationPanel, type Environment as PanelEnvironment } from './exploration-panel';
-import { type IpaSummary } from './ipa-hero';
+import { IPA_AUTOMATION_THRESHOLD, type IpaSummary } from './ipa-hero';
 import { ProjectTabs } from './project-tabs';
-import { ProjectHeading } from './project-heading';
 import { ScenariosPanel } from './scenarios-panel';
 import { QualityPanel } from './quality-panel';
 
@@ -65,7 +64,8 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
 
   return (
     <div className="project-detail">
-    <ProjectTabs key={project.id} project={project} role={role} heading={<ProjectHeading project={project} />} showExploration={showExploration} context={
+    <ProjectTabs key={project.id} project={project} role={role} showExploration={showExploration}
+      showScheduleButton={ipa?.status === 'ASSESSED' && ipa.score >= IPA_AUTOMATION_THRESHOLD} context={
       <span className="project-environment-context"><i aria-hidden="true" />{project.environments.length} {project.environments.length === 1 ? 'entorno' : 'entornos'} registrados</span>
     }>
       {{
