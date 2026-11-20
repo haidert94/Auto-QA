@@ -2,13 +2,25 @@ import type { ScenarioListItem, ScenarioStep } from './scenario-card';
 
 export { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../../../api/src/scenarios/scenario-tags';
 
-// Infiere la keyword Gherkin a partir del contenido del paso. Heurística
-// mientras el schema no guarde la keyword como campo propio.
-export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): 'Dado' | 'Cuando' | 'Entonces' | 'Y' {
+export const GHERKIN_KEYWORDS = ['Dado', 'Cuando', 'Entonces', 'Y', 'Pero'] as const;
+export type GherkinKeyword = typeof GHERKIN_KEYWORDS[number];
+
+function declaredGherkinStep(action: string) {
+  const trimmed = action.trim();
+  const separator = trimmed.search(/\s/u);
+  if (separator < 0) return null;
+  const prefix = trimmed.slice(0, separator).toLowerCase();
+  const keyword = GHERKIN_KEYWORDS.find(value => value.toLowerCase() === prefix);
+  return keyword ? { keyword, text: trimmed.slice(separator).trim() } : null;
+}
+
+export function gherkinKeyword(step: ScenarioStep, previous?: ScenarioStep): GherkinKeyword {
+  const declared = declaredGherkinStep(step.action);
+  if (declared) return declared.keyword;
   const action = step.action.toLowerCase();
   if (step.expected) return 'Entonces';
-  if (/^(goto|navega|abrir|visita|preconditi)/.test(action)) return 'Dado';
-  if (/^(click|fill|type|press|selecciona|ingresa|escribe)/.test(action)) return 'Cuando';
+  if (/^(goto|navega|open|abr[ei]|visita|preconditi)/.test(action)) return 'Dado';
+  if (/^(click|fill|type|press|key:|check:|uncheck:|selecciona|ingresa|escribe)/.test(action)) return 'Cuando';
   if (/^(expect|verifica|debe|verify)/.test(action)) return 'Entonces';
   if (previous) return 'Y';
   return 'Dado';
@@ -25,6 +37,7 @@ const controlLabels = new Map(Object.entries({
   'postal code': 'código postal',
   'continue shopping': 'Seguir comprando',
   'back to products': 'Volver a productos',
+  'shopping cart badge': 'contador del carrito',
 }));
 
 function controlLabel(selector: string) {
@@ -51,7 +64,7 @@ function sensitiveField(label: string) {
 
 export function isSensitiveScenarioStep(step: ScenarioStep) {
   const { command, target } = stepInstruction(step.action);
-  return command === 'fill' && sensitiveField(controlLabel(target)) !== null;
+  return (command === 'fill' || command === 'fill-label') && sensitiveField(controlLabel(target)) !== null;
 }
 
 export function matchesScenarioQuery(item: ScenarioListItem, normalized: string, extra = '') {
@@ -63,6 +76,8 @@ export function matchesScenarioQuery(item: ScenarioListItem, normalized: string,
 
 export function scenarioStepText(step: ScenarioStep) {
   const action = step.action.trim();
+  const declared = declaredGherkinStep(action);
+  if (declared) return declared.text;
   const { command, target } = stepInstruction(action);
   const page = target === '/' ? 'la página de inicio' : `la página «${target}»`;
   switch (command) {
@@ -79,7 +94,11 @@ export function scenarioStepText(step: ScenarioStep) {
       }
       return label ? `Pulsa «${label}».` : 'Pulsa el control indicado.';
     }
-    case 'fill': {
+    case 'click-text':
+      return `Pulsa «${target}».`;
+    case 'fill':
+    case 'fill-label':
+    case 'type': {
       const label = controlLabel(target);
       const field = label ? `el campo «${label}»` : 'el campo indicado';
       if (!step.data) return `Deja vacío ${field}.`;
@@ -94,6 +113,19 @@ export function scenarioStepText(step: ScenarioStep) {
     case 'expect-text':
     case 'expect text':
       return `Comprueba que aparece «${target}» en la página.`;
+    case 'check':
+    case 'uncheck': {
+      const label = controlLabel(target);
+      return `${command === 'check' ? 'Marca' : 'Desmarca'} ${label ? `«${label}»` : 'la opción indicada'}.`;
+    }
+    case 'expect-visible':
+    case 'expect-hidden':
+    case 'expect-checked': {
+      const label = controlLabel(target);
+      const element = label ? `«${label}»` : 'el elemento indicado';
+      const state = command === 'expect-hidden' ? 'está oculto' : command === 'expect-checked' ? 'está marcado' : 'está visible';
+      return `Comprueba que ${element} ${state}.`;
+    }
     case 'expect-http-ok':
       return `Abre ${page} y comprueba que responde correctamente (HTTP 2xx).`;
     case 'expect-url':
@@ -141,7 +173,7 @@ export function featureText(projectName: string, scenarios: ScenarioListItem[]) 
       ...(scenario.tags?.length ? [`  ${scenario.tags.map(line).join(' ')}`] : []),
       `  Escenario: ${line(scenario.title)}`,
       ...(scenario.steps ?? []).flatMap((step, i) => [
-        `    ${gherkinKeyword(step, scenario.steps?.[i - 1])} ${line(step.action)}`,
+        `    ${gherkinKeyword(step, scenario.steps?.[i - 1])} ${line(declaredGherkinStep(step.action)?.text ?? step.action)}`,
         ...(step.data ? [`      # Dato registrado: ${line(step.data)}`] : []),
         ...(step.expected ? [`      # Esperado registrado: ${line(step.expected)}`] : []),
       ]),

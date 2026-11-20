@@ -521,11 +521,17 @@ async function verifyScenarios(page, screenshots) {
   await form.getByRole('button', { name: 'Crear escenario', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Escenarios (4)', exact: true })).toBeVisible();
   await expect(list.getByRole('button', { name: 'Escenario creado desde el nuevo diseño', exact: true })).toBeVisible();
+  const originalSteps = scenarios[0].steps;
   await detail.getByRole('button', { name: 'Editar escenario', exact: true }).click();
+  const bdd = detail.getByRole('group', { name: 'Pasos del escenario', exact: true });
+  await expect(bdd.getByRole('combobox', { name: 'Palabra clave del paso 1', exact: true })).toHaveValue('Dado');
+  await expect(bdd.getByRole('textbox', { name: 'Texto del paso 1', exact: true })).toHaveValue('Abre la página «/checkout».');
+  await expect(bdd.getByRole('button', { name: 'Editar pasos técnicos', exact: true })).toHaveCount(0);
   await detail.getByLabel('Título', { exact: true }).fill('Pago sandbox editado');
   await detail.getByLabel('@flujoAlterno', { exact: true }).check();
   await detail.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(list.getByRole('button', { name: 'Pago sandbox editado', exact: true })).toBeVisible();
+  assert.deepEqual(scenarios[0].steps, originalSteps);
   assert.ok(scenarios[0].tags.includes('@flujoAlterno') && !scenarios[0].tags.includes('@flujoBasico'));
   const execute = page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true });
   await expect(execute).toBeDisabled();
