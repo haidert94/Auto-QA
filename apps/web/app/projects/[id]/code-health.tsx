@@ -28,31 +28,30 @@ function runColor(run: WorkflowRun): string {
 }
 
 function AlertsChart({ title, counts, url, top }: { title: string; counts: AlertCounts; url: string | null; top: AlertDetail[] }) {
-  // Barra apilada + lista de alertas priorizadas. La tabla por sí sola
-  // perdería la lectura rápida de severidad; el chart solo no permite
-  // decidir qué atender primero. Juntos dan ambos.
-  const palette: Array<[keyof AlertCounts, string, string]> = [
-    ['critical', '#991b1b', 'Críticas'], ['high', '#b91c1c', 'Altas'],
-    ['medium', '#b45309', 'Medias'], ['low', '#1d4ed8', 'Bajas'],
-    ['note', '#4b5563', 'Nota'], ['other', '#6b7280', 'Otras'],
+  // Usa la misma estética de .quality-dimensions (IPA/ICSP): una fila por
+  // severidad con etiqueta, conteo y barra de progreso. El denominador es
+  // el total de alertas del tipo, no la severidad más poblada, para que
+  // "crítica 2 / total 22" pese visualmente lo correcto.
+  const palette: Array<[keyof AlertCounts, string]> = [
+    ['critical', 'Críticas'], ['high', 'Altas'],
+    ['medium', 'Medias'], ['low', 'Bajas'],
+    ['note', 'Nota'], ['other', 'Otras'],
   ];
   const total = counts.total || 1;
   return <div className="code-health-alerts">
     <header><h4>{title}</h4><strong>{counts.total}</strong>
       {url && <a href={url} target="_blank" rel="noreferrer" aria-label={`Ver ${title} en GitHub`}><ExternalLink size={12} /></a>}</header>
-    <div className="code-health-bar" role="img" aria-label={palette.map(([k, , label]) => `${label}: ${counts[k]}`).join(', ')}>
-      {palette.map(([key, color]) => counts[key] > 0 && <span key={key} style={{ background: color, width: `${(counts[key] / total) * 100}%` }} />)}
-    </div>
-    <ul className="code-health-legend">{palette.filter(([key]) => counts[key] > 0).map(([key, color, label]) => <li key={key}>
-      <span className="code-health-swatch" style={{ background: color }} />{label}<strong>{counts[key]}</strong></li>)}
-      {counts.total === 0 && <li className="muted">Sin alertas abiertas.</li>}</ul>
+    {counts.total === 0 ? <p className="muted">Sin alertas abiertas.</p>
+      : <ol className="quality-dimensions code-health-dims">{palette.filter(([key]) => counts[key] > 0).map(([key, label]) => <li key={key} className={`code-health-dim is-${key}`}>
+        <div><strong>{label}</strong><span>{Math.round(100 * counts[key] / total)}% <small>({counts[key]}/{counts.total})</small></span></div>
+        <div className="quality-progress"><span style={{ width: `${Math.max(2, 100 * counts[key] / total)}%` }} /></div>
+      </li>)}</ol>}
     {top.length > 0 && <ol className="code-health-list">{top.map(alert => <li key={alert.id} className={`code-health-item is-${alert.severity}`}>
       <a href={alert.url} target="_blank" rel="noreferrer">{alert.title}</a>
       <span className={`code-health-badge is-${alert.severity}`}>{severityLabel(alert.severity)}</span>
       {alert.package && <small>{alert.package}</small>}
       {alert.location && <small><code>{alert.location}</code></small>}
-    </li>)}
-      {counts.total > top.length && <li className="muted">y {counts.total - top.length} más en GitHub.</li>}</ol>}
+    </li>)}</ol>}
   </div>;
 }
 

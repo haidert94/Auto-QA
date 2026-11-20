@@ -147,7 +147,7 @@ export class CodeHealthService {
       });
     }
     details.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
-    return { enabled: true, counts, url: `https://github.com/${repo}/security/code-scanning`, top: details.slice(0, 10) };
+    return { enabled: true, counts, url: `https://github.com/${repo}/security/code-scanning`, top: details };
   }
 
   private async fetchDependabotAlerts(repo: string, token: string): Promise<CodeHealthResult['dependabot']> {
@@ -173,6 +173,6 @@ export class CodeHealthService {
       });
     }
     details.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
-    return { enabled: true, counts, url: `https://github.com/${repo}/security/dependabot`, top: details.slice(0, 10) };
+    return { enabled: true, counts, url: `https://github.com/${repo}/security/dependabot`, top: details };
   }
 }
