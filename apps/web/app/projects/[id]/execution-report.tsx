@@ -182,21 +182,23 @@ export function ExecutionReport({ project }: { project: Project }) {
           <div><label className="run-report-search"><Search size={14} /><input ref={search} type="search" aria-label="Buscar ejecuciones" placeholder="Filtrar por escenario, ID, etiqueta o error…" value={query} onChange={event => setQuery(event.target.value)} /><kbd>Ctrl K</kbd></label>
             <div className="run-report-views" role="group" aria-label="Vista del reporte"><span>Vista:</span>{([['table', 'Ejecuciones'], ['timeline', 'Cronología'], ['matrix', 'Matriz']] as const).map(([id, label]) =>
               <button type="button" key={id} aria-pressed={view === id} onClick={() => setView(id)}>{label}</button>)}</div></div>
-          <div className="run-report-filter-options" role="group" aria-label="Estado de ejecución">{filters.map(value => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
-            {filterLabels[value]} ({value === 'all' ? scoped.length : scoped.filter(run => category(run) === value).length})
-          </button>)}</div>
-          {availableTags.length > 0 && <details ref={tagMenu} className="run-report-tag-menu">
-            <summary aria-label="Filtrar por etiqueta actual del escenario">
-              <Filter size={14} aria-hidden="true" />
-              <span>{tag ? tag : `Todas las etiquetas (${availableTags.length})`}</span>
-              <ChevronDown size={14} aria-hidden="true" className="run-report-tag-menu__chevron" />
-            </summary>
-            <div className="run-report-tag-menu__options" role="group" aria-label="Opciones de etiqueta">
-              <button type="button" aria-pressed={!tag} onClick={() => pickTag('')}>Todas ({availableTags.length})</button>
-              {availableTags.map(value => <button type="button" key={value} aria-pressed={tag === value}
-                onClick={() => pickTag(tag === value ? '' : value)}>{value}</button>)}
-            </div>
-          </details>}
+          <div className="run-report-filter-row">
+            {availableTags.length > 0 && <details ref={tagMenu} className="run-report-tag-menu">
+              <summary aria-label="Filtrar por etiqueta actual del escenario">
+                <Filter size={14} aria-hidden="true" />
+                <span>{tag ? tag : `Todas las etiquetas (${availableTags.length})`}</span>
+                <ChevronDown size={14} aria-hidden="true" className="run-report-tag-menu__chevron" />
+              </summary>
+              <div className="run-report-tag-menu__options" role="group" aria-label="Opciones de etiqueta">
+                <button type="button" aria-pressed={!tag} onClick={() => pickTag('')}>Todas ({availableTags.length})</button>
+                {availableTags.map(value => <button type="button" key={value} aria-pressed={tag === value}
+                  onClick={() => pickTag(tag === value ? '' : value)}>{value}</button>)}
+              </div>
+            </details>}
+            <div className="run-report-filter-options" role="group" aria-label="Estado de ejecución">{filters.map(value => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
+              {filterLabels[value]} ({value === 'all' ? scoped.length : scoped.filter(run => category(run) === value).length})
+            </button>)}</div>
+          </div>
           <p role="status">{filteredRuns.length} de {scoped.length} {scopeLabel} visibles.</p>
         </section>
         {tagsWarning && <p className="run-report-warning">{tagsWarning}</p>}

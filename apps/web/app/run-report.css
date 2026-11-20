@@ -37,8 +37,9 @@
 .run-report-views button, .run-report-filter-options button { min-height: 25px; border: 1px solid transparent; padding: 4px 7px; border-radius: 1px; background: var(--quiet); color: var(--muted); font: 400 9px/1.5 var(--mono); }
 .run-report-views button[aria-pressed="true"], .run-report-filter-options button[aria-pressed="true"] { color: #fff; background: var(--ink); }
 .run-report-views button:hover, .run-report-filter-options button:hover { border-color: var(--blue); }
-.run-report-filter-options { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
-.run-report-tag-menu { position: relative; margin-top: 9px; }
+.run-report-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 9px; }
+.run-report-filter-options { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; margin-inline-start: auto; }
+.run-report-tag-menu { position: relative; max-width: 100%; margin: 0; }
 .run-report-tag-menu > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); color: var(--ink); font: 500 11px/1.4 var(--mono); cursor: pointer; list-style: none; max-width: 100%; }
 .run-report-tag-menu > summary::-webkit-details-marker, .run-report-tag-menu > summary::marker { display: none; content: ""; }
 .run-report-tag-menu > summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -52,6 +53,7 @@
 .run-report-tag-menu__options button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 .run-report-tag-menu__options button:hover { border-color: var(--blue); }
 @media (max-width: 760px) {
+  .run-report-filter-options { justify-content: flex-start; margin-inline-start: 0; }
   .run-report-tag-menu { width: 100%; }
   .run-report-tag-menu > summary { width: 100%; justify-content: space-between; }
 }
