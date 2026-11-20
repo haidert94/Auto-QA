@@ -96,3 +96,22 @@
 .quality-duplicates ul li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 11px; }
 .quality-duplicates ul li small { color: var(--muted); font: 400 10px/1.4 var(--mono); }
 .scenario-duplicate-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+
+.code-health-card header small { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font: 400 10px/1.4 var(--mono); }
+.code-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 10px; }
+.code-health-widget { border: 1px solid var(--line); border-radius: 3px; padding: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.code-health-widget > header { display: flex; align-items: center; gap: 6px; color: var(--ink); }
+.code-health-widget > header h3 { margin: 0; font: 500 12px/1.4 var(--mono); }
+.code-health-runs svg { width: 100%; height: auto; }
+.code-health-runs small { display: block; margin-top: 4px; color: var(--muted); font: 400 10px/1.4 var(--mono); }
+.code-health-alerts header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.code-health-alerts header h4 { margin: 0; font: 500 11px/1.4 var(--mono); }
+.code-health-alerts header strong { font: 600 14px/1.2 var(--mono); }
+.code-health-alerts header a { color: var(--muted); display: inline-flex; }
+.code-health-alerts header a:hover { color: var(--blue); }
+.code-health-bar { display: flex; height: 8px; background: var(--quiet); border-radius: 1px; overflow: hidden; margin: 4px 0; }
+.code-health-bar span { display: block; height: 100%; }
+.code-health-alerts ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.code-health-alerts ul li { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
+.code-health-alerts ul li strong { color: var(--ink); font: 500 11px/1.2 var(--mono); }
+.code-health-swatch { display: inline-block; width: 8px; height: 8px; border-radius: 1px; }

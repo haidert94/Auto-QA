@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-and-build:
+    name: Typecheck y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # prisma generate sin DATABASE_URL real: uso valor sintético para que
+      # el CLI no falle al arrancar; no se ejecutan migraciones ni se
+      # conecta a Neon durante el CI.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Typecheck apps/api
+        working-directory: apps/api
+        run: npx tsc --noEmit --project tsconfig.json
+      - name: Typecheck apps/web
+        working-directory: apps/web
+        run: npx tsc --noEmit --project tsconfig.json
+      - name: Typecheck apps/explorer
+        working-directory: apps/explorer
+        run: npx tsc --noEmit --project tsconfig.json
+      - name: Build apps/api
+        working-directory: apps/api
+        run: npm run build
+      - name: Build apps/web
+        working-directory: apps/web
+        run: npm run build
+
+  unit-tests:
+    name: Pruebas unitarias
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: typecheck-and-build
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+      - name: Prisma generate
+        run: npx prisma generate
+      - name: Pruebas unitarias (api + explorer)
+        # Las suites de pruebas que solo requieren builds locales sin red.
+        # Se omiten las e2e (test:project-detail, test:commerce:e2e) para
+        # mantener el CI bajo de los 20 min y sin dependencias de navegador.
+        run: |
+          npm run test:ai
+          npm run test:scenarios
+          npm run test:playwright-generator
+          npm run test:screenshot-storage
+          npm run test:url-guard
+          npm run test:icsp
+          npm run test:plans
+          npm run test:k6
+          npm run test:request-filter
+          npm run test:lighthouse

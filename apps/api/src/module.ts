@@ -29,10 +29,12 @@ import { RunsController } from './runs/runs.controller';
 import { RunsService } from './runs/runs.service';
 import { ScenariosController } from './scenarios/scenarios.controller';
 import { ScenariosService } from './scenarios/scenarios.service';
+import { CodeHealthController } from './quality/code-health.controller';
+import { CodeHealthService } from './quality/code-health.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ envFilePath: ['../../.env', '.env'], isGlobal: true }), PrismaModule, CommerceModule, DocumentsModule],
-  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController, IpaController, IcspController, ReportsController, PerformanceController, MonitorsController, LoadController, AiController, AutomationController],
+  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController, IpaController, IcspController, ReportsController, PerformanceController, MonitorsController, LoadController, AiController, AutomationController, CodeHealthController],
   providers: [
     ProjectsService,
     ExplorationsService,
@@ -51,6 +53,7 @@ import { ScenariosService } from './scenarios/scenarios.service';
     // AUTOQA_INLINE_WORKER=true. En Hostinger activamos este flag; en
     // local, se deja apagado y se corre el worker externo con `pnpm dev`.
     InlineWorkerService,
+    CodeHealthService,
   ],
 })
 export class AppModule {}

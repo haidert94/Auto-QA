@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # npm: workspaces root; agrupa minor/patch en un PR semanal para no
+  # ahogar la bandeja. Las majors quedan como PRs sueltos para revisar.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Bogota
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    groups:
+      production-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      development-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Bogota
+    labels: [dependencies, github-actions]
