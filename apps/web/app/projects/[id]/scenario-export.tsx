@@ -5,10 +5,15 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { ScenarioListItem } from './scenario-card';
 import { featureText, isSensitiveScenarioStep } from './scenario-presentation';
 
+// 'kind: client' se genera en el navegador (Gherkin/CSV/JSON).
+// 'kind: server' pide el archivo al endpoint /api/.../scenarios/export que
+// genera PDF o XLSX con layout de set de pruebas.
 const formats = [
-  { extension: 'feature', label: 'Gherkin (.feature)', mime: 'text/plain;charset=utf-8' },
-  { extension: 'csv', label: 'CSV (.csv)', mime: 'text/csv;charset=utf-8' },
-  { extension: 'json', label: 'JSON (.json)', mime: 'application/json;charset=utf-8' },
+  { extension: 'feature', label: 'Gherkin (.feature)', mime: 'text/plain;charset=utf-8', kind: 'client' as const },
+  { extension: 'csv', label: 'CSV (.csv)', mime: 'text/csv;charset=utf-8', kind: 'client' as const },
+  { extension: 'json', label: 'JSON (.json)', mime: 'application/json;charset=utf-8', kind: 'client' as const },
+  { extension: 'pdf', label: 'Set de pruebas (PDF)', mime: 'application/pdf', kind: 'server' as const, format: 'pdf' as const },
+  { extension: 'xlsx', label: 'Set de pruebas (Excel)', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', kind: 'server' as const, format: 'xlsx' as const },
 ] as const;
 
 function csvCell(value: string) {
@@ -33,7 +38,16 @@ function csvText(scenarios: ScenarioListItem[]) {
   return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
-function downloadScenarios(projectName: string, scenarios: ScenarioListItem[], format: typeof formats[number]) {
+function downloadScenarios(projectId: string, projectName: string, scenarios: ScenarioListItem[], format: typeof formats[number]) {
+  // Formatos server-side: el endpoint recibe los ids y devuelve el binario
+  // (PDF o XLSX). Usamos window.location para que el browser maneje el
+  // stream sin cargar todo en memoria del tab.
+  if (format.kind === 'server') {
+    const ids = scenarios.map(s => s.id).join(',');
+    const qs = new URLSearchParams({ format: format.format, ...(ids ? { ids } : {}) }).toString();
+    window.location.href = `/api/projects/${projectId}/scenarios/export?${qs}`;
+    return;
+  }
   const exported = scenarios.map(scenario => ({
     id: scenario.id,
     title: scenario.title,
@@ -62,7 +76,7 @@ function downloadScenarios(projectName: string, scenarios: ScenarioListItem[], f
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ScenarioExport({ projectName, scenarios }: { projectName: string; scenarios: ScenarioListItem[] }) {
+export function ScenarioExport({ projectId, projectName, scenarios }: { projectId: string; projectName: string; scenarios: ScenarioListItem[] }) {
   const [open, setOpen] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -95,7 +109,7 @@ export function ScenarioExport({ projectName, scenarios }: { projectName: string
     </button>
     <div className="scenario-export__options" id={optionsId} role="group" aria-label="Formatos de exportación" hidden={!open}>
       {formats.map(format => <button type="button" className="secondary" key={format.extension} onClick={() => {
-        downloadScenarios(projectName, scenarios, format);
+        downloadScenarios(projectId, projectName, scenarios, format);
         setOpen(false);
         trigger.current?.focus();
       }}>{format.label}</button>)}

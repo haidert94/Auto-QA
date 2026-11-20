@@ -10,6 +10,7 @@ import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
 import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
 import { ASSERTION_INSTRUCTION } from '../automation/agents/agent-types';
 import { generateSpec, hasPlaywrightAssertion, readGeneratorSteps, suggestedFilename } from './playwright-generator';
+import { buildTestSetPdf, buildTestSetXlsx, type ExportScenario } from './scenario-export';
 
 type ScenarioForAutomation = Parameters<typeof currentAutomation>[0] & { id: string };
 
@@ -336,6 +337,56 @@ export class ScenariosService {
       orderBy: [{ externalKey: 'asc' }, { title: 'asc' }],
       select: { id: true, title: true, externalKey: true },
     });
+  }
+
+  // Exporta un conjunto de escenarios como set de pruebas en PDF o XLSX. Si
+  // no se pasan ids, exporta todos los escenarios activos del proyecto. Se
+  // limita a 500 escenarios por request para evitar generar documentos
+  // enormes que bloqueen el proceso.
+  async exportTestSet(
+    projectId: string, scenarioIds: string[] | null, format: 'pdf' | 'xlsx', workspace: Workspace,
+  ): Promise<{ bytes: Buffer; filename: string; contentType: string }> {
+    await this.ensureProject(projectId, workspace);
+    if (scenarioIds && scenarioIds.length > 500) {
+      throw new BadRequestException('No puedes exportar más de 500 escenarios a la vez.');
+    }
+    const project = await this.prisma.project.findUnique({ where: { id: projectId }, select: { name: true } });
+    const scenarios = await this.prisma.testScenario.findMany({
+      where: {
+        projectId,
+        archivedAt: null,
+        ...(scenarioIds && scenarioIds.length ? { id: { in: scenarioIds } } : {}),
+      },
+      orderBy: { title: 'asc' },
+      select: {
+        id: true, title: true, tags: true, expectedResult: true, steps: true,
+        requirement: { select: { externalKey: true, title: true } },
+      },
+    });
+    if (!scenarios.length) {
+      throw new NotFoundException('No hay escenarios para exportar con el filtro dado.');
+    }
+    const items: ExportScenario[] = scenarios.map(s => ({
+      id: s.id,
+      title: s.title,
+      tags: Array.isArray(s.tags) ? s.tags.filter((t): t is string => typeof t === 'string') : [],
+      expectedResult: s.expectedResult,
+      requirement: s.requirement,
+      steps: readGeneratorSteps(s.steps).map(step => ({
+        ordinal: step.ordinal,
+        action: step.action,
+        data: step.data ?? null,
+        expected: step.expected ?? null,
+      })),
+    }));
+    const projectName = project?.name ?? 'Proyecto AutoQA';
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === 'pdf') {
+      const bytes = await buildTestSetPdf(projectName, items);
+      return { bytes, filename: `set-pruebas-${stamp}.pdf`, contentType: 'application/pdf' };
+    }
+    const bytes = await buildTestSetXlsx(projectName, items);
+    return { bytes, filename: `set-pruebas-${stamp}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {

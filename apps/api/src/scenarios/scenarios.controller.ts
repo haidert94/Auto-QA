@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
-import { IsUUID } from 'class-validator';
+import { BadRequestException, Body, Controller, Delete, Get, Header, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { IsUUID, isUUID } from 'class-validator';
 import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioSelectionDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { ScenariosService } from './scenarios.service';
+
+type HttpResponse = { setHeader(name: string, value: string): unknown };
 
 class SuggestScenariosDto {
   @IsUUID() requirementId!: string;
@@ -22,6 +24,34 @@ export class ScenariosController {
   @Get('requirements')
   requirements(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
     return this.service.listRequirements(projectId, workspace);
+  }
+
+  // Set de pruebas en PDF o XLSX. ids opcional separado por coma: si no
+  // viene, exporta TODOS los escenarios activos del proyecto.
+  @Get('export')
+  async export(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Query('format') format: string | undefined,
+    @Query('ids') ids: string | undefined,
+    @CurrentWorkspace() workspace: Workspace,
+    @Res({ passthrough: true }) response: HttpResponse,
+  ) {
+    const normalized = (format ?? '').toLowerCase();
+    if (normalized !== 'pdf' && normalized !== 'xlsx') {
+      throw new BadRequestException('Formato inválido. Usa format=pdf o format=xlsx.');
+    }
+    const scenarioIds = typeof ids === 'string' && ids.length
+      ? ids.split(',').filter(Boolean)
+      : null;
+    if (scenarioIds && (!scenarioIds.length || scenarioIds.some(id => !isUUID(id)))) {
+      throw new BadRequestException('Los identificadores de escenario no son válidos.');
+    }
+    const { bytes, filename, contentType } = await this.service.exportTestSet(projectId, scenarioIds, normalized, workspace);
+    response.setHeader('Content-Type', contentType);
+    response.setHeader('Content-Length', String(bytes.byteLength));
+    response.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    return new StreamableFile(bytes);
   }
 
   @Get(':id')

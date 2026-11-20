@@ -365,7 +365,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         {canDelete && !!items?.length && <button type="button" className="secondary"
           disabled={!selected.length || busy || generating || !!listError || runner?.suiteRunning || runner?.stopping}
           onClick={() => void deleteSelected()}>Eliminar escenarios</button>}
-        <ScenarioExport projectName={project.name} scenarios={checked.size ? selected : items ?? []} />
+        <ScenarioExport projectId={project.id} projectName={project.name} scenarios={checked.size ? selected : items ?? []} />
         {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
         </button>}
