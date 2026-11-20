@@ -12,6 +12,7 @@ import { useReportHeader } from './project-tabs';
 import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
 import { dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
 import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, type RunFilter } from './run-report-views';
+import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 
 type ReportOverview = { latest: ReportRun[]; history: ReportRun[] };
 
@@ -111,14 +112,16 @@ export function ExecutionReport({ project }: { project: Project }) {
   const tags = new Map((scenarios ?? []).map(scenario => [scenario.id, scenario.tags ?? []]));
   const availableTags = [...new Set(scoped.flatMap(run => run.scenarioId ? tags.get(run.scenarioId) ?? [] : []))].sort();
   const normalized = query.trim().toLocaleLowerCase('es');
-  const visible = scoped.filter(run => (filter === 'all' || category(run) === filter)
+  const filteredRuns = scoped.filter(run => (filter === 'all' || category(run) === filter)
     && (!tag || (run.scenarioId && tags.get(run.scenarioId)?.includes(tag)))
     && (!normalized || [runTitle(run), run.id, run.scenarioId ?? '', run.errorCode ?? '', run.targetBrowser ?? '',
       ...(run.results.map(result => result.errorMessage ?? '')), ...(run.scenarioId ? tags.get(run.scenarioId) ?? [] : [])]
       .join(' ').toLocaleLowerCase('es').includes(normalized)));
+  const { visible: pagedRuns, results: listRef, resetPage, pagination } = useScenarioPagination<ReportRun, HTMLDivElement>(filteredRuns);
   const detail = scoped.find(run => run.id === detailId);
   const filters = Object.keys(filterLabels) as RunFilter[];
-  const finalized = visible.filter(run => isReportableRunStatus(run.status));
+  const finalized = filteredRuns.filter(run => isReportableRunStatus(run.status));
+  useEffect(() => { resetPage(); }, [filter, tag, query, scope, view, resetPage]);
   const hasFinalized = latest.some(run => isReportableRunStatus(run.status)) || history.some(run => isReportableRunStatus(run.status));
   const canGenerate = activity.verified && !waiting && !loading && !error && hasFinalized;
   const downloadDisabled = exporting || !canGenerate || !finalized.length;
@@ -194,16 +197,21 @@ export function ExecutionReport({ project }: { project: Project }) {
                 onClick={() => pickTag(tag === value ? '' : value)}>{value}</button>)}
             </div>
           </details>}
-          <p role="status">{visible.length} de {scoped.length} {scopeLabel} visibles.</p>
+          <p role="status">{filteredRuns.length} de {scoped.length} {scopeLabel} visibles.</p>
         </section>
         {tagsWarning && <p className="run-report-warning">{tagsWarning}</p>}
         <div className="run-report-content"><div className="run-report-main">
-          {!visible.length ? <div className="run-report-empty"><Activity size={28} /><h3>{scoped.length ? 'No hay ejecuciones que coincidan' : 'Aún no hay ejecuciones registradas'}</h3>
+          {!filteredRuns.length ? <div className="run-report-empty"><Activity size={28} /><h3>{scoped.length ? 'No hay ejecuciones que coincidan' : 'Aún no hay ejecuciones registradas'}</h3>
             <p>{scoped.length ? 'Ajusta los filtros del reporte.' : 'Los resultados aparecerán después de ejecutar escenarios autorizados.'}</p>
             {scoped.length ? <button type="button" className="secondary" onClick={() => { setQuery(''); setFilter('all'); setTag(''); }}>Limpiar filtros del reporte</button> : <a href="#automatizacion">Preparar una ejecución →</a>}</div>
-            : view === 'timeline' ? <RunTimeline runs={visible} onDetail={setDetailId} />
-            : view === 'matrix' ? <RunMatrix runs={visible} />
-            : <RunsTable projectId={project.id} runs={visible} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
+            : <>
+              <div ref={listRef} tabIndex={-1} className="run-report-results" aria-label="Resultados del reporte">
+                {view === 'timeline' ? <RunTimeline runs={pagedRuns} onDetail={setDetailId} />
+                  : view === 'matrix' ? <RunMatrix runs={pagedRuns} />
+                  : <RunsTable projectId={project.id} runs={pagedRuns} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
+              </div>
+              <ScenarioPagination label="Paginación del reporte" {...pagination} />
+            </>}
           <p className="run-report-data-note">Las etiquetas corresponden a la configuración actual de cada escenario.</p>
           {canGenerate && <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>}
         </div><aside className="run-report-aside" aria-label="Historial y detalle de ejecuciones">

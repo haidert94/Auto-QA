@@ -14,10 +14,10 @@ type ScenarioPaginationProps = {
   changePageSize: (size: number) => void;
 };
 
-export function useScenarioPagination<Item>(items: readonly Item[]) {
+export function useScenarioPagination<Item, Ref extends HTMLElement = HTMLUListElement>(items: readonly Item[]) {
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0]);
   const [page, setPage] = useState(1);
-  const results = useRef<HTMLUListElement>(null);
+  const results = useRef<Ref>(null);
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageStart = (currentPage - 1) * pageSize;
