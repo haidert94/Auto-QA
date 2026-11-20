@@ -73,10 +73,14 @@ export async function runExploration(
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
   try {
+    // chromiumSandbox: false + --no-sandbox para VPS sin unprivileged user
+    // namespaces habilitadas. En máquinas endurecidas (con el sysctl del
+    // deploy doc) se puede volver a true, pero por defecto priorizamos que
+    // el worker arranque en VPS stock.
     browser = await chromium.launch({
       headless: true,
-      chromiumSandbox: true,
-      args: ['--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check'],
+      chromiumSandbox: false,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check'],
     });
     context = await browser.newContext({
       javaScriptEnabled: true,

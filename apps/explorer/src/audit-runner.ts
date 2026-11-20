@@ -36,6 +36,7 @@ export async function runAudit(
     chrome = await launch({
       chromeFlags: [
         '--headless=new',
+        '--no-sandbox',
         '--disable-dev-shm-usage',
         '--no-first-run',
         '--no-default-browser-check',

@@ -53,7 +53,14 @@ export async function runUxAudit(
   });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
   try {
-    browser = await chromium.launch({ headless: true });
+    // --no-sandbox es necesario en VPS sin kernel.apparmor_restrict_unprivileged_userns=0.
+    // Sin esto, Chrome aborta con "waiting for dynamic debugging port in
+    // chrome-err.log" durante el launch.
+    browser = await chromium.launch({
+      headless: true,
+      chromiumSandbox: false,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check'],
+    });
     const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const page = await context.newPage();
     await page.goto(claim.url, { waitUntil: 'networkidle', timeout: 30000 });
