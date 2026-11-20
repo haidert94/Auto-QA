@@ -23,6 +23,7 @@ type Form = {
   description: string;
   ownerLabel: string;
   envType: typeof ENV_TYPES[number]['value'] | '';
+  version: string;
   baseUrl: string;
   accessMode: typeof ACCESS_MODES[number]['value'] | '';
   allowedHosts: string;
@@ -34,7 +35,7 @@ type Form = {
 
 const EMPTY: Form = {
   name: '', description: '', ownerLabel: '',
-  envType: 'QA', baseUrl: '', accessMode: '',
+  envType: 'QA', version: '', baseUrl: '', accessMode: '',
   allowedHosts: '', authorizationConfirmed: false, readOnly: true,
   credentialUser: '', credentialPassword: '',
 };
@@ -71,7 +72,7 @@ export function OnboardingWizard() {
   function canProceed(current: number): boolean {
     if (current === 1) return form.name.trim().length >= 2;
     if (current === 2) {
-      if (!form.envType || !form.baseUrl.trim() || !form.accessMode || hostFromUrl(form.baseUrl) === '') return false;
+      if (!form.envType || !form.version.trim() || !form.baseUrl.trim() || !form.accessMode || hostFromUrl(form.baseUrl) === '') return false;
       // Si el acceso no es público, exigimos credenciales completas en el wizard
       // express (el wizard largo permite dejarlas para después). Así el paso 4
       // (autorización) queda enfocado solo en alcance y consentimiento.
@@ -110,6 +111,7 @@ export function OnboardingWizard() {
           priorityModules: [],
           environments: [{
             type: form.envType,
+            version: form.version.trim(),
             baseUrl: form.baseUrl.trim(),
             accessMode: form.accessMode,
             authorizationConfirmed: form.authorizationConfirmed,
@@ -155,7 +157,7 @@ export function OnboardingWizard() {
       </p>
       <ul className="wizard-bullets">
         <li><strong>1.</strong> Dinos cuál es la aplicación y quién eres.</li>
-        <li><strong>2.</strong> Declara el entorno que vas a probar (URL base, tipo, forma de acceso).</li>
+        <li><strong>2.</strong> Declara el entorno que vas a probar (versión, URL base, tipo y forma de acceso).</li>
         <li><strong>3.</strong> Define el alcance (qué dominios AutoQA puede visitar) y confirma que estás autorizado.</li>
         <li><strong>4.</strong> Revisa y crea el proyecto.</li>
       </ul>
@@ -188,6 +190,10 @@ export function OnboardingWizard() {
         <select value={form.envType} onChange={e => update('envType', e.target.value as Form['envType'])}>
           {ENV_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
+      </label>
+      <label>Versión
+        <input value={form.version} onChange={e => update('version', e.target.value)}
+               placeholder="1.4.2" maxLength={120} required/>
       </label>
       <label>URL base
         <input type="url" value={form.baseUrl} onChange={e => update('baseUrl', e.target.value)}
@@ -257,6 +263,7 @@ export function OnboardingWizard() {
           {ENV_TYPES.find(t => t.value === form.envType)?.label} · {form.baseUrl} ·{' '}
           {ACCESS_MODES.find(m => m.value === form.accessMode)?.label}
         </dd></div>
+        <div><dt>Versión</dt><dd>{form.version.trim()}</dd></div>
         <div><dt>Dominios</dt><dd>
           <ul>
             {(form.allowedHosts.trim() || defaultHost).split(/\r?\n|,/).map(h => h.trim()).filter(Boolean)

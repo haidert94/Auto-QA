@@ -123,6 +123,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>}
           </dd><span className="detail-copy-notice" role="status">{copied ? 'URL copiada.' : copyError}</span></div>
+          <div><dt>Versión</dt><dd>{environment.version ?? 'Pendiente de registrar'}</dd></div>
           <div><dt>Dominios autorizados</dt><dd className="detail-tags">{environment.allowedHosts.length
             ? environment.allowedHosts.map(host => <code key={host}>{host}</code>) : <span className="muted">Sin dominios declarados</span>}</dd></div>
           <div><dt>Equipo responsable</dt><dd>{project.ownerLabel ?? 'Sin responsable declarado'}</dd></div>

@@ -40,6 +40,7 @@ export type Permission = { resource: string; action: string; allowed: boolean };
 export type Environment = {
   id: string;
   type: EnvironmentType | null;
+  version: string | null;
   baseUrl: string | null;
   accessMode: AccessMode | null;
   authorizationConfirmed: boolean;
@@ -82,6 +83,7 @@ export type Project = ProjectSummary & {
 export type EnvironmentForm = {
   id?: string;
   type: EnvironmentType | '';
+  version: string;
   baseUrl: string;
   accessMode: AccessMode | '';
   authorizationConfirmed: boolean;
@@ -114,6 +116,7 @@ export function environmentForm(environment?: Environment): EnvironmentForm {
   return {
     id: environment?.id,
     type: environment?.type ?? '',
+    version: environment?.version ?? '',
     baseUrl: environment?.baseUrl ?? '',
     accessMode: environment?.accessMode ?? '',
     authorizedAt: environment?.authorizedAt,
@@ -186,6 +189,7 @@ export function environmentPayload(environment: EnvironmentForm) {
   return {
     id: environment.id,
     type: environment.type || undefined,
+    version: environment.version.trim() || undefined,
     baseUrl: environment.baseUrl.trim() || undefined,
     accessMode: environment.accessMode || undefined,
     authorizationConfirmed: environment.authorizationConfirmed,

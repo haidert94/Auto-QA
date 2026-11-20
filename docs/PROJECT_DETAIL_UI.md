@@ -14,6 +14,8 @@ La ruta `/projects/[id]` conserva Next.js, las consultas autenticadas de `accoun
 
 Los documentos diferencian declarado, cargado, procesado y validado. Un error de consulta permite reintentar y se distingue de una lista vacía. No se copian del mockup puntajes, nombres, expiraciones JWT ni mensajes de ejecución. El panel oscuro refleja autorizaciones, documentos y evaluación del registro; no es telemetría en vivo ni evidencia de pruebas ejecutadas.
 
+El asistente de creación y el diálogo de entornos solicitan una versión por entorno. Datos muestra la versión del entorno seleccionado o «Pendiente de registrar» para registros anteriores. La API exige la versión para completar el registro y la migración `20261119050000_environment_version` añade el campo.
+
 ## Verificación
 
 En PowerShell desde la raíz: `npm.cmd run test:project-detail`. La suite usa Google Chrome headless y una API HTTP simulada en loopback, con datos sintéticos y puertos temporales; cierra sus procesos al finalizar. Verifica resoluciones de 1440, 768, 390 y 320 px, disposición de columnas, estados documentales, selección de entornos, copiar URL, descarga sin secretos, pestañas/teclado, selección y eliminación de archivos pendientes, guardado a través del formulario/proxy, acceso a roles, error/reintento, ausencia de IPA, visibilidad por plan y borradores. Revisa errores JavaScript y captura escritorio/móvil.
@@ -28,7 +30,7 @@ La cabecera usa los estilos compartidos de `ProjectHeading` y el contenedor gene
 
 La vista `/projects/[id]#escenarios` usa lista/detalle, búsqueda, etiquetas y selección múltiple. `ScenariosPanel` conserva creación, sugerencias y generación existentes; `ScenarioWorkspace` presenta los datos y reutiliza `ScenarioCard` al editar. `ProjectTabs` proporciona un destino de cabecera mediante contexto; la cabecera de escenarios se monta allí con un portal para mantener el orden visual y de teclado (cabecera, pestañas, filtros, lista y detalle). Las otras pestañas conservan su cabecera. El contador procede de la lista recibida.
 
-La eliminación individual y **Eliminar seleccionados** archivan los casos marcados del proyecto. La acción por selección incluye las otras páginas, exige confirmación y envía sus identificadores a `POST /scenarios/archive`. Los casos archivados se excluyen del catálogo, la preparación, las nuevas ejecuciones y las variantes de compatibilidad. Los resultados y las evidencias permanecen en Reporte. El despliegue requiere la migración `20261119040000_scenario_archive` y actualizar Explorer.
+La eliminación individual y **Eliminar seleccionados** archivan los casos marcados del proyecto. La acción por selección incluye las otras páginas, exige confirmación y envía sus identificadores a `POST /scenarios/archive`. Los casos archivados se excluyen del catálogo, la preparación, las nuevas ejecuciones y las variantes de compatibilidad. Los resultados y las evidencias permanecen en Reportes. El despliegue requiere la migración `20261119040000_scenario_archive` y actualizar Explorer.
 
 El endpoint existente de escenarios aporta pasos, etiquetas y requisito; el historial `/runs` aporta fechas, estados y duraciones. Se toma la ejecución más reciente por fecha. En cola, en curso, fallo, bloqueo, omisiones, ausencia de resultados y error de consulta se muestran separadamente. No se inventa un archivo Playwright persistido, fuente documental, cobertura o worker activo. Los filtros usan presencia de resultados, porque la API no expone una clasificación persistida de «automatizado» frente a «borrador».
 
@@ -54,7 +56,7 @@ El indicador sobre el visor consulta `GET /projects/:projectId/runs/activity` mi
 
 `npm.cmd run test:project-detail` también cubre contrato `filename/code`, HTML recibido presentado como texto, selección de archivos con teclado, copia (normalizando los saltos de línea del portapapeles Windows), pantalla completa, ZIP con CRC válido, rutas seguras y contenido idéntico al contrato recibido, configuración y notas, ausencia de credenciales del proyecto, revisión sin falsos validados, confirmación/cancelación, rechazo de cuota, respuestas malformadas, fallos/reintentos, invalidación de caché, lista vacía, bloqueo de borradores y ancho/cabecera común a 1920, 1440, 768, 390 y 320 px. Guarda `project-automation-desktop.png` y `project-automation-mobile.png`. La API de esta prueba es simulada; no verifica la ejecución de un worker real ni compila los specs descargados.
 
-## Pestaña Reporte
+## Pestaña Reportes
 
 `ExecutionReport` usa la cabecera y ancho comunes y carga el historial cuando se abre la pestaña. `GET /runs?view=report` excluye las canceladas antes de aplicar el límite de 100 registros y conserva los guards, el alcance y los campos `targetBrowser`, `targetDevice` y `targetProvider`. No cambia el esquema ni requiere migraciones. El catálogo de escenarios aporta únicamente etiquetas actuales; no se presentan como etiquetas históricas. Un fallo de etiquetas no bloquea la lectura del historial. Un error del historial o un 403 se distingue de una respuesta vacía.
 

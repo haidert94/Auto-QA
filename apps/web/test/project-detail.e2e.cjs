@@ -19,7 +19,7 @@ const account = {
   subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { name: 'Pro', capabilities: [{ code: 'BROWSER_TESTS', availability: 'BETA' }] } },
 };
 const environment = {
-  id: '10000000-0000-4000-8000-000000000002', type: 'STAGING', baseUrl: 'https://staging.example.test/checkout',
+  id: '10000000-0000-4000-8000-000000000002', type: 'STAGING', version: '1.4.2-staging', baseUrl: 'https://staging.example.test/checkout',
   accessMode: 'PRIVATE', authorizationConfirmed: true, authorizedAt: '2026-11-17T12:00:00Z',
   allowedHosts: ['staging.example.test'], allowedPaths: [{ host: 'staging.example.test', path: '/checkout' }],
   excludedPaths: [{ host: 'staging.example.test', path: '/checkout/delete' }], prohibitedActions: ['Compras reales'],
@@ -29,7 +29,7 @@ let project = {
   id: projectId, name: 'Pasarela Checkout Pagos', status: 'READY', revision: 1, ownerLabel: 'Equipo de pagos',
   description: 'Validación de transacciones, contratos API y flujos de checkout en un entorno autorizado.',
   priorityModules: ['Checkout', 'Contratos API'], missingRequirements: [],
-  environments: [environment, { ...environment, id: '10000000-0000-4000-8000-000000000003', type: 'QA', baseUrl: 'https://qa.example.test/', authorizationConfirmed: false, hasCredentials: false }],
+  environments: [environment, { ...environment, id: '10000000-0000-4000-8000-000000000003', type: 'QA', version: '1.4.1-qa', baseUrl: 'https://qa.example.test/', authorizationConfirmed: false, hasCredentials: false }],
   roles: [{ name: 'Tester QA', description: 'Validación del checkout sandbox.', secretReference: 'vault:synthetic-private-reference',
     permissions: [{ resource: 'checkout', action: 'read', allowed: true }, { resource: 'payments', action: 'delete', allowed: false }] }],
   executionSettings: { browser: 'CHROMIUM', maxPages: 10 },
@@ -1087,7 +1087,7 @@ async function verifyAutomation(page, screenshots) {
 async function verifyRunReport(page, screenshots) {
   reportMode = true;
   const initialQueues = queuedRequests.length;
-  await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
+  await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
   const section = page.getByRole('region', { name: 'Reporte de ejecuciones', exact: true });
   const table = section.getByRole('table', { name: 'Ejecuciones registradas', exact: true });
   await expect(table.getByRole('row')).toHaveCount(8);
@@ -1187,7 +1187,7 @@ async function verifyRunReport(page, screenshots) {
     await page.setViewportSize({ width, height: 1000 });
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
     const before = await page.locator('.app-shell-body').boundingBox();
-    await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
+    await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
     await expect(table.getByRole('row')).toHaveCount(6);
     const after = await page.locator('.app-shell-body').boundingBox();
     assert.equal(before.x, after.x); assert.equal(before.width, after.width);
@@ -1198,7 +1198,7 @@ async function verifyRunReport(page, screenshots) {
   await page.getByRole('link', { name: 'Nueva ejecución →', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Automatización', exact: true })).toHaveAttribute('aria-selected', 'true');
   assert.equal(queuedRequests.length, initialQueues, 'Nueva ejecución navega al flujo de preparación, sin lanzar trabajos.');
-  await page.getByRole('tab', { name: 'Reporte', exact: true }).click();
+  await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
   historyFail = true;
   await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
   await expect(section.getByText('No se pudo consultar el historial de ejecuciones.', { exact: true })).toBeVisible();
@@ -1369,6 +1369,52 @@ async function verifyArchiveScenarios(page) {
   console.log('PASS archivar casos marcados en páginas distintas conserva los demás escenarios y requiere confirmación. API simulada.');
 }
 
+async function verifyEnvironmentVersion(page, website) {
+  const previous = project;
+  const initialSaves = saveCount;
+  project = { ...project, environments: [project.environments[0], { ...project.environments[1], version: null }] };
+  try {
+    await page.goto(`${website}/projects/${projectId}`);
+    const fields = page.locator('.detail-fields');
+    await expect(fields.getByText('1.4.2-staging', { exact: true })).toBeVisible();
+    await page.getByLabel('Entorno seleccionado').selectOption(project.environments[1].id);
+    await expect(fields.getByText('Pendiente de registrar', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Modificar', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Entornos y alcance' });
+    const version = dialog.getByLabel('Versión', { exact: true }).nth(1);
+    await expect(version).toHaveAttribute('required', '');
+    const save = dialog.getByRole('button', { name: 'Guardar cambios', exact: true });
+    await save.click();
+    await expect(dialog).toBeVisible();
+    assert.equal(saveCount, initialSaves);
+    await version.fill(' 1.5.0-qa ');
+    await save.click();
+    await expect(dialog).not.toBeVisible();
+    await expect(fields.getByText('1.5.0-qa', { exact: true })).toBeVisible();
+    assert.equal(project.environments[1].version, '1.5.0-qa');
+
+    await page.goto(website + '/onboarding');
+    const next = page.getByRole('button', { name: 'Siguiente', exact: true });
+    await next.click();
+    await page.getByLabel('Nombre de la aplicación', { exact: true }).fill('Proyecto de versión');
+    await next.click();
+    await page.getByLabel('URL base', { exact: true }).fill('https://qa.example.test/');
+    await page.getByLabel('Modo de acceso').selectOption('PUBLIC');
+    await expect(next).toBeDisabled();
+    await page.getByLabel('Versión', { exact: true }).fill('1.5.0');
+    await expect(next).toBeEnabled();
+    await next.click();
+    await page.getByRole('checkbox', { name: /Confirmo que soy dueño/ }).check();
+    await next.click();
+    await expect(page.getByText('1.5.0', { exact: true })).toBeVisible();
+  } finally {
+    project = previous;
+    saveCount = initialSaves;
+  }
+  await page.goto(`${website}/projects/${projectId}`);
+  console.log('PASS versión por entorno obligatoria en el asistente, editable y visible en Datos. API simulada.');
+}
+
 async function run() {
   const apiPort = await listen(api);
   const reservation = createServer();
@@ -1396,7 +1442,7 @@ async function run() {
     const page = await context.newPage();
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
-    await page.goto(`${website}/projects/${projectId}`);
+    await verifyEnvironmentVersion(page, website);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);
     await verifySavedAutomationAfterReload(page);

@@ -6,13 +6,14 @@ import {
   type EnvironmentForm, type ExecutionForm, type RoleForm,
 } from './onboarding';
 
-export function TextField({ label, value, onChange, maxLength, required, placeholder, multiline }: {
+export function TextField({ label, value, onChange, maxLength, required, placeholder, pattern, multiline }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   maxLength?: number;
   required?: boolean;
   placeholder?: string;
+  pattern?: string;
   multiline?: boolean;
 }) {
   return (
@@ -20,7 +21,7 @@ export function TextField({ label, value, onChange, maxLength, required, placeho
       {label}
       {multiline
         ? <textarea rows={3} {...{ value, required, maxLength, placeholder }} onChange={event => onChange(event.target.value)} />
-        : <input {...{ value, required, maxLength, placeholder }} onChange={event => onChange(event.target.value)} />}
+        : <input {...{ value, required, maxLength, placeholder, pattern }} onChange={event => onChange(event.target.value)} />}
     </label>
   );
 }
@@ -46,9 +47,10 @@ function RemoveButton({ onClick, children }: { onClick: () => void; children: Re
   return <button type="button" className="secondary" onClick={onClick}>{children}</button>;
 }
 
-export function EnvironmentFields({ index, value, writeModeRef, onChange, onRemove }: {
+export function EnvironmentFields({ index, value, writeModeRef, requireVersion = true, onChange, onRemove }: {
   index: number;
   writeModeRef?: Ref<HTMLInputElement>;
+  requireVersion?: boolean;
   value: EnvironmentForm;
   onChange: (value: EnvironmentForm) => void;
   onRemove: () => void;
@@ -73,6 +75,9 @@ export function EnvironmentFields({ index, value, writeModeRef, onChange, onRemo
         <SelectField label="Modo de acceso" value={value.accessMode} options={accessModes}
           onChange={next => change('accessMode', next, true)} />
       </div>
+      <TextField label={requireVersion ? 'Versión' : 'Versión (obligatoria para completar el registro)'}
+        required={requireVersion} pattern=".*\S.*" maxLength={120} value={value.version}
+        placeholder="1.4.2" onChange={next => change('version', next)} />
       <TextField label="URL base HTTPS" maxLength={2048} value={value.baseUrl}
         placeholder="https://qa.ejemplo.com/portal" onChange={next => change('baseUrl', next, true)} />
       <TextField label="Dominios permitidos, uno por línea" value={value.allowedHosts}

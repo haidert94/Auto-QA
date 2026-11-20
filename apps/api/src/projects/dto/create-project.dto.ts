@@ -62,6 +62,10 @@ class EnvironmentDto {
   type?: EnvironmentType;
 
   @optional()
+  @text(120)
+  version?: string;
+
+  @optional()
   @text(2048)
   baseUrl?: string;
 
