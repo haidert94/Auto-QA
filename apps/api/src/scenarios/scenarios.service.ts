@@ -11,6 +11,7 @@ import { automationSignature, currentAutomation, prepareWithAgent, type Prepared
 import { ASSERTION_INSTRUCTION } from '../automation/agents/agent-types';
 import { generateSpec, hasPlaywrightAssertion, readGeneratorSteps, suggestedFilename } from './playwright-generator';
 import { buildTestSetPdf, buildTestSetXlsx, type ExportScenario } from './scenario-export';
+import { groupSimilarSteps, type StepOccurrence } from './step-similarity';
 
 type ScenarioForAutomation = Parameters<typeof currentAutomation>[0] & { id: string };
 
@@ -387,6 +388,39 @@ export class ScenariosService {
     }
     const bytes = await buildTestSetXlsx(projectName, items);
     return { bytes, filename: `set-pruebas-${stamp}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+  }
+
+  // Indicadores de duplicación de pasos: agrupa pasos iguales o muy
+  // parecidos (umbral 0.85 de Jaccard sobre tokens normalizados) entre
+  // escenarios activos. La pestaña Calidad y el formulario de escenarios
+  // usan este resultado para evitar que el usuario registre dos veces el
+  // mismo paso. Se limita a los primeros 40 grupos para que la respuesta
+  // quepa en el payload sin paginar.
+  async insights(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const scenarios = await this.prisma.testScenario.findMany({
+      where: { projectId, archivedAt: null },
+      orderBy: { title: 'asc' },
+      select: { id: true, title: true, steps: true },
+    });
+    const occurrences: StepOccurrence[] = [];
+    let totalSteps = 0;
+    for (const scenario of scenarios) {
+      const steps = readGeneratorSteps(scenario.steps);
+      for (const step of steps) {
+        totalSteps++;
+        occurrences.push({ scenarioId: scenario.id, scenarioTitle: scenario.title, ordinal: step.ordinal, text: step.action });
+      }
+    }
+    const groups = groupSimilarSteps(occurrences, 0.85).slice(0, 40);
+    const duplicatedSteps = groups.reduce((sum, group) => sum + group.occurrences.length, 0);
+    return {
+      scenarios: scenarios.length,
+      steps: totalSteps,
+      duplicateGroups: groups.length,
+      duplicatedSteps,
+      groups,
+    };
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {

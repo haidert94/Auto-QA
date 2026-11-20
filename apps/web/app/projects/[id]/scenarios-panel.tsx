@@ -14,6 +14,7 @@ import { IPA_AUTOMATION_THRESHOLD } from './ipa-hero';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader, useScenarioSuite } from './project-tabs';
 import { ScenarioExport } from './scenario-export';
+import { normalizeStepText } from './scenario-insights';
 import { isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioWorkspace } from './scenario-workspace';
 
@@ -390,7 +391,19 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           {requirement.externalKey ? `[${requirement.externalKey}] ` : ''}{requirement.title}</option>)}
       </select></label>
       <label>Resultado esperado (opcional)<textarea value={expectedResult} onChange={event => setExpectedResult(event.target.value)} maxLength={2000} rows={2} /></label>
-      <label>Primer paso<input value={firstAction} onChange={event => setFirstAction(event.target.value)} maxLength={1000} /></label>
+      <label>Primer paso<input value={firstAction} onChange={event => setFirstAction(event.target.value)} maxLength={1000} />
+        {(() => {
+          // Aviso de duplicado: si el usuario está escribiendo un paso que ya
+          // existe (normalización idéntica) en otro escenario, listamos los
+          // escenarios que lo contienen para que decida reutilizar antes de
+          // crear otro escenario con el mismo paso.
+          const normalized = normalizeStepText(firstAction);
+          if (!normalized || normalized.length < 3) return null;
+          const matches = (items ?? []).filter(item => (item.steps ?? []).some(step => normalizeStepText(step.action) === normalized));
+          if (!matches.length) return null;
+          return <small className="scenario-duplicate-hint" role="status">Este paso ya aparece en: {matches.slice(0, 3).map(m => m.title).join(' · ')}{matches.length > 3 ? ` y ${matches.length - 3} más` : ''}.</small>;
+        })()}
+      </label>
       <div className="actions"><button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear escenario'}</button>
         <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancelar</button></div>
     </form>}

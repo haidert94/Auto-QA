@@ -86,3 +86,13 @@
   .quality-evaluation, .quality-audits, .quality-history { break-inside: avoid; }
   .quality-score-ring { print-color-adjust: exact; }.quality-progress { print-color-adjust: exact; }
 }
+
+.quality-duplicates { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.quality-duplicates > li { border: 1px solid var(--line); padding: 10px 12px; border-radius: 3px; background: var(--surface); }
+.quality-duplicate-head { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.quality-duplicate-head strong { font: 500 12px/1.4 var(--mono); color: var(--ink); }
+.quality-duplicate-head span { color: var(--muted); font: 400 10px/1.4 var(--mono); }
+.quality-duplicates ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.quality-duplicates ul li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: 11px; }
+.quality-duplicates ul li small { color: var(--muted); font: 400 10px/1.4 var(--mono); }
+.scenario-duplicate-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }

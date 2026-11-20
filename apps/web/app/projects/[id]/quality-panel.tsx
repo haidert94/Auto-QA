@@ -11,6 +11,7 @@ import { hasRunActivity, readRunActivity, useReportActivity } from './run-activi
 import { REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
 import { levelFor, type IpaSummary } from './ipa-hero';
 import { dateText, durationText, runLabels } from './run-report-data';
+import { useScenarioInsights } from './scenario-insights';
 
 type Ipa = IpaSummary & {
   documents?: { declared: number; uploaded: number; processed: number; validated: number };
@@ -51,6 +52,7 @@ export function QualityPanel({ project }: { project: Project }) {
   const [refresh, setRefresh] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const insights = useScenarioInsights(project.id, !!header?.active, refresh);
 
   useEffect(() => {
     if (!header?.active) return;
@@ -172,7 +174,22 @@ export function QualityPanel({ project }: { project: Project }) {
           </details>)}</div><Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
       </EvaluationCard>
     </div>
-    <section className="quality-audits" aria-label="Auditorías Lighthouse registradas"><header><h2><span>03 //</span> Auditorías Lighthouse</h2><Link href={`/projects/${project.id}/performance`}>Ver auditorías y configuración →</Link></header>
+    <section className="quality-audits" aria-label="Pasos duplicados entre escenarios">
+      <header><h2><span>03 //</span> Pasos duplicados</h2>
+        <small>{insights.data ? `${insights.data.duplicateGroups} grupos · ${insights.data.duplicatedSteps}/${insights.data.steps} pasos repetidos` : insights.loading ? 'Consultando…' : '—'}</small></header>
+      {insights.loading ? <p role="status">Analizando pasos…</p>
+        : insights.error ? <p className="muted">{insights.error}</p>
+        : !insights.data || !insights.data.groups.length ? <p className="muted">No se detectaron pasos duplicados entre los escenarios activos. Buen trabajo.</p>
+        : <ol className="quality-duplicates">{insights.data.groups.slice(0, 10).map(group => <li key={group.normalized}>
+          <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
+            <span>{group.occurrences.length} pasos · {group.scenarioCount} escenarios</span></div>
+          <ul>{group.occurrences.slice(0, 6).map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
+            <Link href={`/projects/${project.id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
+            <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}
+            {group.occurrences.length > 6 && <li className="muted">y {group.occurrences.length - 6} más…</li>}</ul>
+        </li>)}</ol>}
+    </section>
+    <section className="quality-audits" aria-label="Auditorías Lighthouse registradas"><header><h2><span>04 //</span> Auditorías Lighthouse</h2><Link href={`/projects/${project.id}/performance`}>Ver auditorías y configuración →</Link></header>
       {audits.loading ? <p role="status">Consultando auditorías…</p> : audits.error ? <p className="muted">{audits.error}</p>
         : <>{lastAudit && <p>Última solicitud: {runLabels[lastAudit.status]} · {dateText(lastAudit.createdAt)}</p>}
           {completedAudit ? <><div className="quality-audit-values">{([['performanceScore', 'Performance'], ['accessibilityScore', 'Accesibilidad'], ['bestPracticesScore', 'Buenas prácticas'], ['seoScore', 'SEO']] as const).map(([key, label]) => <div key={key}><span>{label}</span><strong>{completedAudit[key] ?? '—'}<small>/100</small></strong></div>)}</div>

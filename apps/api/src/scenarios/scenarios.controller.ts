@@ -26,6 +26,13 @@ export class ScenariosController {
     return this.service.listRequirements(projectId, workspace);
   }
 
+  // Indicadores sobre los escenarios del proyecto: pasos duplicados o muy
+  // parecidos agrupados por normalización (con fuzzy match de Jaccard).
+  @Get('insights')
+  insights(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.insights(projectId, workspace);
+  }
+
   // Set de pruebas en PDF o XLSX. ids opcional separado por coma: si no
   // viene, exporta TODOS los escenarios activos del proyecto.
   @Get('export')
