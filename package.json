@@ -22,7 +22,7 @@
     "test:scenarios": "npm --workspace apps/api run build && node --test apps/api/test/scenarios.test.cjs",
     "test:screenshot-storage": "npm --workspace apps/api run build && node --test apps/api/test/screenshot-storage.test.cjs",
     "test:playwright-generator": "npm --workspace apps/api run build && node --test apps/api/test/playwright-generator.test.cjs",
-    "test:runs": "npm --workspace apps/api run build && node --test apps/api/test/playwright-generator.test.cjs apps/api/test/screenshot-storage.test.cjs",
+    "test:runs": "npm --workspace apps/api run build && npm --workspace apps/explorer run build && node --test apps/api/test/playwright-generator.test.cjs apps/api/test/screenshot-storage.test.cjs apps/explorer/test/execution-cancellation.test.cjs apps/explorer/test/execution-runner.test.cjs",
     "test:readiness": "npm --workspace apps/api run build && node --test apps/api/test/readiness.test.cjs",
     "test:icsp": "npm --workspace apps/api run build && node --test apps/api/test/icsp-calculator.test.cjs",
     "test:roles": "npm --workspace apps/api run build && node --test apps/api/test/roles.test.cjs",

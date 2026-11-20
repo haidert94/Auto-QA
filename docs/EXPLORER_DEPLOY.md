@@ -196,7 +196,14 @@ sudo -u autoqa npm --workspace apps/explorer run build
 systemctl restart autoqa-explorer.service
 ```
 
-Las migraciones de Prisma las corre el que despliega el API, no el worker.
+Si cambian las dependencias, instala las versiones del archivo de bloqueo con `sudo -u autoqa npm ci --include=dev` antes de compilar. Si cambia Playwright o faltan motores, instala los binarios con el CLI de esa misma versión desde la raíz del repositorio.
+
+```bash
+sudo -u autoqa env PLAYWRIGHT_BROWSERS_PATH=/var/lib/autoqa/playwright-browsers \
+  node node_modules/@playwright/test/cli.js install chromium firefox webkit
+```
+
+Explorer usa ese CLI desde el repositorio para las pruebas que prepara en un directorio temporal. Las migraciones de Prisma las corre el que despliega el API, no el worker.
 
 ## Observabilidad y troubleshooting
 

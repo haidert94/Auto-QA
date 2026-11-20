@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
-import { capabilityFor, type CatalogPlan } from './plan-capabilities';
+import { availability, capabilityFor, type CatalogPlan } from './plan-capabilities';
 import { browserMinutesLimit } from './browser-minutes';
 
 export type RunRequest =
@@ -22,7 +22,14 @@ export function assertRunQuota(plan: CatalogPlan, request: RunRequest,
 
   if (request.kind === 'BROWSER') {
     const capability = capabilityFor(plan, 'BROWSER_TESTS');
-    if (!capability?.browsers.includes(request.browser)) throw new ForbiddenException('Navegador fuera del plan.');
+    if (!capability) throw new ForbiddenException('Navegador fuera del plan.');
+    if (!capability.browsers.includes(request.browser)) {
+      const crossBrowser = capabilityFor(plan, 'CROSS_BROWSER');
+      const state = crossBrowser && availability(crossBrowser);
+      if ((state !== 'OPERATIONAL' && state !== 'BETA') || !crossBrowser?.browsers.includes(request.browser)) {
+        throw new ForbiddenException('Navegador fuera del plan.');
+      }
+    }
     if (!positiveInteger(request.browserSeconds)) throw new BadRequestException('Duración de navegador inválida.');
     const monthlyMinutes = browserMinutesLimit(plan.code, capability);
     if (monthlyMinutes !== null && counters.browserSeconds + request.browserSeconds > monthlyMinutes * 60) {

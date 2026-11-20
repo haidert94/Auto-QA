@@ -8,7 +8,7 @@ export class CreateRunDto {
 
   @IsOptional() @IsDateString() writeAuthorizationAt?: string;
 
-  // Motor de Playwright. Default CHROMIUM si se omite.
+  // Motor de Playwright. Si se omite, se usa la variante del escenario o Chromium.
   @IsOptional() @IsIn(SUPPORTED_BROWSERS) targetBrowser?: typeof SUPPORTED_BROWSERS[number];
 
   // Preset de dispositivo de Playwright (p. ej. "iPhone 13"). Si se omite,

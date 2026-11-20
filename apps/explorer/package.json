@@ -8,6 +8,7 @@
     "start": "node dist/explorer/src/index.js"
   },
   "dependencies": {
+    "@playwright/test": "^1.65.1",
     "@prisma/client": "^6.9.0",
     "playwright-core": "^1.65.1"
   },

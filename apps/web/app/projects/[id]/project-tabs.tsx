@@ -149,6 +149,17 @@ export function ProjectTabs({
     }
   }
 
+  function closeSuite() {
+    setSuiteOpen(false);
+    setRunSelection(null);
+  }
+
+  function viewSuiteReport() {
+    closeSuite();
+    select('reporte');
+    requestAnimationFrame(() => document.getElementById(`${tabGroup}-reporte-tab`)?.focus());
+  }
+
   return (
     <ScenarioSuiteContext.Provider value={suiteContext}>
     <ScenarioHeaderContext.Provider value={scenarioHeader}>
@@ -195,7 +206,7 @@ export function ProjectTabs({
       ))}
       {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs}
         control={suiteControl} open={suiteOpen} onHide={() => setSuiteOpen(false)}
-        onClose={() => { setSuiteOpen(false); setRunSelection(null); }} onRunningChange={setSuiteRunning}
+        onClose={closeSuite} onViewReport={viewSuiteReport} onRunningChange={setSuiteRunning}
         onRunsChanged={() => setHistoryVersion(version => version + 1)}
         onProgress={setSuiteProgress} onTrackingWarning={setSuiteTrackingWarning} />}
     </ExplorationHeaderContext.Provider>

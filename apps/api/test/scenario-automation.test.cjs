@@ -5,6 +5,7 @@ const { ScenariosService } = require('../dist/scenarios/scenarios.service');
 const { RunsService } = require('../dist/runs/runs.service');
 const { RunsController } = require('../dist/runs/runs.controller');
 const { UsageService } = require('../dist/commerce/usage.service');
+const { assertRunQuota } = require('../dist/commerce/usage-quotas');
 const { IcspService } = require('../dist/icsp/icsp.service');
 const { ReportsService } = require('../dist/reports/reports.service');
 const { REPORT_SCENARIO_SCOPE } = require('../dist/runs/run-report-policy');
@@ -49,11 +50,12 @@ function fixture(dispatch, row = { ...sample }, environment = { id: 'qa', author
       async create({ data }) { return JSON.parse(JSON.stringify(data)); },
     },
   };
-  return {
-    row,
-    service: new ScenariosService(prisma, { dispatch }),
-    runs: new RunsService(prisma, { async reserveRun() {} }, {}, {}),
-  };
+  const reservations = [];
+  const usage = { async reserveRun(_organization, _project, _key, request, transaction) {
+    assert.equal(transaction, prisma);
+    reservations.push(request);
+  } };
+  return { row, reservations, service: new ScenariosService(prisma, { dispatch }), runs: new RunsService(prisma, usage, {}, {}) };
 }
 
 test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza sus acciones al encolar', async () => {
@@ -304,6 +306,38 @@ test('Enterprise muestra minutos sin límite y reserva navegador respetando la s
   browser.availability = 'NOT_INCLUDED';
   assert.equal((await usage.summary('test-org')).browser.minutesLimit, 0);
   await assert.rejects(reserve('run-2'), /no está incluida/);
+});
+
+test('reserva y registra el navegador de compatibilidad, con prioridad para la elección explícita', async () => {
+  const { row, runs, reservations } = fixture(async () => {});
+  async function queue(expected, explicit) {
+    const run = await runs.create('project', 'scenario', { environmentId: 'qa', targetBrowser: explicit }, workspace);
+    assert.equal(run.targetBrowser, expected);
+    assert.equal(reservations.at(-1).browser, expected);
+  }
+
+  await queue('CHROMIUM');
+  row.title = '[COMPAT:WEBKIT] Página de inicio accesible';
+  row.tags = ['@compatibility', '@webkit', '@chromium'];
+  await queue('WEBKIT');
+  await queue('CHROMIUM', 'CHROMIUM');
+  row.title = '[COMPAT] Página de inicio accesible';
+  row.tags = ['@compatibility', '@firefox'];
+  await queue('FIREFOX');
+});
+
+test('la cuota admite los motores de compatibilidad solo si están incluidos en el plan', () => {
+  const browser = { code: 'BROWSER_TESTS', availability: 'OPERATIONAL', browsers: ['CHROMIUM'], monthlyLimit: null };
+  const compatibility = { code: 'CROSS_BROWSER', availability: 'OPERATIONAL', browsers: ['CHROMIUM', 'FIREFOX', 'WEBKIT'] };
+  const plan = { code: 'enterprise', parallelRuns: 8, capabilities: [browser, compatibility] };
+  const counters = { running: 0, browserSeconds: 0, performanceRuns: 0 };
+  for (const target of ['FIREFOX', 'WEBKIT']) {
+    const request = { kind: 'BROWSER', browser: target, browserSeconds: 120 };
+    assert.doesNotThrow(() => assertRunQuota(plan, request, counters));
+    assert.throws(() => assertRunQuota({ ...plan, capabilities: [browser] }, request, counters), /Navegador fuera del plan/);
+    assert.throws(() => assertRunQuota({ ...plan, capabilities: [browser, { ...compatibility, availability: 'UPCOMING' }] },
+      request, counters), /Navegador fuera del plan/);
+  }
 });
 
 test('exige una confirmación vigente para encolar cambios con datos de prueba', async () => {

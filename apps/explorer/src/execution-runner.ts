@@ -10,7 +10,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, readGeneratorSteps, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
 import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
@@ -143,9 +143,10 @@ export async function runTestRun(
       excludedPaths: toHarnessPaths(environment.excludedPaths),
       allowWrites: !environment.readOnly,
     };
+    const targetBrowser = claim.targetBrowser ?? 'CHROMIUM';
     const spec = generateHarnessedSpec({
       id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
-    }, harness, { browser: claim.targetBrowser, device: claim.targetDevice });
+    }, harness, { browser: targetBrowser, device: claim.targetDevice });
 
     // Directorio de trabajo aislado; limpiamos al final (éxito o error).
     workdir = await mkdtemp(join(tmpdir(), 'autoqa-run-'));
@@ -154,13 +155,13 @@ export async function runTestRun(
     const configPath = join(workdir, 'playwright.config.ts');
     await mkdir(outputDir, { recursive: true });
     await writeFile(specPath, spec, { encoding: 'utf8' });
-    const { wsEndpoint, error: providerError } = resolveWsEndpoint(claim);
+    const { wsEndpoint, error: providerError } = resolveWsEndpoint({ ...claim, targetBrowser });
     if (providerError) {
       await fail(providerError, 'El proveedor ' + (claim.targetProvider ?? '') + ' no está disponible.');
       return;
     }
     await writeFile(configPath, generatePlaywrightConfig({
-      outputDir, browser: claim.targetBrowser, wsEndpoint,
+      outputDir, browser: targetBrowser, wsEndpoint,
     }), { encoding: 'utf8' });
 
     if (await shouldStop()) {
@@ -191,6 +192,7 @@ export async function runTestRun(
       errorCode: summary.status === 'PASSED' ? null : (summary.errorCode ?? 'test-failed'),
       specText: spec,
       providerSessionUrl,
+      targetBrowser,
     }, {
       status: summary.status,
       durationMs: summary.durationMs,
@@ -211,11 +213,15 @@ type SpawnOutcome = { exitCode: number | null };
 function spawnPlaywright(workdir: string, configPath: string, log: Logger, shouldStop: () => Promise<boolean>): Promise<SpawnOutcome> {
   return new Promise((resolvePromise, rejectPromise) => {
     const windows = process.platform === 'win32';
-    const child = spawn('npx', ['--yes', 'playwright', 'test', '--config', resolve(configPath)], {
+    const cli = require.resolve('@playwright/test/cli');
+    const modules = resolve(dirname(require.resolve('@playwright/test/package.json')), '../..');
+    // La configuración del run se carga desde un directorio temporal fuera de node_modules.
+    const nodePath = [modules, process.env.NODE_PATH].filter(Boolean).join(delimiter);
+    const child = spawn(process.execPath, [cli, 'test', '--config', resolve(configPath)], {
       cwd: workdir,
-      env: { ...process.env, PLAYWRIGHT_HTML_REPORT: '/dev/null' },
+      env: { ...process.env, NODE_PATH: nodePath },
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: windows,
+      windowsHide: true,
       detached: !windows,
     });
     child.stdout.resume();
@@ -346,7 +352,7 @@ async function finishRun(
   prisma: PrismaClient,
   claim: ExecutionClaim,
   startedAt: number,
-  data: Pick<Prisma.TestRunUncheckedUpdateInput, 'status' | 'errorCode' | 'specText' | 'providerSessionUrl'>,
+  data: Pick<Prisma.TestRunUncheckedUpdateInput, 'status' | 'errorCode' | 'specText' | 'providerSessionUrl' | 'targetBrowser'>,
   result?: Omit<Prisma.TestResultUncheckedCreateInput, 'runId' | 'scenarioId'>,
 ): Promise<void> {
   const completedAt = new Date();

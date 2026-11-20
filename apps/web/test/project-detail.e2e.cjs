@@ -144,7 +144,17 @@ function completeFixtureRun(run) {
 
 async function finishFixtureRun(dialog) {
   completeFixtureRun(scenarioRuns.at(-1));
-  await expect(dialog.getByRole('link', { name: 'Ver reporte', exact: true })).toBeVisible({ timeout: 10000 });
+  await expect(dialog.getByRole('button', { name: 'Ver reporte', exact: true })).toBeEnabled({ timeout: 10000 });
+}
+
+async function openSuiteReport(page, dialog) {
+  await dialog.getByRole('button', { name: 'Ver reporte', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const reportTab = page.getByRole('tab', { name: 'Reportes', exact: true });
+  await expect(reportTab).toHaveAttribute('aria-selected', 'true');
+  await expect(reportTab).toBeFocused();
+  await expect(page).toHaveURL(/#reporte$/);
+  await expect(page.getByRole('table', { name: 'Ejecuciones registradas', exact: true })).toBeVisible();
 }
 
 async function listen(server) {
@@ -497,7 +507,8 @@ async function verifyScenarios(page, screenshots) {
   await expect(dialog.getByText('En cola', { exact: true })).toBeVisible();
   assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id, automationId: fixtureSpec(scenarios[0]).automationId }]);
   await finishFixtureRun(dialog);
-  await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+  await openSuiteReport(page, dialog);
+  await page.getByRole('tab', { name: 'Escenarios (4)', exact: true }).click();
   await expect(list.locator('.scenario-result').filter({ hasText: 'Pago sandbox editado' }).getByText('Pasó · 450 ms', { exact: true })).toBeVisible();
   await list.getByRole('checkbox', { name: 'Seleccionar Pago sandbox editado', exact: true }).uncheck();
   await list.getByRole('checkbox', { name: `Seleccionar ${scenarios[1].title}`, exact: true }).check();
@@ -704,8 +715,9 @@ async function verifySuiteProgress(page) {
     assert.equal(queuedRequests.slice(initialQueues).filter(request => request.scenarioId === scenarioA).length, 1);
     assert.ok(queuedRequests.slice(initialQueues).filter(request => request.scenarioId === extra.id).length > 1);
     assert.deepEqual(trackedRunRequests.at(-1), [failed.id]);
-    await expect(dialog.getByRole('link', { name: 'Ver reporte', exact: true })).toBeVisible();
-    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await expect(report).toBeEnabled();
+    await openSuiteReport(page, dialog);
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await expect(indicator.getByText('2 de 3 pruebas finalizadas', { exact: true })).toBeVisible();
     await expect(indicator.getByRole('progressbar')).toHaveAttribute('value', '2');
   } finally {
@@ -718,7 +730,7 @@ async function verifySuiteProgress(page) {
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
-  console.log('PASS Cerrar oculta la suite y la ejecución sigue; Ver reporte se habilita al terminar.');
+  console.log('PASS Cerrar mantiene la suite en seguimiento y Ver reporte abre Reportes cuando termina.');
 }
 
 async function verifyAutomationRunStatus(page) {

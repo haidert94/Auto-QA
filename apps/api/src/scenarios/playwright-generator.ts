@@ -199,6 +199,20 @@ export const SUPPORTED_DEVICES = [
 ] as const;
 
 export const SUPPORTED_BROWSERS = ['CHROMIUM', 'FIREFOX', 'WEBKIT'] as const;
+export type PlaywrightBrowser = typeof SUPPORTED_BROWSERS[number];
+
+export function defaultScenarioBrowser(scenario: { title: string; tags?: readonly string[] | null }): PlaywrightBrowser {
+  const title = scenario.title.toUpperCase();
+  const fromTitle = SUPPORTED_BROWSERS.find(browser => title.startsWith(`[COMPAT:${browser}]`));
+  if (fromTitle) return fromTitle;
+
+  const tags = (scenario.tags ?? []).map(tag => tag.toLowerCase());
+  if (tags.includes('@compatibility')) {
+    const matches = SUPPORTED_BROWSERS.filter(browser => tags.includes('@' + browser.toLowerCase()));
+    if (matches.length === 1) return matches[0];
+  }
+  return 'CHROMIUM';
+}
 
 export const SUPPORTED_PROVIDERS = ['LOCAL', 'BROWSERSTACK'] as const;
 

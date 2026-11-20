@@ -12,6 +12,7 @@ import { RUN_STOP_REQUESTED, RUN_CANCELED_BY_USER } from './run-cancellation';
 import { REPORT_SCENARIO_SCOPE } from './run-report-policy';
 import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
+import { defaultScenarioBrowser } from '../scenarios/playwright-generator';
 import { CreateRunDto } from './dto/create-run.dto';
 
 @Injectable()
@@ -235,6 +236,7 @@ export class RunsService {
       throw new ConflictException('El modo del entorno cambió o falta confirmar los cambios con datos de prueba.');
     }
 
+    const targetBrowser = dto.targetBrowser ?? defaultScenarioBrowser(scenario);
     return this.prisma.$transaction(async tx => {
       const available = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM "TestScenario"
@@ -246,7 +248,7 @@ export class RunsService {
       if (workspace.organizationId && runKey) {
         // El worker liquida el consumo real a partir de la reserva de 120 s.
         await this.usage.reserveRun(workspace.organizationId, projectId, runKey, {
-          kind: 'BROWSER', browser: 'CHROMIUM', browserSeconds: 120,
+          kind: 'BROWSER', browser: targetBrowser, browserSeconds: 120,
         }, tx);
       }
 
@@ -260,7 +262,7 @@ export class RunsService {
           createdByUserId: workspace.userId ?? null,
           automation: prepared ? (prepared as unknown as Prisma.InputJsonValue) : undefined,
           writeAuthorizationAt,
-          targetBrowser: dto.targetBrowser ?? null,
+          targetBrowser,
           targetDevice: dto.targetDevice ?? null,
           targetProvider: dto.targetProvider ?? null,
         },

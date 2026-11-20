@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { defaultScenarioBrowser } from '../../../../../../api/src/scenarios/playwright-generator';
 import { accountFetch, requireAccount, type OrgRole } from '../../../../autoqa-server';
 import { RunsPanel, type EnvironmentOption } from './runs-panel';
 import { scenarioRunEnvironmentError } from '../../../onboarding';
@@ -54,6 +55,7 @@ export default async function ScenarioDetailPage({ params }: { params: Promise<{
     <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
     <h1>Editar escenario</h1>
     <ScenarioEditor initial={{ ...scenario, projectId: id }} requirements={requirements} role={role} />
-    <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} role={role} manual={isManualScenario(scenario)} />
+    <RunsPanel projectId={id} scenarioId={scenario.id} environments={environments} role={role}
+      manual={isManualScenario(scenario)} initialBrowser={defaultScenarioBrowser(scenario)} />
   </section>;
 }

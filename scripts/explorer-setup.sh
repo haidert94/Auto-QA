@@ -116,7 +116,7 @@ log "Instalando los tres motores de Playwright (Chromium + Firefox + WebKit)…"
 # sin necesitar reinstalar.
 sudo -u "${AUTOQA_USER}" env HOME="${REPO_DIR}" \
      PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_DIR}" \
-     bash -lc "cd '${REPO_DIR}' && npx --yes playwright@1.65.1 install chromium firefox webkit"
+     node "${REPO_DIR}/node_modules/@playwright/test/cli.js" install chromium firefox webkit
 
 # --- 7b. k6 (pruebas de carga) ----------------------------------------------
 if ! command -v k6 >/dev/null 2>&1; then

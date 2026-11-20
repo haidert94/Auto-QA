@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { environmentTypes, scenarioRunEnvironmentError, supportsScenarioWrites, type Project } from '../onboarding';
@@ -28,11 +27,11 @@ function resultLabel(state: SuiteState) {
 
 export type ScenarioSuiteControl = { stop: () => Promise<void> };
 
-export function ScenarioRunDialog({ project, role, scenarios, specs, control, open, onHide, onClose, onRunningChange, onRunsChanged, onProgress, onTrackingWarning }: {
+export function ScenarioRunDialog({ project, role, scenarios, specs, control, open, onHide, onClose, onViewReport, onRunningChange, onRunsChanged, onProgress, onTrackingWarning }: {
   project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
   control: Ref<ScenarioSuiteControl>;
-  open: boolean; onHide: () => void; onClose: () => void;
+  open: boolean; onHide: () => void; onClose: () => void; onViewReport: () => void;
   onRunningChange: (running: boolean) => void; onRunsChanged?: () => void;
   onProgress: (results: SuiteResult[]) => void;
   onTrackingWarning: (warning: string) => void;
@@ -162,8 +161,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
         </li>;
       })}</ul>
       <div className="actions">
-        {busy || pending > 0 || !hasReportableRun || hasUnknown ? <button type="button" disabled>Ver reporte</button>
-          : <Link href="#reporte" className="button-like" onClick={onClose}>Ver reporte</Link>}
+        <button type="button" disabled={busy || pending > 0 || !hasReportableRun || hasUnknown} onClick={onViewReport}>Ver reporte</button>
         <button type="button" className="secondary" onClick={close}>Cerrar</button>
       </div>
     </>}

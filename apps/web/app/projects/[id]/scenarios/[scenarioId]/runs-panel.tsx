@@ -80,14 +80,17 @@ function formatDuration(ms: number | null) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-export function RunsPanel({ projectId, scenarioId, environments, role, manual = false }: { projectId: string; scenarioId: string; environments: EnvironmentOption[]; role?: OrgRole; manual?: boolean }) {
+export function RunsPanel({ projectId, scenarioId, environments, role, manual = false, initialBrowser }: {
+  projectId: string; scenarioId: string; environments: EnvironmentOption[]; role?: OrgRole; manual?: boolean;
+  initialBrowser: typeof BROWSER_OPTIONS[number]['value'];
+}) {
   const canRun = !manual && can(role, 'run.execute');
   const [runs, setRuns] = useState<Run[] | null>(null);
   const [envId, setEnvId] = useState(environments[0]?.id ?? '');
   const [confirmed, setConfirmed] = useState(false);
   const environment = environments.find(item => item.id === envId);
   const allowsWrites = environment?.readOnly === false;
-  const [targetBrowser, setTargetBrowser] = useState<'CHROMIUM' | 'FIREFOX' | 'WEBKIT'>('CHROMIUM');
+  const [targetBrowser, setTargetBrowser] = useState(initialBrowser);
   const [targetDevice, setTargetDevice] = useState('');
   const [targetProvider, setTargetProvider] = useState<'LOCAL' | 'BROWSERSTACK'>('LOCAL');
   const [busy, setBusy] = useState(false);
