@@ -283,6 +283,45 @@ test('elimina solo los escenarios seleccionados, sus ejecuciones y sus resultado
   assert.equal((await request(url).then(r => r.json())).length, 2);
 });
 
+test('Reportes conserva una fila por escenario aunque un caso acumule más intentos que el límite del historial', async () => {
+  const projectId = await makeProject();
+  const scenario = { title: 'Inicio de sesión', steps: [{ ordinal: 1, action: 'x' }] };
+  const first = await (await post(projectId, scenario)).json();
+  const second = await (await post(projectId, scenario)).json();
+  const url = `${baseUrl}/projects/${projectId}/runs?view=overview`;
+  const old = await prisma.testRun.create({
+    data: { projectId, scenarioId: second.id, status: 'COMPLETED', createdAt: new Date(0) },
+  });
+  await prisma.testRun.createMany({
+    data: Array.from({ length: 101 }, (_, index) => ({
+      projectId, scenarioId: first.id, status: 'FAILED', createdAt: new Date((index + 1) * 1000),
+    })),
+  });
+  const retry = await prisma.testRun.create({
+    data: { projectId, scenarioId: first.id, status: 'QUEUED', createdAt: new Date(200000) },
+  });
+  await prisma.testRun.create({
+    data: { projectId, scenarioId: second.id, status: 'CANCELED', createdAt: new Date(201000) },
+  });
+  const getOverview = async () => {
+    const response = await request(url);
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const before = await getOverview();
+  assert.equal(before.history.length, 100);
+  assert.equal(before.history.some(run => run.id === old.id), false);
+  assert.deepEqual(before.latest.map(run => [run.id, run.status]), [[retry.id, 'QUEUED'], [old.id, 'COMPLETED']]);
+
+  await prisma.testRun.update({
+    where: { id: retry.id },
+    data: { status: 'COMPLETED', results: { create: { scenarioId: first.id, status: 'PASSED' } } },
+  });
+  const after = await getOverview();
+  assert.deepEqual(after.latest.map(run => [run.id, run.status]), [[retry.id, 'COMPLETED'], [old.id, 'COMPLETED']]);
+  assert.equal(after.latest[0].results[0].status, 'PASSED');
+});
+
 test('GET /scenarios solo lista escenarios del propio proyecto', async () => {
   const projectA = await makeProject();
   const projectB = await makeProject();

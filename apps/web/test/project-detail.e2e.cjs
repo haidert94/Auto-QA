@@ -260,8 +260,17 @@ const api = createServer(async (request, response) => {
       return send(scenarioRuns.filter(run => ids.includes(run.id)));
     }
     const runs = reportMode ? reportRuns : scenarioRuns;
-    const history = requestUrl.searchParams.get('view') === 'report' ? runs.filter(run => run.status !== 'CANCELED') : runs;
-    return reportForbidden ? send({ message: 'Sin permisos' }, 403) : historyFail ? send({ message: 'Historial no disponible' }, 503) : send(history);
+    if (reportForbidden) return send({ message: 'Sin permisos' }, 403);
+    if (historyFail) return send({ message: 'Historial no disponible' }, 503);
+    const view = requestUrl.searchParams.get('view');
+    if (view !== 'overview' && view !== 'report') return send(runs);
+    const recent = runs.filter(run => run.status !== 'CANCELED').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (view === 'report') return send(recent.slice(0, 100));
+    const latest = new Map();
+    for (const run of recent) {
+      if (run.scenarioId && !latest.has(run.scenarioId)) latest.set(run.scenarioId, run);
+    }
+    return send({ latest: [...latest.values()], history: recent.slice(0, 100) });
   }
   if (path === `${base}/runs/${reportRuns[0].id}/trace/${reportRuns[0].results[0].id}`) {
     response.setHeader('Content-Type', 'application/zip'); response.setHeader('Content-Disposition', 'attachment; filename="trace.zip"');
@@ -1105,6 +1114,36 @@ async function verifyRunReport(page, screenshots) {
   await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
   const section = page.getByRole('region', { name: 'Reporte de ejecuciones', exact: true });
   const table = section.getByRole('table', { name: 'Ejecuciones registradas', exact: true });
+  const selector = page.getByLabel('Ejecución del reporte', { exact: true });
+  const filter = section.getByRole('group', { name: 'Estado de ejecución' });
+  const refresh = section.getByRole('button', { name: 'Actualizar reporte', exact: true });
+  const search = section.getByRole('searchbox', { name: 'Buscar ejecuciones' });
+  await expect(selector).toHaveValue('latest');
+  await expect(table.getByRole('row')).toHaveCount(3);
+  await expect(filter.getByRole('button', { name: 'Todos (2)', exact: true })).toBeVisible();
+  const retry = {
+    ...reportRuns[6], id: randomUUID(), createdAt: '2026-11-18T12:08:00Z',
+    status: 'QUEUED', errorCode: null, results: [],
+  };
+  try {
+    reportRuns.push(retry);
+    await refresh.click();
+    const row = table.getByRole('row').filter({ hasText: retry.id.slice(0, 8) });
+    await expect(row.getByText('En cola', { exact: true })).toBeVisible();
+    await search.focus();
+    retry.status = 'COMPLETED';
+    retry.results = [{ ...reportRuns[0].results[0], id: randomUUID(), evidenceKey: null }];
+    await expect(row.getByText('Pasó', { exact: true })).toBeVisible({ timeout: 12000 });
+    await expect(search).toBeFocused();
+    await expect(filter.getByRole('button', { name: 'Todos (2)', exact: true })).toBeVisible();
+    await expect(filter.getByRole('button', { name: 'Exitosos (1)', exact: true })).toBeVisible();
+    await expect(table.getByRole('row')).toHaveCount(3);
+    await expect(table.getByText(reportRuns[6].id.slice(0, 8), { exact: true })).toHaveCount(0);
+  } finally {
+    reportRuns.pop();
+  }
+  await refresh.click();
+  await selector.selectOption('all');
   await expect(table.getByRole('row')).toHaveCount(8);
   await expect(section.getByRole('region', { name: 'Tasa de éxito', exact: true }).getByText('25%', { exact: true })).toBeVisible();
   await expect(section.getByRole('region', { name: 'Tiempo registrado', exact: true }).getByText('4.6 s', { exact: true })).toBeVisible();
@@ -1120,11 +1159,9 @@ async function verifyRunReport(page, screenshots) {
   await page.setViewportSize({ width: 1170, height: 1000 });
   await page.mouse.move(0, 0);
   await page.screenshot({ path: join(screenshots, 'project-runs-desktop.png'), fullPage: true, animations: 'disabled' });
-  const search = section.getByRole('searchbox', { name: 'Buscar ejecuciones' });
   await page.keyboard.press('Control+k'); await expect(search).toBeFocused();
   await search.fill('callback'); await expect(table.getByRole('row')).toHaveCount(4);
   await search.fill('');
-  const filter = section.getByRole('group', { name: 'Estado de ejecución', exact: true });
   await filter.getByRole('button', { name: 'Fallidos (2)', exact: true }).click();
   await expect(table.getByRole('row')).toHaveCount(3);
   await filter.getByRole('button', { name: 'Todos (7)', exact: true }).click();
@@ -1161,16 +1198,16 @@ async function verifyRunReport(page, screenshots) {
   }
   const firstCanceled = reportRuns[4];
   const secondCanceled = reportRuns[5];
-  const selector = page.getByLabel('Ejecución del reporte', { exact: true });
   const firstHistoryItem = section.getByRole('button', { name: 'Seleccionar ejecución ' + firstCanceled.id.slice(0, 8), exact: true });
   await firstHistoryItem.click();
   await expect(detail).toBeVisible();
   firstCanceled.status = 'CANCELED';
   firstCanceled.errorCode = 'canceled-by-user';
   await expect(firstHistoryItem).toHaveCount(0, { timeout: 12000 });
-  await expect(selector).toHaveValue('all');
+  await expect(selector).toHaveValue('latest');
   await expect(selector.locator('option').filter({ hasText: firstCanceled.id.slice(0, 8) })).toHaveCount(0);
   await expect(detail).toHaveCount(0);
+  await selector.selectOption('all');
   await expect(table.getByText(firstCanceled.id.slice(0, 8), { exact: true })).toHaveCount(0);
   await expect(table.getByText(secondCanceled.id.slice(0, 8), { exact: true })).toBeVisible();
   await expect(xmlButton).toBeDisabled();

@@ -73,7 +73,7 @@ export function downloadRunReport(projectId: string, runs: ReportRun[], format: 
   const finalized = runs.filter(run => isReportableRunStatus(run.status));
   if (!finalized.length) return;
   const content = format === 'xml' ? junitXml(projectId, finalized) : JSON.stringify({ projectId, exportedAt: new Date().toISOString(),
-    scope: 'Ejecuciones finalizadas visibles del historial disponible (máximo 100)', runs: finalized.map(run => ({
+    scope: 'Ejecuciones finalizadas visibles en el reporte', runs: finalized.map(run => ({
       id: run.id, scenarioId: run.scenarioId, title: runTitle(run), status: run.status, environmentId: run.environmentId,
       createdAt: run.createdAt, startedAt: run.startedAt, completedAt: run.completedAt, errorCode: run.errorCode,
       targetBrowser: run.targetBrowser ?? null, targetDevice: run.targetDevice ?? null, targetProvider: run.targetProvider ?? null,

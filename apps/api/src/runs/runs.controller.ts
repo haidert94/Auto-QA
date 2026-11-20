@@ -19,7 +19,10 @@ export class RunsController {
     @CurrentWorkspace() workspace: Workspace,
     @Query('view') view?: string,
   ) {
-    if (ids === undefined) return this.service.list(projectId, workspace, undefined, view === 'report');
+    if (ids === undefined) {
+      if (view === 'overview') return this.service.reportOverview(projectId, workspace);
+      return this.service.list(projectId, workspace, undefined, view === 'report');
+    }
     const runIds = typeof ids === 'string' ? ids.split(',') : [];
     if (!runIds.length || runIds.length > 100 || runIds.some(id => !isUUID(id))) {
       throw new BadRequestException('Especifica entre 1 y 100 identificadores válidos de ejecuciones.');

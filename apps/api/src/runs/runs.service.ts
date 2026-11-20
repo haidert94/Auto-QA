@@ -74,12 +74,37 @@ export class RunsService {
 
   async list(projectId: string, workspace: Workspace, runIds?: string[], forReport = false) {
     await this.ensureProject(projectId, workspace);
-    return this.prisma.testRun.findMany({
+    return this.findRuns(this.prisma, projectId, forReport, runIds);
+  }
+
+  async reportOverview(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    return this.prisma.$transaction(async tx => {
+      const current = await tx.$queryRaw<{ id: string }[]>`
+        SELECT newest.id
+        FROM "TestScenario" AS scenario
+        CROSS JOIN LATERAL (
+          SELECT run.id
+          FROM "TestRun" AS run
+          WHERE run."projectId" = ${projectId} AND run."scenarioId" = scenario.id AND run.status <> 'CANCELED'
+          ORDER BY run."createdAt" DESC, run.id DESC
+          LIMIT 1
+        ) AS newest
+        WHERE scenario."projectId" = ${projectId} AND scenario."archivedAt" IS NULL
+      `;
+      const latest = current.length ? await this.findRuns(tx, projectId, true, current.map(run => run.id)) : [];
+      const history = await this.findRuns(tx, projectId, true);
+      return { latest, history };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  private findRuns(prisma: Prisma.TransactionClient, projectId: string, forReport: boolean, runIds?: string[]) {
+    return prisma.testRun.findMany({
       where: {
         projectId, id: runIds ? { in: runIds } : undefined,
         ...(forReport ? { status: { not: 'CANCELED' }, ...REPORT_SCENARIO_SCOPE } : {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: {
         id: true, status: true, scenarioId: true, environmentId: true,
         targetBrowser: true, targetDevice: true, targetProvider: true,
@@ -90,7 +115,7 @@ export class RunsService {
           select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true },
         },
       },
-      take: 100,
+      take: runIds?.length ?? 100,
     });
   }
 

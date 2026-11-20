@@ -13,11 +13,12 @@ import { hasRunActivity, readRunActivity, useReportActivity } from './run-activi
 import { dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
 import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, type RunFilter } from './run-report-views';
 
+type ReportOverview = { latest: ReportRun[]; history: ReportRun[] };
+
 export function ExecutionReport({ project }: { project: Project }) {
   const header = useReportHeader();
   const activity = useReportActivity(project.id, !!header?.active);
-  const { queued, running, stopping } = activity.counts ?? {};
-  const [runs, setRuns] = useState<ReportRun[] | null>(null);
+  const [overview, setOverview] = useState<ReportOverview | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [error, setError] = useState('');
   const [tagsWarning, setTagsWarning] = useState('');
@@ -25,13 +26,18 @@ export function ExecutionReport({ project }: { project: Project }) {
   const [exportError, setExportError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refresh, setRefresh] = useState(0);
-  const [scope, setScope] = useState('all');
+  const [scope, setScope] = useState('latest');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<RunFilter>('all');
   const [tag, setTag] = useState('');
   const [view, setView] = useState<'table' | 'timeline' | 'matrix'>('table');
   const [detailId, setDetailId] = useState<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
+  const latest = overview?.latest ?? [];
+  const history = overview?.history ?? [];
+  const waiting = activity.waiting || latest.some(run => !isReportableRunStatus(run.status))
+    || history.some(run => !isReportableRunStatus(run.status));
+  const refreshOnActivity = waiting ? activity.counts : null;
 
   useEffect(() => {
     if (!header?.active) return;
@@ -39,28 +45,32 @@ export function ExecutionReport({ project }: { project: Project }) {
     const options = { cache: 'no-store' as const, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) };
     setLoading(true); setError(''); setTagsWarning('');
     Promise.allSettled([
-      fetch(`/api/projects/${project.id}/runs?view=report`, options), fetch(`/api/projects/${project.id}/scenarios`, options),
-    ]).then(async ([history, catalog]) => {
-      if (history.status !== 'fulfilled') throw new Error('No se pudo consultar el historial de ejecuciones.');
-      if (!history.value.ok) throw new Error(history.value.status === 403
+      fetch(`/api/projects/${project.id}/runs?view=overview`, options), fetch(`/api/projects/${project.id}/scenarios`, options),
+    ]).then(async ([report, catalog]) => {
+      if (report.status !== 'fulfilled') throw new Error('No se pudo consultar el historial de ejecuciones.');
+      if (!report.value.ok) throw new Error(report.value.status === 403
         ? 'No tienes permiso para consultar este historial o tu plan no lo permite.' : 'No se pudo consultar el historial de ejecuciones.');
-      const data: ReportRun[] = await history.value.json();
+      const data: ReportOverview = await report.value.json();
+      if (!Array.isArray(data?.latest) || !Array.isArray(data?.history)) {
+        throw new Error('No se pudo consultar el historial de ejecuciones.');
+      }
       if (controller.signal.aborted) return;
-      const historyRuns = data.filter(run => run.status !== 'CANCELED');
-      setRuns(historyRuns.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
-      setScope(previous => previous === 'all' || historyRuns.some(run => run.id === previous) ? previous : 'all');
-      setDetailId(previous => historyRuns.some(run => run.id === previous) ? previous : null);
+      setOverview(data);
+      setScope(previous => previous === 'latest' || previous === 'all' || data.history.some(run => run.id === previous)
+        ? previous : 'latest');
+      setDetailId(previous => data.history.some(run => run.id === previous) || data.latest.some(run => run.id === previous)
+        ? previous : null);
       if (catalog.status === 'fulfilled' && catalog.value.ok) {
         const list: ScenarioListItem[] = await catalog.value.json();
         if (!controller.signal.aborted) setScenarios(list);
       } else {
-        setScenarios(null); setTagsWarning('Las etiquetas actuales no están disponibles. El historial sigue visible.');
+        setScenarios(null); setTagsWarning('Las etiquetas actuales no están disponibles.');
       }
     }).catch((reason: unknown) => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No se pudo cargar el reporte.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion, queued, running, stopping]);
+  }, [project.id, header?.active, refresh, activity.historyVersion, refreshOnActivity]);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
       if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'k' || !search.current?.getClientRects().length) return;
@@ -70,7 +80,9 @@ export function ExecutionReport({ project }: { project: Project }) {
     return () => document.removeEventListener('keydown', shortcut);
   }, []);
 
-  const scoped = (runs ?? []).filter(run => scope === 'all' || run.id === scope);
+  const showLatest = scope === 'latest';
+  const scopeLabel = showLatest ? 'escenarios' : 'ejecuciones';
+  const scoped = showLatest ? latest : history.filter(run => scope === 'all' || run.id === scope);
   const stats = reportStatistics(scoped);
   const tags = new Map((scenarios ?? []).map(scenario => [scenario.id, scenario.tags ?? []]));
   const availableTags = [...new Set(scoped.flatMap(run => run.scenarioId ? tags.get(run.scenarioId) ?? [] : []))].sort();
@@ -80,13 +92,12 @@ export function ExecutionReport({ project }: { project: Project }) {
     && (!normalized || [runTitle(run), run.id, run.scenarioId ?? '', run.errorCode ?? '', run.targetBrowser ?? '',
       ...(run.results.map(result => result.errorMessage ?? '')), ...(run.scenarioId ? tags.get(run.scenarioId) ?? [] : [])]
       .join(' ').toLocaleLowerCase('es').includes(normalized)));
-  const selectedRun = scope === 'all' ? null : scoped[0];
+  const selectedRun = showLatest || scope === 'all' ? null : scoped[0];
   const selectedState = selectedRun ? outcome(selectedRun) : null;
-  const detail = (runs ?? []).find(run => run.id === detailId);
+  const detail = scoped.find(run => run.id === detailId);
   const filters = Object.keys(filterLabels) as RunFilter[];
   const finalized = visible.filter(run => isReportableRunStatus(run.status));
-  const hasFinalized = !!runs?.some(run => isReportableRunStatus(run.status));
-  const waiting = activity.waiting || !!runs?.some(run => !isReportableRunStatus(run.status));
+  const hasFinalized = latest.some(run => isReportableRunStatus(run.status)) || history.some(run => isReportableRunStatus(run.status));
   const canGenerate = activity.verified && !waiting && !loading && !error && hasFinalized;
   const downloadDisabled = exporting || !canGenerate || !finalized.length;
   const exportNotice = waiting ? REPORT_WHILE_RUNNING
@@ -113,23 +124,25 @@ export function ExecutionReport({ project }: { project: Project }) {
 
   return <section className="run-report" aria-label="Reporte de ejecuciones">
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary="Historial de ejecuciones, resultados y trazas registradas por escenario. Consulta los datos disponibles y prepara una nueva ejecución."
+      summary="Consulta el estado más reciente de cada escenario y accede a sus ejecuciones anteriores."
       actions={<><details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
         <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
           <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details>
         <a className="button-like" href="#automatizacion"><Play size={14} />Nueva ejecución →</a></>} />, header.element)}
     <div className="run-report-selection">
-      <label>Ejecución<select aria-label="Ejecución del reporte" value={scope} disabled={loading || !!error} onChange={event => { setScope(event.target.value); setDetailId(null); setTag(''); }}>
-        <option value="all">Historial disponible ({runs?.length ?? 0})</option>
-        {(runs ?? []).map(run => <option value={run.id} key={run.id}>{run.id.slice(0, 8)} · {runTitle(run)} · {dateText(run.createdAt)}</option>)}
+      <label>Mostrar<select aria-label="Ejecución del reporte" value={scope} disabled={(loading && !overview) || !!error} onChange={event => { setScope(event.target.value); setDetailId(null); setTag(''); }}>
+        <option value="latest">Último estado por escenario ({latest.length})</option>
+        <option value="all">Historial de ejecuciones</option>
+        {history.map(run => <option value={run.id} key={run.id}>{run.id.slice(0, 8)} · {runTitle(run)} · {dateText(run.createdAt)}</option>)}
       </select></label>
-      <p>{selectedRun ? dateText(selectedRun.createdAt) : 'Últimas ejecuciones devueltas por la API (máximo 100).'}<small>{scoped.length} ejecuciones · {stats.results} resultados registrados</small></p>
-      <span className={`run-report-state run-report-state--${selectedState?.tone ?? 'unknown'}`}>{selectedState?.label ?? 'Historial del proyecto'}</span>
+      <p>{selectedRun ? dateText(selectedRun.createdAt) : showLatest ? 'Última ejecución de cada escenario.' : 'Últimas ejecuciones del proyecto (máximo 100).'}
+        <small>{scoped.length} {scopeLabel} · {stats.results} resultados registrados</small></p>
+      <span className={`run-report-state run-report-state--${selectedState?.tone ?? 'unknown'}`}>{selectedState?.label ?? (showLatest ? 'Estado actual' : 'Historial del proyecto')}</span>
       <button className="run-report-refresh" type="button" aria-label="Actualizar reporte" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={15} /></button>
     </div>
     {exportError && <p className="run-report-warning" role="alert">{exportError}</p>}
-    {loading ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
+    {loading && !overview ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
       : error ? <div className="run-report-message" role="alert"><p className="error">{error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar reporte</button></div>
       : <>
         <div className="run-report-metrics">
@@ -159,22 +172,22 @@ export function ExecutionReport({ project }: { project: Project }) {
           </button>)}</div>
           {availableTags.length > 0 && <div className="run-report-filter-options run-report-tag-options" role="group" aria-label="Etiqueta actual del escenario"><button type="button" aria-pressed={!tag} onClick={() => setTag('')}>Todas las etiquetas</button>
             {availableTags.map(value => <button type="button" key={value} aria-pressed={tag === value} onClick={() => setTag(tag === value ? '' : value)}>{value}</button>)}</div>}
-          <p role="status">{visible.length} visibles de {scoped.length} ejecuciones del ámbito seleccionado.</p>
+          <p role="status">{visible.length} de {scoped.length} {scopeLabel} visibles.</p>
         </section>
         {tagsWarning && <p className="run-report-warning">{tagsWarning}</p>}
         <div className="run-report-content"><div className="run-report-main">
-          {!visible.length ? <div className="run-report-empty"><Activity size={28} /><h3>{runs?.length ? 'No hay ejecuciones que coincidan' : 'Aún no hay ejecuciones registradas'}</h3>
-            <p>{runs?.length ? 'Ajusta los filtros o selecciona otra ejecución.' : 'Los resultados aparecerán después de ejecutar escenarios autorizados.'}</p>
-            {runs?.length ? <button type="button" className="secondary" onClick={() => { setQuery(''); setFilter('all'); setTag(''); setScope('all'); }}>Limpiar filtros del reporte</button> : <a href="#automatizacion">Preparar una ejecución →</a>}</div>
+          {!visible.length ? <div className="run-report-empty"><Activity size={28} /><h3>{scoped.length ? 'No hay ejecuciones que coincidan' : 'Aún no hay ejecuciones registradas'}</h3>
+            <p>{scoped.length ? 'Ajusta los filtros del reporte.' : 'Los resultados aparecerán después de ejecutar escenarios autorizados.'}</p>
+            {scoped.length ? <button type="button" className="secondary" onClick={() => { setQuery(''); setFilter('all'); setTag(''); }}>Limpiar filtros del reporte</button> : <a href="#automatizacion">Preparar una ejecución →</a>}</div>
             : view === 'timeline' ? <RunTimeline runs={visible} onDetail={setDetailId} />
             : view === 'matrix' ? <RunMatrix runs={visible} />
             : <RunsTable projectId={project.id} runs={visible} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
-          <p className="run-report-data-note">Cada fila representa una ejecución registrada. Las etiquetas son las actuales del escenario; no se asumen etiquetas históricas.</p>
+          <p className="run-report-data-note">Las etiquetas corresponden a la configuración actual de cada escenario.</p>
           {canGenerate && <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>}
         </div><aside className="run-report-aside" aria-label="Historial y detalle de ejecuciones">
           {detail && <RunDetail run={detail} projectId={project.id} onClose={() => setDetailId(null)} />}
-          <section className="run-report-history"><header><h2>Historial de últimos runs</h2><span>{Math.min(8, runs?.length ?? 0)} de {runs?.length ?? 0}</span></header>
-            {!runs?.length ? <p>No hay historial disponible.</p> : <ol>{runs.slice(0, 8).map(run => { const status = outcome(run); return <li key={run.id}>
+          <section className="run-report-history"><header><h2>Ejecuciones recientes</h2></header>
+            {!history.length ? <p>No hay historial disponible.</p> : <ol>{history.slice(0, 8).map(run => { const status = outcome(run); return <li key={run.id}>
               <button type="button" aria-pressed={scope === run.id} aria-label={`Seleccionar ejecución ${run.id.slice(0, 8)}`} onClick={() => { setScope(run.id); setDetailId(run.id); setFilter('all'); setTag(''); setQuery(''); }}>
                 <span><code>{run.id.slice(0, 8)}</code><span className={`run-report-state run-report-state--${status.tone}`}>{status.label}</span></span>
                 <strong>{runTitle(run)}</strong><small>{dateText(run.createdAt)} · {durationText(resultDuration(run))}</small>

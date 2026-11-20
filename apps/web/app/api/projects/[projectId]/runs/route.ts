@@ -7,6 +7,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   if (!uuid.test(projectId)) return failure('Proyecto no encontrado.', 404);
   const paramsIn = new URL(request.url).searchParams;
   const ids = paramsIn.get('ids');
-  const search = ids !== null ? `?${new URLSearchParams({ ids })}` : paramsIn.get('view') === 'report' ? '?view=report' : '';
+  const view = paramsIn.get('view');
+  const query = new URLSearchParams();
+  if (ids !== null) query.set('ids', ids);
+  else if (view === 'report' || view === 'overview') query.set('view', view);
+  const search = query.size ? `?${query}` : '';
   return projectProxy(request, '/projects/' + projectId + '/runs' + search);
 }
