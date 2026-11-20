@@ -143,4 +143,10 @@ export class CommerceController {
     this.accounts.limit('admin-activate-ip', ip, 20);
     return this.admin.activate({ email: body.email, plan: body.plan, days: body.days ?? 30 }, token);
   }
+
+  @Post('admin/cleanup-traces') @HttpCode(200)
+  cleanupTraces(@Headers('x-admin-token') token: string | undefined, @Ip() ip: string) {
+    this.accounts.limit('admin-cleanup-traces-ip', ip, 5);
+    return this.admin.cleanupOrphanTraces(token);
+  }
 }

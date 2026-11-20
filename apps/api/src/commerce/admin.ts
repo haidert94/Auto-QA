@@ -1,12 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
+import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
 import { PrismaService } from '../prisma.service';
 
 const tokenPattern = /^[a-f0-9]{64}$/;
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(
+    private readonly db: PrismaService,
+    @Inject(SCREENSHOT_READER) private readonly evidence: ScreenshotReader,
+  ) {}
 
   private requireToken(provided: string | undefined) {
     const expected = process.env.AUTOQA_ADMIN_TOKEN;
@@ -41,5 +45,42 @@ export class AdminService {
       email: user.email, organizationId: organization.id, plan: plan.code,
       status: subscription.status, periodEndsAt: subscription.periodEndsAt,
     };
+  }
+
+  // Limpia TestResult.evidenceKey que apuntan a archivos que ya no existen
+  // en el storage de evidencias. Pasa por lotes para evitar cargar toda la
+  // tabla a la vez. Devuelve conteos para que la UI muestre el impacto.
+  async cleanupOrphanTraces(token: string | undefined) {
+    this.requireToken(token);
+    const batchSize = 500;
+    let cursor: string | undefined;
+    let scanned = 0;
+    let cleared = 0;
+    for (;;) {
+      const batch = await this.db.testResult.findMany({
+        where: { evidenceKey: { not: null } },
+        select: { id: true, evidenceKey: true },
+        orderBy: { id: 'asc' },
+        take: batchSize,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      });
+      if (!batch.length) break;
+      cursor = batch[batch.length - 1].id;
+      const missing: string[] = [];
+      for (const row of batch) {
+        scanned += 1;
+        const bytes = await this.evidence.read(row.evidenceKey!).catch(() => null);
+        if (!bytes || bytes.length === 0) missing.push(row.id);
+      }
+      if (missing.length) {
+        const result = await this.db.testResult.updateMany({
+          where: { id: { in: missing } },
+          data: { evidenceKey: null },
+        });
+        cleared += result.count;
+      }
+      if (batch.length < batchSize) break;
+    }
+    return { scanned, cleared };
   }
 }

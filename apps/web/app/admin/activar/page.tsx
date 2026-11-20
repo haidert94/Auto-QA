@@ -5,8 +5,9 @@
 // sin el token admin.
 
 import { ActivationForm } from './activation-form';
+import { CleanupTracesForm } from './cleanup-traces-form';
 
-export const metadata = { title: 'Activar suscripción · AutoQA', robots: { index: false, follow: false } };
+export const metadata = { title: 'Operaciones admin · AutoQA', robots: { index: false, follow: false } };
 
 export default function AdminActivate() {
   return <main>
@@ -19,6 +20,16 @@ export default function AdminActivate() {
         en el navegador; solo viaja en esta petición.
       </p>
       <ActivationForm/>
+    </section>
+    <section className="panel" style={{ maxWidth: 640, marginTop: 24 }}>
+      <h1>Limpiar trazas huérfanas</h1>
+      <p className="muted">
+        Recorre los <code>TestResult.evidenceKey</code> en la base de datos y
+        los pone a <code>null</code> cuando el archivo ya no está en el storage
+        de evidencias. Útil tras un cambio de runtime o si el worker externo
+        dejó de correr. No borra ningún archivo; solo limpia referencias rotas.
+      </p>
+      <CleanupTracesForm/>
     </section>
   </main>;
 }

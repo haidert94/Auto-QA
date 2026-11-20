@@ -304,8 +304,14 @@ export class RunsService {
     });
     if (!result) throw new NotFoundException('Resultado no encontrado.');
     if (!result.evidenceKey) throw new NotFoundException('Esta ejecución no tiene traza almacenada.');
-    const bytes = await this.evidence.read(result.evidenceKey);
-    if (!bytes) throw new NotFoundException('Traza no disponible en el almacenamiento.');
+    const bytes = await this.evidence.read(result.evidenceKey).catch(() => null);
+    if (!bytes || bytes.length === 0) {
+      // Self-heal: la clave en DB apunta a un archivo que ya no está en el
+      // storage (reemplazo de deploy, worker externo que ya no corre, etc.).
+      // Limpiamos la referencia para que la UI deje de ofrecer la descarga.
+      await this.prisma.testResult.update({ where: { id: resultId }, data: { evidenceKey: null } }).catch(() => {});
+      throw new NotFoundException('Traza no disponible en el almacenamiento.');
+    }
     return bytes;
   }
 
