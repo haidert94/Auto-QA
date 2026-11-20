@@ -74,17 +74,25 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         automatizacion: <AutomationPanel key={project.id} project={project} role={role} />,
         reporte: <ExecutionReport key={project.id} project={project} />,
         historial: (
-          <section className="detail-card" aria-labelledby="project-history-heading">
-            <header className="detail-card__head"><h2 id="project-history-heading">Actividad del proyecto</h2></header>
-            <div className="detail-card__body">
-              <dl className="detail-fields">
-                <div><dt>Creación del proyecto</dt>
-                  <dd><time dateTime={project.createdAt}>{historyDate.format(new Date(project.createdAt))} UTC</time></dd></div>
-                {project.updatedAt !== project.createdAt && <div><dt>Última actualización</dt>
-                  <dd><time dateTime={project.updatedAt}>{historyDate.format(new Date(project.updatedAt))} UTC</time></dd></div>}
-              </dl>
-            </div>
-          </section>
+          <div className="project-overview">
+            <section className="detail-card" aria-labelledby="project-finalized-versions-heading">
+              <header className="detail-card__head"><h2 id="project-finalized-versions-heading">Versiones finalizadas</h2></header>
+              <div className="detail-card__body">
+                <p className="muted">Aún no hay versiones finalizadas registradas.</p>
+              </div>
+            </section>
+            <section className="detail-card" aria-labelledby="project-logs-heading">
+              <header className="detail-card__head"><h2 id="project-logs-heading">Logs</h2></header>
+              <div className="detail-card__body">
+                <dl className="detail-fields">
+                  <div><dt>Creación del proyecto</dt>
+                    <dd><time dateTime={project.createdAt}>{historyDate.format(new Date(project.createdAt))} UTC</time></dd></div>
+                  {project.updatedAt !== project.createdAt && <div><dt>Última actualización</dt>
+                    <dd><time dateTime={project.updatedAt}>{historyDate.format(new Date(project.updatedAt))} UTC</time></dd></div>}
+                </dl>
+              </div>
+            </section>
+          </div>
         ),
         calidad: <QualityPanel key={project.id} project={project} />,
         exploracion: showExploration

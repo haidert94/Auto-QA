@@ -161,13 +161,14 @@ const api = createServer(async (request, response) => {
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
   if (path === base + '/scenarios/requirements') return send([requirement]);
-  if (path === base + '/scenarios/archive' && request.method === 'POST') {
+  if (path === base + '/scenarios/delete-selected' && request.method === 'POST') {
     const chunks = []; for await (const chunk of request) chunks.push(chunk);
     const { scenarioIds } = JSON.parse(Buffer.concat(chunks).toString());
     if (!Array.isArray(scenarioIds) || !scenarioIds.length) return send({ message: 'Selecciona escenarios.' }, 400);
     const previousCount = scenarios.length;
     scenarios = scenarios.filter(scenario => !scenarioIds.includes(scenario.id));
-    return send({ archived: previousCount - scenarios.length });
+    scenarioRuns = scenarioRuns.filter(run => !scenarioIds.includes(run.scenarioId));
+    return send({ deleted: previousCount - scenarios.length });
   }
   if (path === base + '/scenarios') {
     if (request.method === 'POST') {
@@ -194,6 +195,7 @@ const api = createServer(async (request, response) => {
       }
       return send(spec);
     }
+    if (scenario && scenarioPath === scenario.id && request.method === 'GET') return send(scenario);
     if (scenario && scenarioPath === scenario.id && request.method === 'PATCH') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       Object.assign(scenario, JSON.parse(Buffer.concat(chunks).toString())); return send(scenario);
@@ -1319,14 +1321,19 @@ async function verifyQuality(page, screenshots) {
   console.log('PASS calidad: IPA/ICSP y fuentes, ceros y ausencia de resultados, histórico, auditorías registradas, exportación JSON, impresión, permisos/errores independientes, geometría común y móvil. Sin auditorías ni ejecuciones automáticas. API simulada.');
 }
 
-async function verifyArchiveScenarios(page) {
+async function verifyDeleteScenarios(page) {
   const saved = scenarios;
+  const savedRuns = scenarioRuns;
   const initialQueues = queuedRequests.length;
   const cases = Array.from({ length: 12 }, (_, index) => ({
     id: '74000000-0000-4000-8000-' + String(index + 1).padStart(12, '0'),
-    title: 'Caso de archivado ' + (index + 1), tags: [], steps: [],
+    title: 'Caso para eliminar ' + (index + 1), tags: [], steps: [],
   }));
   scenarios = cases;
+  scenarioRuns = cases.slice(0, 2).map(scenario => ({
+    ...savedRuns[0], id: randomUUID(), status: 'COMPLETED',
+    scenarioId: scenario.id, scenario: { id: scenario.id, title: scenario.title },
+  }));
   try {
     await page.reload();
     await page.getByRole('tab', { name: 'Escenarios (12)', exact: true }).click();
@@ -1348,11 +1355,11 @@ async function verifyArchiveScenarios(page) {
     await archive.click();
     assert.equal(scenarios.length, cases.length);
     page.once('dialog', async dialog => {
-      assert.match(dialog.message(), /los 2 escenarios seleccionados/);
+      assert.match(dialog.message(), /los 2 escenarios seleccionados y sus ejecuciones/);
       await dialog.accept();
     });
     await archive.click();
-    await expect(page.getByText('Se archivaron 2 escenarios.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Se eliminaron 2 escenarios.', { exact: true })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Escenarios (10)', exact: true })).toBeVisible();
     await expect(archive).toBeDisabled();
     assert.deepEqual(scenarios.map(scenario => scenario.id), cases.slice(1, -1).map(scenario => scenario.id));
@@ -1361,13 +1368,28 @@ async function verifyArchiveScenarios(page) {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await expect(page.getByRole('button', { name: cases[1].title, exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: first.title, exact: true })).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+    const table = page.getByRole('table', { name: 'Ejecuciones registradas', exact: true });
+    await expect(table.getByText(cases[1].title, { exact: true })).toBeVisible();
+    await expect(table.getByText(first.title, { exact: true })).toHaveCount(0);
+
+    await page.goto(new URL(`/projects/${projectId}/scenarios/${cases[1].id}`, page.url()).href);
+    page.once('dialog', async dialog => {
+      assert.match(dialog.message(), /este escenario y sus ejecuciones/);
+      await dialog.accept();
+    });
+    await page.getByRole('button', { name: 'Eliminar escenario', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'Escenarios (9)', exact: true })).toBeVisible();
+    assert.equal(scenarios.some(scenario => scenario.id === cases[1].id), false);
+    assert.equal(scenarioRuns.length, 0);
     assert.equal(queuedRequests.length, initialQueues);
   } finally {
     scenarios = saved;
+    scenarioRuns = savedRuns;
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   await page.reload();
-  console.log('PASS archivar casos marcados en páginas distintas conserva los demás escenarios y requiere confirmación. API simulada.');
+  console.log('PASS eliminar casos seleccionados actualiza Escenarios, Automatización y Reportes. API simulada.');
 }
 
 async function run() {
@@ -1406,7 +1428,7 @@ async function run() {
     await verifySuiteProgress(page);
     await verifyAutomationRunStatus(page);
     await verifyStopSuiteDuringSubmission(page);
-    await verifyArchiveScenarios(page);
+    await verifyDeleteScenarios(page);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();
@@ -1495,10 +1517,13 @@ async function run() {
     await page.reload();
     const historyPanel = page.getByRole('tabpanel', { name: 'Historial', exact: true });
     await expect(historyPanel).toBeVisible();
-    await expect(historyPanel.getByText('Creación del proyecto', { exact: true })).toBeVisible();
-    await expect(historyPanel.getByText('Última actualización', { exact: true })).toBeVisible();
-    await expect(historyPanel.locator('time').nth(0)).toHaveAttribute('datetime', project.createdAt);
-    await expect(historyPanel.locator('time').nth(1)).toHaveAttribute('datetime', project.updatedAt);
+    const versions = historyPanel.getByRole('region', { name: 'Versiones finalizadas', exact: true });
+    await expect(versions.getByText('Aún no hay versiones finalizadas registradas.', { exact: true })).toBeVisible();
+    const logs = historyPanel.getByRole('region', { name: 'Logs', exact: true });
+    await expect(logs.getByText('Creación del proyecto', { exact: true })).toBeVisible();
+    await expect(logs.getByText('Última actualización', { exact: true })).toBeVisible();
+    await expect(logs.locator('time').nth(0)).toHaveAttribute('datetime', project.createdAt);
+    await expect(logs.locator('time').nth(1)).toHaveAttribute('datetime', project.updatedAt);
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
     await page.getByRole('link', { name: 'Automatizar con IA', exact: true }).click();
     await page.getByRole('tab', { name: 'Automatización', exact: true }).and(page.locator('[aria-selected="true"]')).waitFor();

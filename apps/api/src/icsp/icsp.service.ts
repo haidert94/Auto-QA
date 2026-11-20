@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
-import { REPORTABLE_RUN_STATUSES } from '../runs/run-report-policy';
+import { REPORTABLE_RUN_STATUSES, REPORT_SCENARIO_SCOPE } from '../runs/run-report-policy';
 import { computeIcsp, type IcspInput, type IcspReport } from './icsp-calculator';
 
 const RECENT_WINDOW_DAYS = 30;
@@ -68,10 +68,13 @@ export class IcspService {
         orderBy: { title: 'asc' },
       }),
       this.prisma.testRun.findMany({
-        where: { projectId, status: reportableOnly ? { in: [...REPORTABLE_RUN_STATUSES] } : { not: 'CANCELED' } },
+        where: {
+          projectId, ...REPORT_SCENARIO_SCOPE,
+          status: reportableOnly ? { in: [...REPORTABLE_RUN_STATUSES] } : { not: 'CANCELED' },
+        },
         select: {
           id: true, scenarioId: true, status: true, createdAt: true,
-          results: { select: { id: true, status: true } },
+          results: { where: { scenario: { archivedAt: null } }, select: { id: true, status: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: 500,

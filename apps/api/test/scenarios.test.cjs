@@ -175,7 +175,7 @@ test('PATCH desconecta el requisito cuando se envía null', async () => {
   assert.equal(detail.requirementId, null);
 });
 
-test('DELETE archiva un escenario con resultados y conserva su historial', async () => {
+test('las ejecuciones de un escenario archivado quedan fuera de Reportes y de la exportación', async () => {
   const projectId = await makeProject();
   const created = await (await post(projectId, { title: 'Temporal', steps: [{ ordinal: 1, action: 'x' }] })).json();
   assert.ok(created.id);
@@ -200,15 +200,16 @@ test('DELETE archiva un escenario con resultados y conserva su historial', async
   assert.equal(history.scenario.title, 'Temporal');
   assert.equal(history.results[0].evidenceKey, 'fixture-trace');
   const report = await request(`${baseUrl}/projects/${projectId}/runs?view=report`).then(r => r.json());
-  assert.equal(report[0].scenario.title, 'Temporal');
-  assert.equal(report[0].results[0].evidenceKey, 'fixture-trace');
+  assert.deepEqual(report, []);
+  const exportResponse = await request(`${baseUrl}/projects/${projectId}/report/export`);
+  assert.equal(exportResponse.status, 409);
   const rerun = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}/runs`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ environmentId: randomUUID() }),
   });
   assert.equal(rerun.status, 404);
 });
 
-test('archiva solamente los escenarios seleccionados del proyecto y permite volver a generar', async () => {
+test('elimina solo los escenarios seleccionados, sus ejecuciones y sus resultados', async () => {
   const projectId = await makeProject();
   const otherProject = await makeProject();
   const requirementId = await makeRequirement(projectId);
@@ -216,21 +217,67 @@ test('archiva solamente los escenarios seleccionados del proyecto y permite volv
   const selected = await (await post(projectId, { ...scenario, requirementId })).json();
   const keep = await (await post(projectId, scenario)).json();
   const other = await (await post(otherProject, scenario)).json();
-  const url = `${baseUrl}/projects/${projectId}/scenarios`;
-  const archive = body => request(url + '/archive', {
+  const completedRun = (owner, scenarioId) => prisma.testRun.create({
+    data: {
+      projectId: owner, scenarioId, status: 'COMPLETED', completedAt: new Date(),
+      results: { create: { scenarioId, status: 'PASSED', durationMs: 42, evidenceKey: 'fixture-trace' } },
+    },
+    include: { results: true },
+  });
+  const toDelete = await completedRun(projectId, selected.id);
+  const retained = await completedRun(projectId, keep.id);
+  const elsewhere = await completedRun(otherProject, other.id);
+  const environment = await prisma.environment.create({
+    data: {
+      projectId, type: 'QA', baseUrl: 'https://example.test/', authorizationConfirmed: true, readOnly: true,
+      allowedHosts: ['example.test'], allowedPaths: [{ host: 'example.test', path: '/' }],
+    },
+  });
+  const queued = await request(`${baseUrl}/projects/${projectId}/scenarios/${selected.id}/runs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ environmentId: environment.id }),
+  });
+  assert.equal(queued.status, 201);
+  const active = await queued.json();
+  assert.equal(active.status, 'QUEUED');
+  const olderBatch = await prisma.testRun.create({
+    data: {
+      projectId, status: 'COMPLETED',
+      results: { create: [
+        { scenarioId: selected.id, status: 'PASSED' },
+        { scenarioId: keep.id, status: 'PASSED' },
+      ] },
+    },
+  });
+  const root = `${baseUrl}/projects/${projectId}`;
+  const url = root + '/scenarios';
+  const remove = body => request(url + '/delete-selected', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   for (const invalid of [{}, { scenarioIds: [] }, { scenarioIds: ['invalid'] }]) {
-    assert.equal((await archive(invalid)).status, 400);
+    assert.equal((await remove(invalid)).status, 400);
   }
   assert.equal((await request(url, { method: 'DELETE' })).status, 404);
+  assert.equal((await remove({ scenarioIds: [selected.id, keep.id] })).status, 409);
   assert.equal((await request(url).then(r => r.json())).length, 2);
-  const selection = { scenarioIds: [selected.id, other.id] };
-  const response = await archive(selection);
+  assert.ok(await prisma.testRun.findUnique({ where: { id: retained.id } }));
+  const stop = await request(root + '/runs/cancel', { method: 'POST' });
+  assert.equal(stop.status, 200);
+  const selection = { scenarioIds: [selected.id, other.id, selected.id] };
+  const response = await remove(selection);
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { archived: 1 });
+  assert.deepEqual(await response.json(), { deleted: 1 });
   assert.deepEqual((await request(url).then(r => r.json())).map(item => item.id), [keep.id]);
-  assert.deepEqual(await (await archive(selection)).json(), { archived: 0 });
+  assert.equal(await prisma.testScenario.findUnique({ where: { id: selected.id } }), null);
+  for (const { id } of [toDelete, active]) {
+    assert.equal(await prisma.testRun.findUnique({ where: { id } }), null);
+  }
+  assert.equal(await prisma.testResult.count({ where: { scenarioId: selected.id } }), 0);
+  assert.equal((await request(root + `/runs/${toDelete.id}/trace/${toDelete.results[0].id}`)).status, 404);
+  const report = await request(root + '/runs?view=report').then(r => r.json());
+  assert.deepEqual(new Set(report.map(run => run.id)), new Set([retained.id, olderBatch.id]));
+  assert.equal(report.find(run => run.id === olderBatch.id).results.length, 1);
+  assert.ok(await prisma.testRun.findUnique({ where: { id: elsewhere.id } }));
+  assert.deepEqual(await (await remove(selection)).json(), { deleted: 0 });
   assert.deepEqual((await request(`${baseUrl}/projects/${otherProject}/scenarios`).then(r => r.json())).map(item => item.id), [other.id]);
   assert.equal((await post(projectId, { ...scenario, requirementId })).status, 201);
   assert.equal((await request(url).then(r => r.json())).length, 2);

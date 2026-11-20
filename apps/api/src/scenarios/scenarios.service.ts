@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { AiRouter } from '../ai/ai-router';
 import { PrismaService } from '../prisma.service';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
+import { ACTIVE_RUN_STATUSES } from '../runs/run-report-policy';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
 import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
@@ -251,6 +252,40 @@ export class ScenariosService {
       data: { archivedAt: new Date() },
     });
     return { archived: archived.count };
+  }
+
+  async deleteSelected(projectId: string, scenarioIds: string[], workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    return this.prisma.$transaction(async tx => {
+      // Impide que una ejecución nueva se vincule a los escenarios mientras se eliminan.
+      const scenarios = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT id FROM "TestScenario"
+        WHERE "projectId" = ${projectId} AND id IN (${Prisma.join(scenarioIds)}) AND "archivedAt" IS NULL
+        ORDER BY id FOR UPDATE
+      `);
+      if (!scenarios.length) return { deleted: 0 };
+
+      const scenarioId = { in: scenarios.map(scenario => scenario.id) };
+      const legacyRuns = { scenarioId: null, results: { some: { scenarioId } } };
+      const active = await tx.testRun.findFirst({
+        where: { projectId, status: { in: [...ACTIVE_RUN_STATUSES] }, OR: [{ scenarioId }, legacyRuns] },
+        select: { id: true },
+      });
+      if (active) {
+        throw new ConflictException('Detén las ejecuciones en cola o en curso de los escenarios seleccionados antes de eliminarlos.');
+      }
+
+      const legacy = await tx.testRun.findMany({ where: { projectId, ...legacyRuns }, select: { id: true } });
+      await tx.testRun.deleteMany({ where: { projectId, scenarioId } });
+      await tx.testResult.deleteMany({ where: { scenarioId, run: { projectId } } });
+      if (legacy.length) {
+        await tx.testRun.deleteMany({
+          where: { projectId, id: { in: legacy.map(run => run.id) }, results: { none: {} } },
+        });
+      }
+      const deleted = await tx.testScenario.deleteMany({ where: { projectId, id: scenarioId } });
+      return { deleted: deleted.count };
+    });
   }
 
   async generatePlaywright(projectId: string, scenarioId: string, workspace: Workspace) {

@@ -111,9 +111,11 @@ export class UsageService {
   }
 
   // Internal worker boundary. The catalog cannot enable an engine on its own.
-  async reserveRun(organizationId: string, projectId: string, runKey: string, request: RunRequest) {
+  async reserveRun(
+    organizationId: string, projectId: string, runKey: string, request: RunRequest, transaction?: Prisma.TransactionClient,
+  ) {
     validateKey(runKey);
-    return this.db.$transaction(async tx => {
+    const reserve = async (tx: Prisma.TransactionClient) => {
       await this.lockOrganization(tx, organizationId);
       const plan = await activePlan(tx, organizationId);
       requireCapability(plan, capabilities[request.kind]);
@@ -142,7 +144,8 @@ export class UsageService {
       return tx.meteredRun.create({ data: {
         organizationId, projectId, runKey, kind: request.kind, month, requestedBrowser, reservedBrowserSeconds,
       } });
-    });
+    };
+    return transaction ? reserve(transaction) : this.db.$transaction(reserve);
   }
 
   async settleRun(organizationId: string, runKey: string, browserSeconds: number) {

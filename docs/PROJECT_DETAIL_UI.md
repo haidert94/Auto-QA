@@ -28,7 +28,7 @@ La cabecera usa los estilos compartidos de `ProjectHeading` y el contenedor gene
 
 La vista `/projects/[id]#escenarios` usa lista/detalle, búsqueda, etiquetas y selección múltiple. `ScenariosPanel` conserva creación, sugerencias y generación existentes; `ScenarioWorkspace` presenta los datos y reutiliza `ScenarioCard` al editar. `ProjectTabs` proporciona un destino de cabecera mediante contexto; la cabecera de escenarios se monta allí con un portal para mantener el orden visual y de teclado (cabecera, pestañas, filtros, lista y detalle). Las otras pestañas conservan su cabecera. El contador procede de la lista recibida.
 
-La eliminación individual y **Eliminar seleccionados** archivan los casos marcados del proyecto. La acción por selección incluye las otras páginas, exige confirmación y envía sus identificadores a `POST /scenarios/archive`. Los casos archivados se excluyen del catálogo, la preparación, las nuevas ejecuciones y las variantes de compatibilidad. Los resultados y las evidencias permanecen en Reportes. El despliegue requiere la migración `20261119040000_scenario_archive` y actualizar Explorer.
+**Eliminar escenario** y **Eliminar seleccionados** exigen confirmación y envían los identificadores elegidos a `POST /scenarios/delete-selected`. La acción incluye selecciones de otras páginas. La API elimina los escenarios y sus ejecuciones y resultados en una transacción. Si alguno de los casos tiene pruebas en cola o en curso, la API rechaza la selección con `409`. Las rutas anteriores de archivado conservan su contrato para clientes que aún las utilicen.
 
 El endpoint existente de escenarios aporta pasos, etiquetas y requisito; el historial `/runs` aporta fechas, estados y duraciones. Se toma la ejecución más reciente por fecha. En cola, en curso, fallo, bloqueo, omisiones, ausencia de resultados y error de consulta se muestran separadamente. No se inventa un archivo Playwright persistido, fuente documental, cobertura o worker activo. Los filtros usan presencia de resultados, porque la API no expone una clasificación persistida de «automatizado» frente a «borrador».
 
@@ -56,7 +56,7 @@ El indicador sobre el visor consulta `GET /projects/:projectId/runs/activity` mi
 
 ## Pestaña Reportes
 
-`ExecutionReport` usa la cabecera y ancho comunes y carga el historial cuando se abre la pestaña. `GET /runs?view=report` excluye las canceladas antes de aplicar el límite de 100 registros y conserva los guards, el alcance y los campos `targetBrowser`, `targetDevice` y `targetProvider`. No cambia el esquema ni requiere migraciones. El catálogo de escenarios aporta únicamente etiquetas actuales; no se presentan como etiquetas históricas. Un fallo de etiquetas no bloquea la lectura del historial. Un error del historial o un 403 se distingue de una respuesta vacía.
+`ExecutionReport` usa la cabecera y ancho comunes y carga el historial cuando se abre la pestaña. `GET /runs?view=report` excluye las ejecuciones canceladas y los resultados de escenarios archivados anteriormente antes de aplicar el límite de 100 registros y conserva los guards, el alcance y los campos `targetBrowser`, `targetDevice` y `targetProvider`. No cambia el esquema ni requiere migraciones. El catálogo de escenarios aporta únicamente etiquetas actuales; no se presentan como etiquetas históricas. Un fallo de etiquetas no bloquea la lectura del historial. Un error del historial o un 403 se distingue de una respuesta vacía.
 
 El selector alterna historial disponible y ejecución individual. El historial permite consultar la cola y el progreso. Al confirmarse una cancelación desaparecen la fila, la opción del selector y el detalle de esa ejecución. Las exportaciones de resultados y el informe consolidado se habilitan cuando queda al menos una ejecución completada o fallida y el proyecto ya no tiene ejecuciones activas. El enlace de la suite requiere al menos una ejecución completada o fallida y que toda la suite haya terminado. La tasa muestra aprobados/resultados, incluyendo fallos, bloqueos y omisiones en el denominador; sin resultados se muestra un estado explícito. La duración es la suma de los resultados con tiempo conocido, con recuento de datos disponibles; cero es un valor válido y no equivale a dato ausente. No se equipara esa suma al tiempo de pared de una suite. Flakiness/reintentos y cobertura de aserciones no tienen instrumentación en el contrato actual y se muestran como no disponibles. No se inventan números de suite, commits, usuarios de CI, CPU ni workers activos.
 
@@ -68,7 +68,7 @@ La prueba de navegador comprueba las métricas con denominador, duración cero y
 
 ## Pestaña Historial
 
-La pestaña guarda `#historial` en la URL. Muestra las fechas registradas de creación y última actualización del proyecto en UTC. La revisión actual se consulta en la cabecera. La API del proyecto devuelve estas fechas y el número actual de revisión.
+La pestaña guarda `#historial` en la URL y presenta los cuadros **Versiones finalizadas** y **Logs**. El primero muestra un estado vacío. **Logs** presenta las fechas registradas de creación y última actualización del proyecto en UTC. La revisión actual se consulta en la cabecera.
 
 ## Pestaña Calidad
 

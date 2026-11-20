@@ -7,6 +7,7 @@ const { RunsController } = require('../dist/runs/runs.controller');
 const { UsageService } = require('../dist/commerce/usage.service');
 const { IcspService } = require('../dist/icsp/icsp.service');
 const { ReportsService } = require('../dist/reports/reports.service');
+const { REPORT_SCENARIO_SCOPE } = require('../dist/runs/run-report-policy');
 const { translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
 const { generateHarnessedSpec, generateSpec } = require('../dist/scenarios/playwright-generator');
 
@@ -31,6 +32,8 @@ const actions = [
 
 function fixture(dispatch, row = { ...sample }, environment = { id: 'qa', authorizationConfirmed: true, readOnly: true }) {
   const prisma = {
+    async $transaction(callback) { return callback(prisma); },
+    async $queryRaw() { return [{ id: row.id }]; },
     project: { async findFirst() { return { id: 'project' }; } },
     environment: { async findFirst() { return environment; } },
     testScenario: {
@@ -123,7 +126,7 @@ test('el reporte consolidado espera la primera ejecución finalizada e ignora la
         return active;
       },
       async findMany({ where }) {
-        assert.deepEqual(where, { projectId: 'project', status: { in: ['COMPLETED', 'FAILED'] } });
+        assert.deepEqual(where, { projectId: 'project', status: { in: ['COMPLETED', 'FAILED'] }, ...REPORT_SCENARIO_SCOPE });
         return runs.filter(run => where.status.in.includes(run.status));
       },
     },

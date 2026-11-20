@@ -9,6 +9,7 @@ import { diffResults, diffText, type ResultStatus } from '../common/diffs';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
 import { scenarioRunEnvironmentError } from './environment-policy';
 import { RUN_STOP_REQUESTED, RUN_CANCELED_BY_USER } from './run-cancellation';
+import { REPORT_SCENARIO_SCOPE } from './run-report-policy';
 import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { CreateRunDto } from './dto/create-run.dto';
@@ -73,14 +74,20 @@ export class RunsService {
   async list(projectId: string, workspace: Workspace, runIds?: string[], forReport = false) {
     await this.ensureProject(projectId, workspace);
     return this.prisma.testRun.findMany({
-      where: { projectId, id: runIds ? { in: runIds } : undefined, ...(forReport ? { status: { not: 'CANCELED' } } : {}) },
+      where: {
+        projectId, id: runIds ? { in: runIds } : undefined,
+        ...(forReport ? { status: { not: 'CANCELED' }, ...REPORT_SCENARIO_SCOPE } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, status: true, scenarioId: true, environmentId: true,
         targetBrowser: true, targetDevice: true, targetProvider: true,
         startedAt: true, completedAt: true, errorCode: true, createdAt: true,
         scenario: { select: { id: true, title: true } },
-        results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true } },
+        results: {
+          where: forReport ? { scenario: { archivedAt: null } } : undefined,
+          select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true },
+        },
       },
       take: 100,
     });
@@ -228,30 +235,37 @@ export class RunsService {
       throw new ConflictException('El modo del entorno cambió o falta confirmar los cambios con datos de prueba.');
     }
 
-    const runKey = workspace.organizationId ? 'run-' + randomUUID() : null;
-    if (workspace.organizationId && runKey) {
-      // Presupuesto defensivo de 120 s de navegador por run; el worker liquida
-      // el consumo real al terminar.
-      await this.usage.reserveRun(workspace.organizationId, projectId, runKey, {
-        kind: 'BROWSER', browser: 'CHROMIUM', browserSeconds: 120,
-      });
-    }
+    return this.prisma.$transaction(async tx => {
+      const available = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "TestScenario"
+        WHERE id = ${scenarioId} AND "projectId" = ${projectId} AND "archivedAt" IS NULL FOR SHARE
+      `;
+      if (!available.length) throw new NotFoundException('Escenario no encontrado.');
 
-    return this.prisma.testRun.create({
-      data: {
-        projectId,
-        scenarioId,
-        environmentId: environment.id,
-        status: 'QUEUED',
-        runKey,
-        createdByUserId: workspace.userId ?? null,
-        automation: prepared ? (prepared as unknown as Prisma.InputJsonValue) : undefined,
-        writeAuthorizationAt,
-        targetBrowser: dto.targetBrowser ?? null,
-        targetDevice: dto.targetDevice ?? null,
-        targetProvider: dto.targetProvider ?? null,
-      },
-      select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true, targetBrowser: true, targetDevice: true, targetProvider: true },
+      const runKey = workspace.organizationId ? 'run-' + randomUUID() : null;
+      if (workspace.organizationId && runKey) {
+        // El worker liquida el consumo real a partir de la reserva de 120 s.
+        await this.usage.reserveRun(workspace.organizationId, projectId, runKey, {
+          kind: 'BROWSER', browser: 'CHROMIUM', browserSeconds: 120,
+        }, tx);
+      }
+
+      return tx.testRun.create({
+        data: {
+          projectId,
+          scenarioId,
+          environmentId: environment.id,
+          status: 'QUEUED',
+          runKey,
+          createdByUserId: workspace.userId ?? null,
+          automation: prepared ? (prepared as unknown as Prisma.InputJsonValue) : undefined,
+          writeAuthorizationAt,
+          targetBrowser: dto.targetBrowser ?? null,
+          targetDevice: dto.targetDevice ?? null,
+          targetProvider: dto.targetProvider ?? null,
+        },
+        select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true, targetBrowser: true, targetDevice: true, targetProvider: true },
+      });
     });
   }
 

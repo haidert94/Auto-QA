@@ -26,7 +26,7 @@ export class CreateScenarioDto {
   steps!: ScenarioStepDto[];
 }
 
-export class ArchiveScenariosDto {
+export class ScenarioSelectionDto {
   @IsArray() @ArrayMinSize(1) @IsUUID(undefined, { each: true })
   scenarioIds!: string[];
 }

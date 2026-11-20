@@ -107,13 +107,16 @@ export function ScenarioEditor({ initial, requirements, role }: { initial: Scena
   }
 
   async function remove() {
-    if (!confirm('¿Quitar este escenario de la lista? Sus ejecuciones seguirán en el historial.')) return;
+    if (!confirm('¿Eliminar este escenario y sus ejecuciones de forma definitiva?')) return;
     setBusy(true); setError('');
     try {
-      const response = await fetch(`/api/projects/${initial.projectId}/scenarios/${initial.id}`, { method: 'DELETE' });
-      if (!response.ok && response.status !== 204) {
+      const response = await fetch(`/api/projects/${initial.projectId}/scenarios/delete-selected`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioIds: [initial.id] }),
+      });
+      if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        setError(payload.message ?? 'No se pudo eliminar el escenario.');
+        const message = Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message;
+        setError(message || 'No se pudo eliminar el escenario.');
         return;
       }
       router.push(`/projects/${initial.projectId}#escenarios`);

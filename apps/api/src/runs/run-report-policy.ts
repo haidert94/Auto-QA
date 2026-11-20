@@ -1,3 +1,12 @@
+import type { Prisma } from '@prisma/client';
+
+export const REPORT_SCENARIO_SCOPE = {
+  OR: [
+    { scenario: { is: { archivedAt: null } } },
+    { scenarioId: null, OR: [{ results: { none: {} } }, { results: { some: { scenario: { archivedAt: null } } } }] },
+  ],
+} satisfies Prisma.TestRunWhereInput;
+
 export const ACTIVE_RUN_STATUSES = ['QUEUED', 'RUNNING'] as const;
 export const REPORTABLE_RUN_STATUSES = ['COMPLETED', 'FAILED'] as const;
 export const REPORT_WHILE_RUNNING = 'El reporte estará disponible cuando finalicen las ejecuciones del proyecto.';

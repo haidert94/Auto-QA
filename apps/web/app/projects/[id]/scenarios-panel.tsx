@@ -332,14 +332,14 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     finally { setBusy(false); }
   }
 
-  async function archiveSelected() {
+  async function deleteSelected() {
     const scenarioIds = selected.map(item => item.id);
     if (!scenarioIds.length) return;
     const selection = scenarioIds.length === 1 ? 'el escenario seleccionado' : `los ${scenarioIds.length} escenarios seleccionados`;
-    if (!confirm(`¿Eliminar ${selection} de la lista? El historial de ejecución se conservará.`)) return;
+    if (!confirm(`¿Eliminar ${selection} y sus ejecuciones de forma definitiva?`)) return;
     setBusy(true); setError(''); setGenerateNotice('');
     try {
-      const response = await fetch(`/api/projects/${projectId}/scenarios/archive`, {
+      const response = await fetch(`/api/projects/${projectId}/scenarios/delete-selected`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioIds }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -348,7 +348,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         throw new Error(message || 'No se pudieron eliminar los escenarios seleccionados.');
       }
       await load();
-      setGenerateNotice(payload.archived === 1 ? 'Se archivó 1 escenario.' : `Se archivaron ${payload.archived} escenarios.`);
+      setGenerateNotice(payload.deleted === 1 ? 'Se eliminó 1 escenario.' : `Se eliminaron ${payload.deleted} escenarios.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'No se pudieron eliminar los escenarios seleccionados.');
     } finally { setBusy(false); }
@@ -371,7 +371,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         {canDelete && !!items?.length && <button type="button" className="secondary"
           disabled={!selected.length || busy || generating || !!listError || runner?.suiteRunning || runner?.stopping}
-          onClick={() => void archiveSelected()}>Eliminar seleccionados ({selected.length})</button>}
+          onClick={() => void deleteSelected()}>Eliminar seleccionados ({selected.length})</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
         {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
