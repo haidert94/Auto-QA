@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { ArrowRight, Download, FileCode2, Play, RefreshCw } from 'lucide-react';
+import { ArrowRight, FileCode2, Play, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { scenarioRunEnvironmentError, type Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
@@ -12,7 +12,7 @@ import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader, useScenarioSuite } from './project-tabs';
 import { AutomationRunStatus } from './automation-run-status';
-import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
+import { scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
 import { ScenarioListToolbar, ScenarioVisibleSelection } from './scenario-list-toolbar';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
@@ -94,7 +94,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     return () => controller.abort();
   }, [project.id, header?.active, refresh, setSpecs]);
 
-  const generateOne = useCallback((scenario: ScenarioListItem, mode: 'prepare' | 'download'): Promise<GeneratedSpec> => {
+  const generateOne = useCallback((scenario: ScenarioListItem, mode: 'prepare' | 'preview'): Promise<GeneratedSpec> => {
     const currentSignature = scenarioSpecSignature(scenario);
     const cached = specsRef.current[scenario.id];
     const useAgent = mode === 'prepare';
@@ -170,23 +170,18 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError;
 
   function toggle(id: string) { setSelected(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
-  async function prepare(download = false) {
+  async function prepare() {
     if (busy || !selectedScenarios.length) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const results = [];
-      for (const scenario of selectedScenarios) { if (!mounted.current) return; results.push(await generateOne(scenario, download ? 'download' : 'prepare')); }
+      for (const scenario of selectedScenarios) { if (!mounted.current) return; results.push(await generateOne(scenario, 'prepare')); }
       if (results.some(spec => spec.error)) {
-        setError('Algunos archivos no se pudieron generar. Revisa los errores por escenario; no se descargó un ZIP incompleto.'); return;
+        setError('Algunos archivos no se pudieron generar. Revisa los errores por escenario.'); return;
       }
-      if (download) {
-        await downloadSpecs(project.name, results);
-        setNotice(`ZIP preparado con ${results.length} archivos .spec.ts, configuración y notas de revisión.`);
-      } else {
-        const saved = results.filter(spec => spec.automationId).length;
-        const review = results.length - saved;
-        setNotice(`${saved} con código guardado${review ? ` · ${review} en revisión` : ''}.`);
-      }
+      const saved = results.filter(spec => spec.automationId).length;
+      const review = results.length - saved;
+      setNotice(`${saved} con código guardado${review ? ` · ${review} en revisión` : ''}.`);
     } catch { setError('No se pudo preparar el código. Vuelve a intentarlo.'); }
     finally { if (mounted.current) setBusy(false); }
   }
@@ -194,9 +189,8 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const generationDisabled = busy || !selectedScenarios.length || !!listError;
   return <section className="automation-panel" aria-label="Automatización Playwright">
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary="Genera, descarga y ejecuta el código Playwright de los escenarios seleccionados."
-      actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
-        {canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${ready.length})`}</button>}</>} />, header.element)}
+      summary="Genera y ejecuta el código Playwright de los escenarios seleccionados."
+      actions={<>{canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${ready.length})`}</button>}</>} />, header.element)}
     {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
       <button type="button" disabled={generationDisabled} onClick={() => void prepare()}>
         <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
@@ -242,7 +236,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
               {spec?.error && <>
                 <p className="error" role="alert">{spec.error}</p>
                 <button type="button" className="secondary automation-row-retry" disabled={busy || status === 'generating'}
-                  onClick={() => void generateOne(scenario, canGenerate ? 'prepare' : 'download')}>Reintentar archivo</button>
+                  onClick={() => void generateOne(scenario, canGenerate ? 'prepare' : 'preview')}>Reintentar archivo</button>
               </>}
               {spec?.notice && <p className="automation-review-reasons">{spec.notice}</p>}
               {spec?.review.length ? <p className="automation-review-reasons">{spec.review.join(' · ')}</p> : null}

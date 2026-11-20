@@ -9,11 +9,11 @@ import { featureText, isSensitiveScenarioStep } from './scenario-presentation';
 // 'kind: server' pide el archivo al endpoint /api/.../scenarios/export que
 // genera PDF o XLSX con layout de set de pruebas.
 const formats = [
-  { extension: 'feature', label: 'Gherkin (.feature)', mime: 'text/plain;charset=utf-8', kind: 'client' as const },
-  { extension: 'csv', label: 'CSV (.csv)', mime: 'text/csv;charset=utf-8', kind: 'client' as const },
-  { extension: 'json', label: 'JSON (.json)', mime: 'application/json;charset=utf-8', kind: 'client' as const },
-  { extension: 'pdf', label: 'Set de pruebas (PDF)', mime: 'application/pdf', kind: 'server' as const, format: 'pdf' as const },
-  { extension: 'xlsx', label: 'Set de pruebas (Excel)', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', kind: 'server' as const, format: 'xlsx' as const },
+  { extension: 'csv', label: 'CSV', mime: 'text/csv;charset=utf-8', kind: 'client' as const },
+  { extension: 'json', label: 'JSON', mime: 'application/json;charset=utf-8', kind: 'client' as const },
+  { extension: 'pdf', label: 'PDF', mime: 'application/pdf', kind: 'server' as const, format: 'pdf' as const },
+  { extension: 'xlsx', label: 'Excel', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', kind: 'server' as const, format: 'xlsx' as const },
+  { extension: 'feature', label: 'Feature', mime: 'text/plain;charset=utf-8', kind: 'client' as const },
 ] as const;
 
 function csvCell(value: string) {
@@ -105,7 +105,7 @@ export function ScenarioExport({ projectId, projectName, scenarios }: { projectI
     <button ref={trigger} type="button" className="secondary" disabled={!scenarios.length}
       aria-expanded={open} aria-controls={optionsId} onClick={() => setOpen(value => !value)}
       title="Exportar seleccionados, o todos si no hay selección">
-      <Download size={14} aria-hidden="true" />Exportar<ChevronDown size={13} aria-hidden="true" />
+      <Download size={14} aria-hidden="true" />Exportar set<ChevronDown size={13} aria-hidden="true" />
     </button>
     <div className="scenario-export__options" id={optionsId} role="group" aria-label="Formatos de exportación" hidden={!open}>
       {formats.map(format => <button type="button" className="secondary" key={format.extension} onClick={() => {

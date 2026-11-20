@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { Activity, ChevronDown, Clock, Download, Filter, HelpCircle, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { Activity, ChevronDown, Clock, Download, Filter, HelpCircle, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
@@ -158,12 +158,11 @@ export function ExecutionReport({ project }: { project: Project }) {
   return <section className="run-report" aria-label="Reporte de ejecuciones">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Consulta el estado más reciente de cada escenario y accede a sus ejecuciones anteriores."
-      actions={<><button className="run-report-refresh" type="button" aria-label="Actualizar reporte" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={14} /></button>
-        <details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
+      actions={<details className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
         <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'zip')}>Reporte completo (.zip)</button>
-          <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details></>} />, header.element)}
+          <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details>} />, header.element)}
     {exportError && <p className="run-report-warning" role="alert">{exportError}</p>}
     {loading && !overview ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
       : error ? <div className="run-report-message" role="alert"><p className="error">{error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar reporte</button></div>

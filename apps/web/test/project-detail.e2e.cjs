@@ -461,10 +461,10 @@ async function verifyScenarios(page, screenshots) {
   await search.fill('tokenizada');
   await page.getByRole('checkbox', { name: 'Seleccionar visibles (1)', exact: true }).check();
   await search.fill('');
-  const exportButton = page.getByRole('button', { name: 'Exportar', exact: true });
+  const exportButton = page.getByRole('button', { name: 'Exportar set', exact: true });
   const formats = page.getByRole('group', { name: 'Formatos de exportación', exact: true });
   await exportButton.click();
-  await expect(formats.getByRole('button')).toHaveCount(3);
+  await expect(formats.getByRole('button')).toHaveText(['CSV', 'JSON', 'PDF', 'Excel', 'Feature']);
   await page.keyboard.press('Escape');
   await expect(formats).toBeHidden();
   await expect(exportButton).toBeFocused();
@@ -479,20 +479,20 @@ async function verifyScenarios(page, screenshots) {
     return readFile(await download.path(), 'utf8');
   }
 
-  const featureContent = await downloadFormat('Gherkin (.feature)', 'feature');
+  const featureContent = await downloadFormat('Feature', 'feature');
   assert.ok(featureContent.includes('Vista derivada'));
   assert.ok(featureContent.includes(scenarioA));
   assert.ok(featureContent.includes('goto: /checkout'));
   assert.ok(!featureContent.includes(scenarioB), 'Exporta sólo los escenarios seleccionados.');
-  const csv = await downloadFormat('CSV (.csv)', 'csv');
+  const csv = await downloadFormat('CSV', 'csv');
   assert.ok(csv.startsWith('\uFEFF"ID","Título","Requisito"') && csv.includes(scenarioA) && !csv.includes(scenarioB));
-  const json = JSON.parse(await downloadFormat('JSON (.json)', 'json'));
+  const json = JSON.parse(await downloadFormat('JSON', 'json'));
   assert.equal(json.project, project.name);
   assert.deepEqual(json.scenarios.map(item => item.id), [scenarioA]);
 
   const selected = list.getByRole('checkbox', { name: 'Seleccionar ' + scenarios[0].title, exact: true });
   await selected.uncheck();
-  const allScenarios = JSON.parse(await downloadFormat('JSON (.json)', 'json'));
+  const allScenarios = JSON.parse(await downloadFormat('JSON', 'json'));
   assert.deepEqual(allScenarios.scenarios.map(item => item.id), scenarios.map(item => item.id));
   await selected.check();
   await list.getByRole('button', { name: scenarios[2].title, exact: true }).click();
@@ -602,7 +602,7 @@ async function verifyScenarios(page, screenshots) {
   scenarios = [];
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Aún no hay escenarios', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Exportar', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Exportar set', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Ejecutar suite (0)', exact: true })).toBeDisabled();
   scenarios = populated;
   project.status = 'DRAFT';
@@ -1050,20 +1050,7 @@ async function verifyAutomation(page, screenshots) {
   const scenariosBounds = await section.locator('.automation-scenarios').boundingBox();
   assert.equal(scenariosBounds.width, panelBounds.width, 'La lista aprovecha el ancho de Automatización.');
   await page.screenshot({ path: join(screenshots, 'project-automation-desktop.png'), fullPage: true, animations: 'disabled' });
-  const zipDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true }).click();
-  const download = await zipDownload;
-  assert.equal(download.suggestedFilename(), 'autoqa-playwright.zip');
-  const zip = await JSZip.loadAsync(await readFile(await download.path()), { checkCRC32: true });
-  const zipNames = Object.keys(zip.files).filter(name => !zip.files[name].dir);
-  assert.equal(zipNames.filter(name => name.endsWith('.spec.ts')).length, 4);
-  assert.ok(zipNames.every(name => !name.includes('..') && !name.startsWith('/') && !name.includes('\\')));
-  assert.match(await zip.file('playwright.config.ts').async('string'), /process\.env\.AUTOQA_BASE_URL/);
-  const firstPath = zipNames.find(name => name.includes(scenarioA) && name.endsWith('.spec.ts'));
-  assert.equal(await zip.file(firstPath).async('string'), fixtureSpec(scenarios[0]).code);
-  const allContents = (await Promise.all(zipNames.map(name => zip.file(name).async('string')))).join('\n');
-  assert.ok(!allContents.includes('synthetic-private-identity') && !allContents.includes('vault:synthetic-private-reference'));
-  assert.ok((await zip.file('README.md').async('string')).includes('Revisar:'));
+  await expect(page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true })).toHaveCount(0);
 
   for (const width of [1920, 1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1100 });
@@ -1118,12 +1105,8 @@ async function verifyAutomation(page, screenshots) {
   await expect(section.getByText('Generador temporalmente no disponible.', { exact: true }).first()).toBeVisible();
   await all.uncheck();
   await section.getByRole('checkbox', { name: `Automatizar ${scenarios[1].title}`, exact: true }).check();
-  let unexpectedDownloads = 0;
-  const recordDownload = () => { unexpectedDownloads++; };
-  page.on('download', recordDownload);
-  await page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true }).click();
-  await expect(section.getByText(/no se descargó un ZIP incompleto/)).toBeVisible();
-  assert.equal(unexpectedDownloads, 0); page.off('download', recordDownload);
+  await section.getByRole('button', { name: 'Generar seleccionados (1)', exact: true }).click();
+  await expect(section.getByText('Algunos archivos no se pudieron generar. Revisa los errores por escenario.', { exact: true })).toBeVisible();
   specFailure = false;
   await section.getByRole('button', { name: 'Reintentar archivo', exact: true }).click();
   await expect(rows.filter({ hasText: scenarios[1].title }).getByText('Generado', { exact: true })).toBeVisible();
@@ -1143,7 +1126,7 @@ async function verifyAutomation(page, screenshots) {
   const populated = scenarios; scenarios = [];
   await page.reload();
   await expect(section.getByRole('heading', { name: 'Aún no hay escenarios para automatizar', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true })).toBeDisabled();
+  await expect(section.getByRole('button', { name: 'Generar seleccionados (0)', exact: true })).toBeDisabled();
   scenarios = populated;
   project.status = 'DRAFT';
   await page.reload();
@@ -1152,18 +1135,24 @@ async function verifyAutomation(page, screenshots) {
   project.status = 'READY';
   await page.reload();
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
-  console.log('PASS automatización: lista sin visor, ZIP con CRC/rutas/contenido, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
+  console.log('PASS automatización: lista sin visor, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
 }
 
 async function verifyRunReport(page, screenshots) {
   reportMode = true;
   const initialQueues = queuedRequests.length;
-  await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+  const reportsTab = page.getByRole('tab', { name: 'Reportes', exact: true });
+  const dataTab = page.getByRole('tab', { name: 'Datos', exact: true });
+  async function reopenReport() {
+    await dataTab.click();
+    await reportsTab.click();
+  }
+  await reportsTab.click();
   const section = page.getByRole('region', { name: 'Reporte de ejecuciones', exact: true });
   const table = section.getByRole('table', { name: 'Ejecuciones registradas', exact: true });
   const selector = page.getByLabel('Ejecución del reporte', { exact: true });
   const filter = section.getByRole('group', { name: 'Estado de ejecución' });
-  const refresh = section.getByRole('button', { name: 'Actualizar reporte', exact: true });
+  await expect(page.getByRole('button', { name: 'Actualizar reporte', exact: true })).toHaveCount(0);
   const search = section.getByRole('searchbox', { name: 'Buscar ejecuciones' });
   await expect(selector).toHaveValue('latest');
   await expect(table.getByRole('row')).toHaveCount(3);
@@ -1174,7 +1163,7 @@ async function verifyRunReport(page, screenshots) {
   };
   try {
     reportRuns.push(retry);
-    await refresh.click();
+    await reopenReport();
     const row = table.getByRole('row').filter({ hasText: retry.id.slice(0, 8) });
     await expect(row.getByText('En cola', { exact: true })).toBeVisible();
     await search.focus();
@@ -1189,7 +1178,7 @@ async function verifyRunReport(page, screenshots) {
   } finally {
     reportRuns.pop();
   }
-  await refresh.click();
+  await reopenReport();
   await selector.selectOption('all');
   await expect(table.getByRole('row')).toHaveCount(8);
   await expect(section.getByRole('region', { name: 'Tasa de éxito', exact: true }).getByText('25%', { exact: true })).toBeVisible();
@@ -1296,13 +1285,13 @@ async function verifyRunReport(page, screenshots) {
   await page.setViewportSize({ width: 1440, height: 1100 });
   assert.equal(queuedRequests.length, initialQueues, 'Ningún trabajo se encola al abrir el reporte.');
   historyFail = true;
-  await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
+  await reopenReport();
   await expect(section.getByText('No se pudo consultar el historial de ejecuciones.', { exact: true })).toBeVisible();
   historyFail = false;
   await section.getByRole('button', { name: 'Reintentar reporte', exact: true }).click();
   await expect(table.getByRole('row')).toHaveCount(6);
   reportForbidden = true;
-  await section.getByRole('button', { name: 'Actualizar reporte', exact: true }).click();
+  await reopenReport();
   await expect(section.getByText('No tienes permiso para consultar este historial o tu plan no lo permite.', { exact: true })).toBeVisible();
   reportForbidden = false;
   const saved = reportRuns.splice(0, reportRuns.length, firstCanceled, secondCanceled);
