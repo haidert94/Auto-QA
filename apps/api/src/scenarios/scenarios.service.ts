@@ -244,10 +244,10 @@ export class ScenariosService {
     if (!archived.count) throw new NotFoundException('Escenario no encontrado.');
   }
 
-  async archiveAll(projectId: string, workspace: Workspace) {
+  async archiveSelected(projectId: string, scenarioIds: string[], workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const archived = await this.prisma.testScenario.updateMany({
-      where: { projectId, archivedAt: null },
+      where: { projectId, id: { in: scenarioIds }, archivedAt: null },
       data: { archivedAt: new Date() },
     });
     return { archived: archived.count };

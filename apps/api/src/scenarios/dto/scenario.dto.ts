@@ -26,6 +26,11 @@ export class CreateScenarioDto {
   steps!: ScenarioStepDto[];
 }
 
+export class ArchiveScenariosDto {
+  @IsArray() @ArrayMinSize(1) @IsUUID(undefined, { each: true })
+  scenarioIds!: string[];
+}
+
 export class UpdateScenarioDto {
   @IsOptional() @IsString() @MaxLength(300) title?: string;
   @IsOptional() @IsUUID() requirementId?: string | null;

@@ -332,18 +332,25 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     finally { setBusy(false); }
   }
 
-  async function archiveAll() {
-    if (!items?.length || !confirm(`¿Vaciar los ${items.length} escenarios del proyecto? Los requisitos y el historial de ejecución se conservarán.`)) return;
+  async function archiveSelected() {
+    const scenarioIds = selected.map(item => item.id);
+    if (!scenarioIds.length) return;
+    const selection = scenarioIds.length === 1 ? 'el escenario seleccionado' : `los ${scenarioIds.length} escenarios seleccionados`;
+    if (!confirm(`¿Eliminar ${selection} de la lista? El historial de ejecución se conservará.`)) return;
     setBusy(true); setError(''); setGenerateNotice('');
     try {
-      const response = await fetch(`/api/projects/${projectId}/scenarios`, { method: 'DELETE' });
+      const response = await fetch(`/api/projects/${projectId}/scenarios/archive`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioIds }),
+      });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.message ?? 'No se pudo vaciar la lista de escenarios.');
-      setChecked(new Set());
+      if (!response.ok) {
+        const message = Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message;
+        throw new Error(message || 'No se pudieron eliminar los escenarios seleccionados.');
+      }
       await load();
-      setGenerateNotice('Escenarios archivados. Ya puedes generar casos nuevos.');
+      setGenerateNotice(payload.archived === 1 ? 'Se archivó 1 escenario.' : `Se archivaron ${payload.archived} escenarios.`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'No se pudo vaciar la lista de escenarios.');
+      setError(reason instanceof Error ? reason.message : 'No se pudieron eliminar los escenarios seleccionados.');
     } finally { setBusy(false); }
   }
 
@@ -362,7 +369,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       summary={items ? `${items.length} escenarios registrados. Consulta sus pasos, requisitos asociados y resultados de ejecución.` : 'Consulta y prepara los escenarios del proyecto.'}
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
-        {canDelete && !!items?.length && <button type="button" className="secondary" disabled={busy || generating || !!listError || runner?.suiteRunning || runner?.stopping} onClick={() => void archiveAll()}>Vaciar escenarios</button>}
+        {canDelete && !!items?.length && <button type="button" className="secondary"
+          disabled={!selected.length || busy || generating || !!listError || runner?.suiteRunning || runner?.stopping}
+          onClick={() => void archiveSelected()}>Eliminar seleccionados ({selected.length})</button>}
         <button type="button" className="secondary" onClick={exportFeature} disabled={!items?.length} title="Exportar seleccionados, o todos si no hay selección"><Code2 size={14} />Exportar feature</button>
         {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />

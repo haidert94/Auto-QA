@@ -160,8 +160,15 @@ const api = createServer(async (request, response) => {
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
   if (path === base + '/scenarios/requirements') return send([requirement]);
+  if (path === base + '/scenarios/archive' && request.method === 'POST') {
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    const { scenarioIds } = JSON.parse(Buffer.concat(chunks).toString());
+    if (!Array.isArray(scenarioIds) || !scenarioIds.length) return send({ message: 'Selecciona escenarios.' }, 400);
+    const previousCount = scenarios.length;
+    scenarios = scenarios.filter(scenario => !scenarioIds.includes(scenario.id));
+    return send({ archived: previousCount - scenarios.length });
+  }
   if (path === base + '/scenarios') {
-    if (request.method === 'DELETE') return send({ archived: scenarios.splice(0).length });
     if (request.method === 'POST') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const payload = JSON.parse(Buffer.concat(chunks).toString());
@@ -1312,29 +1319,54 @@ async function verifyQuality(page, screenshots) {
 }
 
 async function verifyArchiveScenarios(page) {
-  const saved = [...scenarios];
+  const saved = scenarios;
   const initialQueues = queuedRequests.length;
+  const cases = Array.from({ length: 12 }, (_, index) => ({
+    id: '74000000-0000-4000-8000-' + String(index + 1).padStart(12, '0'),
+    title: 'Caso de archivado ' + (index + 1), tags: [], steps: [],
+  }));
+  scenarios = cases;
   try {
-    await page.getByRole('tab', { name: /^Escenarios/ }).click();
-    const archive = page.getByRole('button', { name: 'Vaciar escenarios', exact: true });
-    await expect(archive).toBeEnabled();
+    await page.reload();
+    await page.getByRole('tab', { name: 'Escenarios (12)', exact: true }).click();
+    const tab = page.getByRole('tabpanel', { name: /^Escenarios/ });
+    const archive = page.getByRole('button', { name: /^Eliminar seleccionados/ });
+    const pagination = tab.getByRole('navigation', { name: 'Paginación de escenarios' });
+    const first = cases[0], last = cases.at(-1);
+    await expect(archive).toHaveText('Eliminar seleccionados (12)');
+    await tab.getByRole('checkbox', { name: 'Seleccionar visibles (10)', exact: true }).uncheck();
+    await pagination.getByRole('button', { name: 'Página siguiente' }).click();
+    await tab.getByRole('checkbox', { name: 'Seleccionar visibles (2)', exact: true }).uncheck();
+    await expect(archive).toHaveText('Eliminar seleccionados (0)');
+    await expect(archive).toBeDisabled();
+    await tab.getByRole('checkbox', { name: 'Seleccionar ' + last.title, exact: true }).check();
+    await pagination.getByRole('button', { name: 'Página anterior' }).click();
+    await tab.getByRole('checkbox', { name: 'Seleccionar ' + first.title, exact: true }).check();
+    await expect(archive).toHaveText('Eliminar seleccionados (2)');
     page.once('dialog', dialog => dialog.dismiss());
     await archive.click();
-    assert.equal(scenarios.length, saved.length);
+    assert.equal(scenarios.length, cases.length);
     page.once('dialog', async dialog => {
-      assert.match(dialog.message(), /historial de ejecución/);
+      assert.match(dialog.message(), /los 2 escenarios seleccionados/);
       await dialog.accept();
     });
     await archive.click();
-    await expect(page.getByRole('heading', { name: 'Aún no hay escenarios', exact: true })).toBeVisible();
-    await expect(page.getByText('Escenarios archivados. Ya puedes generar casos nuevos.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Se archivaron 2 escenarios.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Escenarios (10)', exact: true })).toBeVisible();
+    await expect(archive).toBeDisabled();
+    assert.deepEqual(scenarios.map(scenario => scenario.id), cases.slice(1, -1).map(scenario => scenario.id));
+    await expect(tab.getByRole('button', { name: cases[1].title, exact: true })).toBeVisible();
+    await expect(tab.getByRole('button', { name: first.title, exact: true })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Aún no hay escenarios para automatizar', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: cases[1].title, exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: first.title, exact: true })).toHaveCount(0);
     assert.equal(queuedRequests.length, initialQueues);
   } finally {
     scenarios = saved;
   }
-  console.log('PASS vaciar escenarios requiere confirmación y limpia el catálogo activo sin encolar pruebas. API simulada.');
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  await page.reload();
+  console.log('PASS archivar casos marcados en páginas distintas conserva los demás escenarios y requiere confirmación. API simulada.');
 }
 
 async function run() {
@@ -1374,7 +1406,6 @@ async function run() {
     await verifyAutomationRunStatus(page);
     await verifyStopSuiteDuringSubmission(page);
     await verifyArchiveScenarios(page);
-    await page.goto(`${website}/projects/${projectId}`);
     await page.getByRole('heading', { name: project.name, exact: true }).waitFor();
     await page.getByText('spec-checkout.yaml', { exact: true }).waitFor();
     const header = await page.locator('.app-nav').boundingBox();

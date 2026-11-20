@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { IsUUID } from 'class-validator';
 import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
-import { CreateScenarioDto, UpdateScenarioDto } from './dto/scenario.dto';
+import { ArchiveScenariosDto, CreateScenarioDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { ScenariosService } from './scenarios.service';
 
 class SuggestScenariosDto {
@@ -84,11 +84,15 @@ export class ScenariosController {
     return this.service.update(projectId, id, dto, workspace);
   }
 
-  @Delete()
+  @Post('archive')
   @HttpCode(200)
   @RequiresRole('EDITOR')
-  archiveAll(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
-    return this.service.archiveAll(projectId, workspace);
+  archiveSelected(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body() dto: ArchiveScenariosDto,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.archiveSelected(projectId, dto.scenarioIds, workspace);
   }
 
   @Delete(':id')

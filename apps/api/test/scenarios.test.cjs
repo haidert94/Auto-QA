@@ -208,23 +208,32 @@ test('DELETE archiva un escenario con resultados y conserva su historial', async
   assert.equal(rerun.status, 404);
 });
 
-test('DELETE del listado vacía solo el catálogo actual y admite escenarios nuevos', async () => {
+test('archiva solamente los escenarios seleccionados del proyecto y permite volver a generar', async () => {
   const projectId = await makeProject();
   const otherProject = await makeProject();
   const requirementId = await makeRequirement(projectId);
   const scenario = { title: 'Escenario activo', steps: [{ ordinal: 1, action: 'x' }] };
-  assert.equal((await post(projectId, { ...scenario, requirementId })).status, 201);
-  await post(projectId, scenario);
-  await post(otherProject, scenario);
+  const selected = await (await post(projectId, { ...scenario, requirementId })).json();
+  const keep = await (await post(projectId, scenario)).json();
+  const other = await (await post(otherProject, scenario)).json();
   const url = `${baseUrl}/projects/${projectId}/scenarios`;
-  const response = await request(url, { method: 'DELETE' });
+  const archive = body => request(url + '/archive', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  for (const invalid of [{}, { scenarioIds: [] }, { scenarioIds: ['invalid'] }]) {
+    assert.equal((await archive(invalid)).status, 400);
+  }
+  assert.equal((await request(url, { method: 'DELETE' })).status, 404);
+  assert.equal((await request(url).then(r => r.json())).length, 2);
+  const selection = { scenarioIds: [selected.id, other.id] };
+  const response = await archive(selection);
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { archived: 2 });
-  assert.deepEqual(await request(url).then(r => r.json()), []);
-  assert.deepEqual(await request(url, { method: 'DELETE' }).then(r => r.json()), { archived: 0 });
-  assert.equal((await request(`${baseUrl}/projects/${otherProject}/scenarios`).then(r => r.json())).length, 1);
+  assert.deepEqual(await response.json(), { archived: 1 });
+  assert.deepEqual((await request(url).then(r => r.json())).map(item => item.id), [keep.id]);
+  assert.deepEqual(await (await archive(selection)).json(), { archived: 0 });
+  assert.deepEqual((await request(`${baseUrl}/projects/${otherProject}/scenarios`).then(r => r.json())).map(item => item.id), [other.id]);
   assert.equal((await post(projectId, { ...scenario, requirementId })).status, 201);
-  assert.equal((await request(url).then(r => r.json())).length, 1);
+  assert.equal((await request(url).then(r => r.json())).length, 2);
 });
 
 test('GET /scenarios solo lista escenarios del propio proyecto', async () => {
