@@ -11,7 +11,6 @@ import { can } from '../../permissions';
 import { GenerationCard } from './generation-card';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader, useScenarioSuite } from './project-tabs';
-import { AutomationCodeViewer } from './automation-code-viewer';
 import { AutomationRunStatus } from './automation-run-status';
 import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
@@ -55,7 +54,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [listError, setListError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -92,16 +90,15 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         specsRef.current = current; setSpecs?.(current);
         setSelected(previous => new Set(list.filter(item => firstLoad || previous.has(item.id)).map(item => item.id)));
         setScenarios(list);
-        setActiveId(previous => previous === 'configuration' || list.some(item => item.id === previous) ? previous : list[0]?.id ?? null);
       }).catch((reason: unknown) => { if (!controller.signal.aborted) setListError(reason instanceof Error ? reason.message : 'No se pudo consultar la automatización.'); });
     return () => controller.abort();
   }, [project.id, header?.active, refresh, setSpecs]);
 
-  const generateOne = useCallback((scenario: ScenarioListItem, mode: 'preview' | 'prepare' | 'download' = 'preview'): Promise<GeneratedSpec> => {
+  const generateOne = useCallback((scenario: ScenarioListItem, mode: 'prepare' | 'download'): Promise<GeneratedSpec> => {
     const currentSignature = scenarioSpecSignature(scenario);
     const cached = specsRef.current[scenario.id];
     const useAgent = mode === 'prepare';
-    if (cached?.signature === currentSignature && (mode === 'preview' || (!cached.error && (!useAgent || cached.automationId)))) {
+    if (cached?.signature === currentSignature && !cached.error && (!useAgent || cached.automationId)) {
       return Promise.resolve(cached);
     }
     const requestKey = JSON.stringify([scenario.id, currentSignature, scenario.playwright?.automationId, useAgent]);
@@ -152,12 +149,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     return task;
   }, [project.id, setSpecs]);
 
-  useEffect(() => {
-    if (!header?.active || !scenarios || !activeId || activeId === 'configuration') return;
-    const scenario = scenarios.find(item => item.id === activeId);
-    if (scenario) void generateOne(scenario);
-  }, [header?.active, scenarios, activeId, generateOne]);
-
   const items = scenarios ?? [];
   const statusCounts = { all: items.length, pending: 0, generating: 0, generated: 0, review: 0, error: 0 };
   const normalized = query.trim().toLocaleLowerCase('es');
@@ -175,7 +166,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     && matchesScenarioQuery(scenario, normalized, path));
   const { visible, results, resetPage, pagination } = useScenarioPagination(filtered);
   const selectedScenarios = items.filter(scenario => selected.has(scenario.id));
-  const generated = (scenarios ?? []).map(scenario => specs[scenario.id]).filter((spec): spec is GeneratedSpec => !!spec);
   const ready = rows.filter(({ scenario, status }) => selected.has(scenario.id) && status === 'generated').map(({ scenario }) => scenario);
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError;
 
@@ -201,11 +191,10 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     finally { if (mounted.current) setBusy(false); }
   }
 
-  const selectedSpec = activeId ? specs[activeId] : undefined;
   const generationDisabled = busy || !selectedScenarios.length || !!listError;
   return <section className="automation-panel" aria-label="Automatización Playwright">
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary="Generador de código Playwright TypeScript a partir de los escenarios guardados. Revisa el código antes de solicitar su ejecución."
+      summary="Genera, descarga y ejecuta el código Playwright de los escenarios seleccionados."
       actions={<><button type="button" className="secondary" disabled={busy || !selected.size || !!listError} onClick={() => void prepare(true)}><Download size={14} />{busy ? 'Preparando…' : 'Descargar .spec.ts (.zip)'}</button>
         {canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar en runners (${ready.length})`}</button>}</>} />, header.element)}
     {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
@@ -213,7 +202,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
       </button>
     }>
-      <p className="muted">El agente convierte los escenarios seleccionados en código Playwright. Revisa el código antes de ejecutarlo.</p>
+      <p className="muted">El agente convierte los escenarios seleccionados en código Playwright.</p>
     </GenerationCard>}
     {notice && <p className="automation-message automation-operation-notice" role="status">{notice}</p>}
     {error && <p className="automation-message error" role="alert">{error}</p>}
@@ -227,42 +216,39 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
       items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }} visible={visible.map(row => row.scenario)}
       selected={selected} onSelectionChange={setSelected} selectionDisabled={busy}
     />
-    <div className="automation-workspace">
-      <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
-        <header><div><h2 id="automation-scenarios-heading">Escenarios para Playwright</h2>
-          <p>{selected.size} seleccionados · {ready.length} con código guardado</p></div>
-          <div className="automation-scenarios__tools">
-            <span className="automation-suite-count">Suite {selected.size}/{scenarios?.length ?? '…'}</span>
-            <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button>
-          </div>
-        </header>
-        {listError ? <div className="automation-list-message" role="alert"><p className="error">{listError}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar automatización</button></div>
-          : scenarios === null ? <p className="automation-list-message" role="status">Cargando escenarios…</p>
-          : !scenarios.length ? <div className="automation-list-message"><FileCode2 size={25} /><h3>Aún no hay escenarios para automatizar</h3><p>Crea escenarios y define sus pasos para preparar código.</p><Link href="#escenarios">Ir a Escenarios →</Link></div>
-          : !visible.length ? <div className="automation-list-message"><h3>No hay coincidencias</h3>
-            <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setStatusFilter('all'); resetPage(); }}>Limpiar filtros</button></div>
-          : <ul ref={results} className="automation-pick-list" tabIndex={-1} aria-label="Escenarios para Playwright">{visible.map(({ scenario, spec, status, path }) => {
-            return <li key={scenario.id} className={activeId === scenario.id ? 'automation-pick--active' : ''}>
-              <input type="checkbox" checked={selected.has(scenario.id)} disabled={busy} aria-label={`Automatizar ${scenario.title}`} onChange={() => toggle(scenario.id)} />
-              <div><div className="automation-pick-meta"><code title={scenario.id}>{scenario.id.slice(0, 8)}</code>{scenario.tags?.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}
-                <span className={`automation-generation-state${status === 'error' ? ' is-error' : status === 'review' ? ' is-review' : status === 'generated' ? ' is-generated' : ''}`}>{AUTOMATION_STATUS_LABELS[status]}</span></div>
-                <h3><button type="button" aria-pressed={activeId === scenario.id} onClick={() => setActiveId(scenario.id)}>{scenario.title}</button></h3>
-                <p className="automation-pick-path" title={path || undefined}>{path || (status === 'error' ? 'Código no disponible' : 'Código pendiente de generación')}</p>
-                {spec?.error && <p className="error" role="alert">{spec.error}</p>}
-                {spec?.notice && <p className="automation-review-reasons">{spec.notice}</p>}
-                {spec?.review.length ? <p className="automation-review-reasons">{spec.review.join(' · ')}</p> : null}
-              </div>
-            </li>;
-          })}</ul>}
-        {scenarios && !listError && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
-      </section>
-      <div className="automation-preview-column">
-        {header?.active && <AutomationRunStatus projectId={project.id} canStop={canRunSuite} />}
-        <AutomationCodeViewer specs={generated} activeId={activeId} onSelect={setActiveId} loading={generating.size > 0 || (!!activeId && activeId !== 'configuration' && !selectedSpec && !listError)} />
-        {selectedSpec?.error && <div className="automation-preview-note"><p className="error">{selectedSpec.error}</p><button type="button" className="secondary" disabled={busy} onClick={() => { const scenario = scenarios?.find(item => item.id === activeId); if (scenario) void generateOne(scenario, canGenerate ? 'prepare' : 'download'); }}>Reintentar archivo</button></div>}
-        {selectedSpec?.review.length ? <p className="automation-preview-note">Pendientes detectados: {selectedSpec.review.join(' · ')}. Se incluye el código en la descarga para su revisión, pero no en la solicitud de ejecución.</p> : null}
-        {(project.status !== 'READY' || !environments.length) && <p className="automation-preview-note">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
-      </div>
-    </div>
+    {header?.active && <AutomationRunStatus projectId={project.id} canStop={canRunSuite} />}
+    {(project.status !== 'READY' || !environments.length) && <p className="automation-message">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
+    <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
+      <header><div><h2 id="automation-scenarios-heading">Escenarios para Playwright</h2>
+        <p>{selected.size} seleccionados · {ready.length} con código guardado</p></div>
+        <div className="automation-scenarios__tools">
+          <span className="automation-suite-count">Suite {selected.size}/{scenarios?.length ?? '…'}</span>
+          <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button>
+        </div>
+      </header>
+      {listError ? <div className="automation-list-message" role="alert"><p className="error">{listError}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar automatización</button></div>
+        : scenarios === null ? <p className="automation-list-message" role="status">Cargando escenarios…</p>
+        : !scenarios.length ? <div className="automation-list-message"><FileCode2 size={25} /><h3>Aún no hay escenarios para automatizar</h3><p>Crea escenarios y define sus pasos para preparar código.</p><Link href="#escenarios">Ir a Escenarios →</Link></div>
+        : !visible.length ? <div className="automation-list-message"><h3>No hay coincidencias</h3>
+          <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setStatusFilter('all'); resetPage(); }}>Limpiar filtros</button></div>
+        : <ul ref={results} className="automation-pick-list" tabIndex={-1} aria-label="Escenarios para Playwright">{visible.map(({ scenario, spec, status, path }) => {
+          return <li key={scenario.id}>
+            <input type="checkbox" checked={selected.has(scenario.id)} disabled={busy} aria-label={`Automatizar ${scenario.title}`} onChange={() => toggle(scenario.id)} />
+            <div><div className="automation-pick-meta"><code title={scenario.id}>{scenario.id.slice(0, 8)}</code>{scenario.tags?.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}
+              <span className={`automation-generation-state${status === 'error' ? ' is-error' : status === 'review' ? ' is-review' : status === 'generated' ? ' is-generated' : ''}`}>{AUTOMATION_STATUS_LABELS[status]}</span></div>
+              <h3>{scenario.title}</h3>
+              <p className="automation-pick-path" title={path || undefined}>{path || (status === 'error' ? 'Código no disponible' : 'Código pendiente de generación')}</p>
+              {spec?.error && <>
+                <p className="error" role="alert">{spec.error}</p>
+                <button type="button" className="secondary automation-row-retry" disabled={busy || status === 'generating'}
+                  onClick={() => void generateOne(scenario, canGenerate ? 'prepare' : 'download')}>Reintentar archivo</button>
+              </>}
+              {spec?.notice && <p className="automation-review-reasons">{spec.notice}</p>}
+              {spec?.review.length ? <p className="automation-review-reasons">{spec.review.join(' · ')}</p> : null}
+            </div>
+          </li>;
+        })}</ul>}
+      {scenarios && !listError && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
+    </section>
   </section>;
 }

@@ -357,7 +357,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   function hasRunnableSpec(item: ScenarioListItem) {
     if (isManualScenario(item)) return false;
     const spec = header?.specs[item.id];
-    return spec?.signature === scenarioSpecSignature(item) && !spec.error && spec.review.length === 0;
+    return !!item.playwright?.automationId
+      || (spec?.signature === scenarioSpecSignature(item) && !!spec.automationId && !spec.error && spec.review.length === 0);
   }
 
   const selected = (items ?? []).filter(item => checked.has(item.id));
@@ -407,7 +408,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
       : <ScenarioWorkspace key={items.length ? 'active' : 'empty'} projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
         hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
-        onChange={updated => setItems(current => current?.map(item => item.id === updated.id ? updated : item) ?? null)} />}
+        onChange={updated => setItems(current => current?.map(item => item.id !== updated.id ? item : {
+          ...updated, playwright: scenarioSpecSignature(item) === scenarioSpecSignature(updated) ? item.playwright : null,
+        }) ?? null)} />}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
 

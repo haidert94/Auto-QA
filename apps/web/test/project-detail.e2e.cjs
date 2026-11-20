@@ -610,9 +610,8 @@ async function verifySavedAutomationAfterReload(page) {
 
   try {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    await second.getByRole('button', { name: scenarios[1].title, exact: true }).click();
-    await expect(section.locator('.automation-source')).toContainText(scenarios[1].title);
     await expect(second.getByText('Pendiente', { exact: true })).toBeVisible();
+    await expect(section.getByRole('region', { name: 'Visor de código Playwright' })).toHaveCount(0);
     await expect(states.getByRole('button', { name: 'Generado (0)', exact: true })).toBeVisible();
     await rows.nth(2).getByRole('checkbox').uncheck();
     await section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true }).click();
@@ -621,11 +620,15 @@ async function verifySavedAutomationAfterReload(page) {
 
     const requestStart = previewRequests.length;
     await page.reload();
+    await page.getByRole('tab', { name: 'Escenarios (3)', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Seleccionar ' + scenarios[2].title, exact: true }).uncheck();
+    await expect(page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true })).toBeEnabled();
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await states.getByRole('button', { name: 'Generado (2)', exact: true }).click();
     await expect(rows).toHaveCount(2);
     await expect(second.getByText('Generado', { exact: true })).toBeVisible();
     await expect(second.getByText(/payment-declined\.spec\.ts$/)).toBeVisible();
-    assert.ok(!previewRequests.slice(requestStart).includes(scenarioB));
+    assert.equal(previewRequests.length, requestStart, 'El código guardado se reconoce sin solicitar una vista previa.');
     await runner.click();
     const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
     await dialog.getByRole('checkbox').check();
@@ -833,19 +836,22 @@ async function verifyAutomationToolbar(page) {
   const section = page.getByRole('region', { name: 'Automatización Playwright' });
   const toolbar = section.getByRole('region', { name: 'Buscar y filtrar automatización' });
   const states = toolbar.getByRole('group', { name: 'Filtrar por estado del código' });
-  const tags = toolbar.getByRole('group', { name: 'Filtrar por etiqueta' });
+  const tags = toolbar.getByRole('group', { name: 'Opciones de etiqueta' });
+  const tagMenu = toolbar.locator('summary[aria-label="Filtrar por etiqueta"]');
   const search = toolbar.getByRole('searchbox', { name: 'Buscar escenarios para Playwright' });
   const rows = section.locator('.automation-pick-list > li');
   await expect(rows).toHaveCount(3);
   await expect(states.getByRole('button', { name: 'Generado (1)', exact: true })).toBeVisible();
   await states.getByRole('button', { name: 'Pendiente (2)', exact: true }).click();
   await expect(rows).toHaveCount(2);
+  await tagMenu.click();
   await tags.getByRole('button', { name: '@apiRest (1)', exact: true }).click();
   await expect(rows).toHaveCount(1);
   await toolbar.getByRole('checkbox', { name: 'Seleccionar visibles (1)', exact: true }).uncheck();
   await expect(toolbar.getByRole('status')).toHaveText('2 seleccionados · 1 visibles');
   await expect(section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true })).toBeEnabled();
 
+  await tagMenu.click();
   await tags.getByRole('button', { name: 'Todos (3)', exact: true }).click();
   await states.getByRole('button', { name: 'Todos (3)', exact: true }).click();
   await page.keyboard.press('Control+k');
@@ -855,17 +861,17 @@ async function verifyAutomationToolbar(page) {
   await expect(rows.first()).toContainText(scenarios[0].title);
   await search.clear();
 
+  await rows.nth(1).getByRole('checkbox').check();
   specFailure = true;
   try {
-    await rows.getByRole('button', { name: scenarios[1].title, exact: true }).click();
+    await section.getByRole('button', { name: 'Generar seleccionados (3)', exact: true }).click();
     await states.getByRole('button', { name: 'Error (1)', exact: true }).click();
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText(scenarios[1].title);
+    await rows.first().getByRole('checkbox').uncheck();
   } finally {
     specFailure = false;
   }
-  await states.getByRole('button', { name: 'Todos (3)', exact: true }).click();
-  await rows.getByRole('button', { name: scenarios[2].title, exact: true }).click();
   await states.getByRole('button', { name: 'Requiere revisión (1)', exact: true }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(scenarios[2].title);
@@ -963,49 +969,29 @@ async function verifyWritableExecution(page) {
 async function verifyAutomation(page, screenshots) {
   const section = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
   const rows = section.locator('.automation-pick-list > li');
-  const source = section.locator('.automation-source');
   const initialQueues = queuedRequests.length;
   await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
   await expect(rows).toHaveCount(4);
-  await expect(source).toContainText(fixtureSpec(scenarios[0]).code.split('\n')[0]);
+  await expect(section.getByRole('region', { name: 'Visor de código Playwright' })).toHaveCount(0);
   const generation = section.getByRole('region', { name: 'Generar código Playwright' });
   const generate = generation.getByRole('button', { name: 'Generar seleccionados (4)', exact: true });
   await expect(generate).toBeVisible();
   await expect(section.getByRole('button', { name: /^Generar seleccionados/ })).toHaveCount(1);
   const cardBounds = await generation.boundingBox();
-  const workspaceBounds = await section.locator('.automation-workspace').boundingBox();
-  assert.ok(cardBounds.y + cardBounds.height <= workspaceBounds.y, 'El bloque de generación queda encima de la lista y el visor.');
+  const listBounds = await section.locator('.automation-scenarios').boundingBox();
+  assert.ok(cardBounds.y + cardBounds.height <= listBounds.y, 'El bloque de generación queda encima de la lista.');
   await generate.click();
   await expect(section.getByText('2 con código guardado · 2 en revisión.', { exact: true })).toBeVisible();
   await expect(section.locator('.automation-generation-state').getByText('Generado', { exact: true })).toHaveCount(2);
   await expect(section.locator('.automation-generation-state').getByText('Requiere revisión', { exact: true })).toHaveCount(2);
   assert.equal(queuedRequests.length, initialQueues, 'Generar y visualizar no encola ejecuciones.');
-  await section.getByRole('tab', { name: 'payment-declined.spec.ts', exact: true }).click();
-  await expect(source).toContainText('<img src=x onerror="window.autoqaInjected=true">');
-  await expect(source.locator('img')).toHaveCount(0);
-  assert.equal(await page.evaluate(() => !!window.autoqaInjected), false, 'El código recibido se presenta como texto.');
-  await section.getByRole('tab', { name: fixtureSpec(scenarios[0]).filename, exact: true }).click();
+  await expect(section.getByRole('tablist', { name: 'Archivos de automatización' })).toHaveCount(0);
+  await expect(section.locator('pre')).toHaveCount(0);
   await page.setViewportSize({ width: 1170, height: 1000 });
-  const picker = await section.locator('.automation-scenarios').boundingBox();
-  const editor = await section.locator('.automation-editor').boundingBox();
-  assert.ok(picker.x + picker.width <= editor.x, 'La selección queda a la izquierda del código.');
-  await page.mouse.move(0, 0);
+  const panelBounds = await section.boundingBox();
+  const scenariosBounds = await section.locator('.automation-scenarios').boundingBox();
+  assert.equal(scenariosBounds.width, panelBounds.width, 'La lista aprovecha el ancho de Automatización.');
   await page.screenshot({ path: join(screenshots, 'project-automation-desktop.png'), fullPage: true, animations: 'disabled' });
-  const firstFile = fixtureSpec(scenarios[0]).filename;
-  await section.getByRole('tab', { name: firstFile, exact: true }).click();
-  await section.getByRole('button', { name: 'Copiar código', exact: true }).click();
-  assert.equal((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n'), fixtureSpec(scenarios[0]).code);
-  const configTab = section.getByRole('tab', { name: 'playwright.config.ts', exact: true });
-  await configTab.click();
-  await expect(source).toContainText('process.env.AUTOQA_BASE_URL');
-  await section.getByRole('button', { name: 'Copiar código', exact: true }).click();
-  const configText = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n');
-  await configTab.focus(); await page.keyboard.press('Home');
-  await expect(section.getByRole('tab', { name: firstFile, exact: true })).toHaveAttribute('aria-selected', 'true');
-  await section.getByRole('button', { name: 'Ampliar visor de código', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-  await section.getByRole('button', { name: 'Restaurar visor de código', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   const zipDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Descargar .spec.ts (.zip)', exact: true }).click();
   const download = await zipDownload;
@@ -1014,7 +1000,7 @@ async function verifyAutomation(page, screenshots) {
   const zipNames = Object.keys(zip.files).filter(name => !zip.files[name].dir);
   assert.equal(zipNames.filter(name => name.endsWith('.spec.ts')).length, 4);
   assert.ok(zipNames.every(name => !name.includes('..') && !name.startsWith('/') && !name.includes('\\')));
-  assert.equal(await zip.file('playwright.config.ts').async('string'), configText);
+  assert.match(await zip.file('playwright.config.ts').async('string'), /process\.env\.AUTOQA_BASE_URL/);
   const firstPath = zipNames.find(name => name.includes(scenarioA) && name.endsWith('.spec.ts'));
   assert.equal(await zip.file(firstPath).async('string'), fixtureSpec(scenarios[0]).code);
   const allContents = (await Promise.all(zipNames.map(name => zip.file(name).async('string')))).join('\n');
@@ -1035,8 +1021,9 @@ async function verifyAutomation(page, screenshots) {
     assert.equal(await page.locator('.project-heading:visible').evaluate(node => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width, `Automatización sin desbordamiento a ${width}px.`);
     if (width === 390) {
-      const mobilePicker = await section.locator('.automation-scenarios').boundingBox(); const mobileEditor = await section.locator('.automation-editor').boundingBox();
-      assert.ok(mobilePicker.y + mobilePicker.height <= mobileEditor.y);
+      const mobileStatus = await section.getByRole('region', { name: 'Estado de ejecución' }).boundingBox();
+      const mobileList = await section.locator('.automation-scenarios').boundingBox();
+      assert.ok(mobileStatus.y + mobileStatus.height <= mobileList.y);
       await page.screenshot({ path: join(screenshots, 'project-automation-mobile.png'), fullPage: true, animations: 'disabled' });
     }
   }
@@ -1064,7 +1051,9 @@ async function verifyAutomation(page, screenshots) {
   scenarios[1].title += ' · contrato actualizado';
   malformedSpec = true;
   await section.getByRole('button', { name: 'Actualizar escenarios de automatización', exact: true }).click();
-  await section.getByRole('button', { name: scenarios[1].title, exact: true }).click();
+  await section.getByRole('checkbox', { name: `Automatizar ${scenarios[2].title}`, exact: true }).uncheck();
+  await section.getByRole('checkbox', { name: `Automatizar ${scenarios[1].title}`, exact: true }).check();
+  await section.getByRole('button', { name: 'Generar seleccionados (1)', exact: true }).click();
   await expect(section.getByText('La API no devolvió un archivo de código válido.', { exact: true }).first()).toBeVisible();
   malformedSpec = false; specFailure = true;
   await section.getByRole('button', { name: 'Reintentar archivo', exact: true }).click();
@@ -1080,7 +1069,7 @@ async function verifyAutomation(page, screenshots) {
   specFailure = false;
   await section.getByRole('button', { name: 'Reintentar archivo', exact: true }).click();
   await expect(rows.filter({ hasText: scenarios[1].title }).getByText('Generado', { exact: true })).toBeVisible();
-  await expect(source).toContainText(scenarios[1].title);
+  await expect(section.locator('pre')).toHaveCount(0);
   await page.getByRole('button', { name: 'Ejecutar en runners (1)', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
   await dialog.getByRole('checkbox').check();
@@ -1105,7 +1094,7 @@ async function verifyAutomation(page, screenshots) {
   project.status = 'READY';
   await page.reload();
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
-  console.log('PASS automatización: contrato filename/code, visor seguro, archivos/teclado, copiar, pantalla completa, ZIP con CRC/rutas/contenido, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
+  console.log('PASS automatización: lista sin visor, ZIP con CRC/rutas/contenido, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
 }
 
 async function verifyRunReport(page, screenshots) {
@@ -1415,8 +1404,8 @@ async function verifyDeleteScenarios(page) {
     await expect(tab.getByRole('button', { name: cases[1].title, exact: true })).toBeVisible();
     await expect(tab.getByRole('button', { name: first.title, exact: true })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
-    await expect(page.getByRole('button', { name: cases[1].title, exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: first.title, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: cases[1].title, exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: first.title, exact: true })).toHaveCount(0);
     await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
     const table = page.getByRole('table', { name: 'Ejecuciones registradas', exact: true });
     await expect(table.getByText(cases[1].title, { exact: true })).toBeVisible();
