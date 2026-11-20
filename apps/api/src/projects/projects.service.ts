@@ -31,7 +31,7 @@ function describeProject<T extends ProjectRecord>(project: T) {
   return {
     ...project,
     environments: project.environments.map(redactEnvironment),
-    missingRequirements: getMissingRequirements(project, project.environments),
+    missingRequirements: getMissingRequirements(project, project.environments, project.roles),
   };
 }
 

@@ -48,6 +48,7 @@ const TABS = [
   { id: 'escenarios', label: 'Escenarios' },
   { id: 'automatizacion', label: 'Automatización' },
   { id: 'reporte', label: 'Reportes' },
+  { id: 'historial', label: 'Historial' },
   { id: 'calidad', label: 'Calidad' },
   { id: 'exploracion', label: 'Exploración' },
 ] as const;

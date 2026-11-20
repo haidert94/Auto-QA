@@ -14,7 +14,6 @@ const projectIds = new Set();
 before(async () => {
   process.env.DATABASE_URL = testUrl;
   process.env.AUTOQA_LEGACY_MODE = 'true';
-  process.env.AUTOQA_DEPLOYMENT = 'local';
   const { createApp } = require('../dist/app');
   prisma = new PrismaClient({ datasourceUrl: testUrl });
   app = await createApp();
@@ -46,7 +45,7 @@ async function request(method, body, id = '') {
 
 function configuration() {
   return {
-    name: 'Portal sintético ' + randomUUID().slice(0, 8),
+    name: 'Portal sintético',
     description: 'Registro de integración',
     ownerLabel: 'Equipo QA',
     status: 'READY',
@@ -54,7 +53,6 @@ function configuration() {
     environments: [
       {
         type: 'QA',
-        version: '1.4.2-qa',
         baseUrl: 'https://QA.example.com/catalogo',
         accessMode: 'PRIVATE',
         authorizationConfirmed: true,
@@ -74,7 +72,6 @@ function configuration() {
       },
       {
         type: 'STAGING',
-        version: '1.4.1',
         baseUrl: 'https://staging.example.com/',
         accessMode: 'SSO',
         authorizationConfirmed: true,
@@ -105,7 +102,6 @@ test('draft can be resumed and completed with multiple environments and role per
   assert.equal(draft.data.status, 'DRAFT');
   assert.equal(draft.data.environments[0].readOnly, true);
   assert.ok(draft.data.missingRequirements.some(message => message.includes('autorización')));
-  assert.ok(draft.data.missingRequirements.some(message => message.includes('versión')));
   const invalid = await request('PUT', { name: 'Cambio inválido', revision: 0, status: 'READY' }, draft.data.id);
   assert.equal(invalid.status, 400);
   const unchanged = await request('GET', undefined, draft.data.id);
@@ -127,7 +123,6 @@ test('draft can be resumed and completed with multiple environments and role per
   assert.equal(project.ownerLabel, payload.ownerLabel);
   assert.equal(project.authorizationConfirmed, true);
   assert.equal(project.environments.length, 2);
-  assert.deepEqual(project.environments.map(environment => environment.version), ['1.4.2-qa', '1.4.1']);
   assert.equal(project.environments[0].id, draft.data.environments[0].id);
   assert.equal(project.environments[0].baseUrl, 'https://qa.example.com/catalogo');
   assert.equal(project.environments[1].accessMode, 'SSO');
@@ -161,41 +156,6 @@ test('draft can be resumed and completed with multiple environments and role per
   assert.equal(changed.data.environments.length, 1);
   assert.equal(changed.data.environments[0].authorizedAt, null);
   assert.deepEqual(changed.data.roles, []);
-});
-
-test('la versión es obligatoria al completar el registro y al agregar un entorno', async () => {
-  const payload = configuration();
-  payload.environments[0].version = undefined;
-  const incomplete = await request('POST', payload);
-  assert.equal(incomplete.status, 400);
-  assert.ok(incomplete.data.message.includes('Entorno 1: registra la versión de la aplicación.'));
-
-  payload.environments[0].version = '   ';
-  assert.equal((await request('POST', payload)).status, 400);
-
-  payload.environments[0].version = ' 1.4.2-qa ';
-  const created = await request('POST', payload);
-  assert.equal(created.status, 201, JSON.stringify(created.data));
-  const { id, revision, environments } = created.data;
-  assert.equal(environments[0].version, '1.4.2-qa');
-
-  const existing = payload.environments.map((environment, index) => ({ ...environment, id: environments[index].id }));
-  const extra = { ...payload.environments[0], version: undefined };
-  const update = await request('PUT', { ...payload, revision, environments: [...existing, extra] }, id);
-  assert.equal(update.status, 400);
-  assert.ok(update.data.message.includes('Entorno 3: registra la versión de la aplicación.'));
-
-  await prisma.environment.update({ where: { id: existing[0].id }, data: { version: null } });
-  existing[0].version = undefined;
-  const legacy = await request('PUT', { ...payload, revision, environments: existing }, id);
-  assert.equal(legacy.status, 200, JSON.stringify(legacy.data));
-  assert.equal(legacy.data.environments[0].version, null);
-  assert.ok(legacy.data.missingRequirements.some(message => message.includes('versión')));
-  existing[0].version = 'release-2026.11';
-  const updated = await request('PUT', { ...payload, revision: legacy.data.revision, environments: existing }, id);
-  assert.equal(updated.status, 200, JSON.stringify(updated.data));
-  assert.equal(updated.data.environments[0].version, 'release-2026.11');
-  assert.equal(updated.data.environments[0].authorizedAt, legacy.data.environments[0].authorizedAt);
 });
 
 test('starter request remains supported as a draft, and missing IDs return 404', async () => {

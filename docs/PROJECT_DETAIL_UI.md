@@ -14,8 +14,6 @@ La ruta `/projects/[id]` conserva Next.js, las consultas autenticadas de `accoun
 
 Los documentos diferencian declarado, cargado, procesado y validado. Un error de consulta permite reintentar y se distingue de una lista vacía. No se copian del mockup puntajes, nombres, expiraciones JWT ni mensajes de ejecución. El panel oscuro refleja autorizaciones, documentos y evaluación del registro; no es telemetría en vivo ni evidencia de pruebas ejecutadas.
 
-El asistente de creación y el diálogo de entornos solicitan una versión por entorno. Datos muestra la versión del entorno seleccionado o «Pendiente de registrar» para registros anteriores. La API exige la versión para completar el registro y la migración `20261119050000_environment_version` añade el campo.
-
 ## Verificación
 
 En PowerShell desde la raíz: `npm.cmd run test:project-detail`. La suite usa Google Chrome headless y una API HTTP simulada en loopback, con datos sintéticos y puertos temporales; cierra sus procesos al finalizar. Verifica resoluciones de 1440, 768, 390 y 320 px, disposición de columnas, estados documentales, selección de entornos, copiar URL, descarga sin secretos, pestañas/teclado, selección y eliminación de archivos pendientes, guardado a través del formulario/proxy, acceso a roles, error/reintento, ausencia de IPA, visibilidad por plan y borradores. Revisa errores JavaScript y captura escritorio/móvil.
@@ -67,6 +65,10 @@ El selector alterna historial disponible y ejecución individual. El historial p
 `run-report-data.ts` exporta las ejecuciones visibles. JUnit XML crea un testsuite por run y un testcase por resultado. FAILED se exporta como failure; BLOCKED/SKIPPED como skipped. Un run sin resultados no se convierte en aprobado: FAILED produce error y el resto skipped con mensaje de estado. Se omiten tiempos de testcase desconocidos y se escapan caracteres XML/control inválidos. JSON omite claves privadas de evidencia y solo informa si existe traza. No se implementa ni anuncia Allure XML. La compatibilidad con un consumidor CI específico no se ha probado.
 
 La prueba de navegador comprueba las métricas con denominador, duración cero y desconocida, selector/filtros, mensajes de error como texto, descarga de traza mediante proxy y sesión sintética, XML válido y sus contadores, JSON sin claves de almacenamiento, cronología/matriz, resolución móvil, navegación sin envíos automáticos, respuesta 403, reintento y estado vacío. Capturas: `project-runs-desktop.png` y `project-runs-mobile.png`. La API es simulada; no certifica la generación de trazas por un worker real.
+
+## Pestaña Historial
+
+La pestaña guarda `#historial` en la URL. Muestra las fechas registradas de creación y última actualización del proyecto en UTC. La revisión actual se consulta en la cabecera. La API del proyecto devuelve estas fechas y el número actual de revisión.
 
 ## Pestaña Calidad
 

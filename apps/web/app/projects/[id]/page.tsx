@@ -14,6 +14,8 @@ import { QualityPanel } from './quality-panel';
 
 export const dynamic = 'force-dynamic';
 
+const historyDate = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
+
 function hasBrowserTests(account: Awaited<ReturnType<typeof requireAccount>>) {
   const capability = account.subscription.plan?.capabilities.find(c => c.code === 'BROWSER_TESTS');
   return !!capability && capability.availability !== 'NOT_INCLUDED';
@@ -71,6 +73,19 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         escenarios: <ScenariosPanel key={project.id} project={project} role={role} />,
         automatizacion: <AutomationPanel key={project.id} project={project} role={role} />,
         reporte: <ExecutionReport key={project.id} project={project} />,
+        historial: (
+          <section className="detail-card" aria-labelledby="project-history-heading">
+            <header className="detail-card__head"><h2 id="project-history-heading">Actividad del proyecto</h2></header>
+            <div className="detail-card__body">
+              <dl className="detail-fields">
+                <div><dt>Creación del proyecto</dt>
+                  <dd><time dateTime={project.createdAt}>{historyDate.format(new Date(project.createdAt))} UTC</time></dd></div>
+                {project.updatedAt !== project.createdAt && <div><dt>Última actualización</dt>
+                  <dd><time dateTime={project.updatedAt}>{historyDate.format(new Date(project.updatedAt))} UTC</time></dd></div>}
+              </dl>
+            </div>
+          </section>
+        ),
         calidad: <QualityPanel key={project.id} project={project} />,
         exploracion: showExploration
           ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} project={project} role={role} />

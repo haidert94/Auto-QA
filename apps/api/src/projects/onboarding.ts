@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { AccessMode, EnvironmentType, type ProjectStatus } from '@prisma/client';
+import { AccessMode, EnvironmentType } from '@prisma/client';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
 import { supportsScenarioWrites } from '../runs/environment-policy';
 import { matchesScope, normalizeHost, normalizeScopePaths, parseBaseUrl, ScopePath } from './scope';
@@ -8,7 +8,6 @@ type OnboardingDto = CreateProjectDto | UpdateProjectDto;
 
 type EnvironmentState = {
   type: EnvironmentType | null;
-  version: string | null;
   baseUrl: string | null;
   accessMode: AccessMode | null;
   authorizationConfirmed: boolean;
@@ -32,7 +31,11 @@ function scopePaths(value: unknown): ScopePath[] {
 export function getMissingRequirements(
   project: { ownerLabel: string | null; ownerId?: string | null },
   environments: EnvironmentState[],
-  requiresVersion: (environmentIndex: number) => boolean = () => true,
+  // El tercer argumento se conserva por compatibilidad con los llamadores:
+  // los roles son opt-in, no se exigen ni para acceso privado ni para SSO.
+  // Cuando el cliente marca "necesito probar roles" en la UI, el front envía
+  // el array; el back lo guarda pero no lo usa como gate del status READY.
+  _roles: { permissions: unknown }[] = [],
 ): string[] {
   const missing: string[] = [];
   if (!project.ownerLabel && !project.ownerId) missing.push('Declara el propietario del proyecto.');
@@ -44,7 +47,6 @@ export function getMissingRequirements(
     const excluded = scopePaths(environment.excludedPaths);
     const hosts: unknown[] = Array.isArray(environment.allowedHosts) ? environment.allowedHosts : [];
     if (!environment.type) missing.push(`${label}: elige el tipo de entorno.`);
-    if (!environment.version && requiresVersion(index)) missing.push(`${label}: registra la versión de la aplicación.`);
     if (!environment.baseUrl) missing.push(`${label}: registra la URL HTTPS.`);
     if (!environment.accessMode) missing.push(`${label}: elige el modo de acceso.`);
     if (!environment.authorizationConfirmed || !environment.authorizedAt) {
@@ -77,7 +79,7 @@ type PreviousEnvironment = Parameters<typeof scopeSignature>[0] & { id: string }
 
 export function prepareOnboarding(
   dto: OnboardingDto,
-  previous: { environments: PreviousEnvironment[]; ownerId: string | null; status: ProjectStatus } | null,
+  previous: { environments: PreviousEnvironment[]; ownerId: string | null } | null,
 ) {
   const now = new Date();
   const usedIds = new Set<string>();
@@ -100,7 +102,6 @@ export function prepareOnboarding(
     const data = {
       position,
       type: entry.type ?? null,
-      version: entry.version?.trim() ?? old?.version ?? null,
       baseUrl,
       accessMode: entry.accessMode ?? null,
       authorizationConfirmed: entry.authorizationConfirmed ?? false,
@@ -127,7 +128,7 @@ export function prepareOnboarding(
         ? old.authorizedAt ?? now
         : now;
     }
-    return { id: entry.id, data, requiresVersion: !old || previous?.status !== 'READY' };
+    return { id: entry.id, data };
   });
 
   const names = new Set<string>();
@@ -173,7 +174,7 @@ export function prepareOnboarding(
   const missing = getMissingRequirements(
     { ...project, ownerId: previous?.ownerId },
     environments.map(({ data }) => data),
-    index => environments[index].requiresVersion,
+    roles,
   );
   if (project.status === 'READY' && missing.length) {
     throw new BadRequestException({ message: missing, statusCode: 400 });

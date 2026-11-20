@@ -167,7 +167,7 @@ export function ProjectForm({ initial, onSaved, role }: { initial?: Project; onS
             onChange={value => change('priorities', value)} />
           <h2 id="environment-heading">Entornos y alcance</h2>
           {form.environments.map((env, index) => (
-            <EnvironmentFields key={env.id ?? `new-${index}`} index={index} value={env} requireVersion={false}
+            <EnvironmentFields key={env.id ?? `new-${index}`} index={index} value={env}
               onChange={value => change('environments', form.environments.map((item, n) => n === index ? value : item))}
               onRemove={() => change('environments', form.environments.filter((_, n) => n !== index))} />
           ))}
