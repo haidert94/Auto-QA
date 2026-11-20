@@ -1,9 +1,9 @@
 /* Automation uses the shared project heading, width, palette and spacing. */
 .automation-panel { min-width: 0; }
 .automation-scenarios { background: var(--surface); border: 1px solid var(--line); border-radius: 3px; min-width: 0; overflow: hidden; }
-.automation-scenarios > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 14px; }
-.automation-scenarios h2 { font-size: 18px; line-height: 1.35; margin: 0 0 5px; }
-.automation-scenarios > header p { color: var(--blue); font: 400 9px/1.6 var(--mono); margin: 0; }
+.automation-scenarios > header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; padding: 18px 14px; }
+.automation-scenarios h2 { font-size: 18px; line-height: 1.35; margin: 0; }
+.automation-scenarios__selection { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
 .automation-suite-count { background: var(--quiet); padding: 3px 6px; color: var(--muted); font: 400 9px/1.5 var(--mono); text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
 .automation-scenarios__tools { display: flex; align-items: center; gap: 8px; }
 .automation-pick-list input, .automation-panel .scenario-select-all input { accent-color: var(--blue); }
@@ -44,6 +44,6 @@
 .automation-message { font-size: 11px; line-height: 1.7; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); margin: 0 0 16px; overflow-wrap: anywhere; }
 .automation-row-retry { min-height: 30px; padding: 5px 9px; font-size: 11px; margin-top: 6px; }
 @media (max-width: 420px) {
-  .automation-scenarios > header { flex-wrap: wrap; padding: 16px 12px; }
+  .automation-scenarios > header { padding: 16px 12px; }
   .automation-generation-state { margin-left: 0; }
 }

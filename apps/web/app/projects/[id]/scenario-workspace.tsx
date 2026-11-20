@@ -56,7 +56,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
         { value: 'pending', label: 'Sin resultados', count: items.length - withResults },
       ] }}
       items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }}
-      visible={visible} selected={checked} onSelectionChange={setChecked}
+      selection={{ visible, selected: checked, onSelectionChange: setChecked }}
     />
     <div className={`scenario-workspace${active ? '' : ' scenario-workspace--list-only'}`}>
       <div className="scenario-list-region">

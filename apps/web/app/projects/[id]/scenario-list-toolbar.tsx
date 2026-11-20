@@ -1,6 +1,40 @@
 import { ChevronDown, Filter, Search } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
+type ScenarioVisibleSelectionProps = {
+  visible: ReadonlyArray<{ id: string }>;
+  selected: ReadonlySet<string>;
+  onSelectionChange: (selected: Set<string>) => void;
+  selectionDisabled?: boolean;
+};
+
+export function ScenarioVisibleSelection({
+  visible, selected, onSelectionChange, selectionDisabled = false,
+}: ScenarioVisibleSelectionProps) {
+  const selectAll = useRef<HTMLInputElement>(null);
+  const allChecked = visible.length > 0 && visible.every(item => selected.has(item.id));
+  const someChecked = visible.some(item => selected.has(item.id));
+
+  useEffect(() => {
+    if (selectAll.current) selectAll.current.indeterminate = !allChecked && someChecked;
+  }, [allChecked, someChecked]);
+
+  function toggleVisible() {
+    const next = new Set(selected);
+    for (const item of visible) {
+      if (allChecked) next.delete(item.id);
+      else next.add(item.id);
+    }
+    onSelectionChange(next);
+  }
+
+  return <>
+    <label className="scenario-select-all"><input ref={selectAll} type="checkbox" checked={allChecked}
+      disabled={selectionDisabled || !visible.length} onChange={toggleVisible} />Seleccionar visibles ({visible.length})</label>
+    <span className="scenario-selection-count" role="status">{selected.size} seleccionados · {visible.length} visibles</span>
+  </>;
+}
+
 type ScenarioListToolbarProps<Status extends string> = {
   label: string;
   searchLabel: string;
@@ -16,31 +50,22 @@ type ScenarioListToolbarProps<Status extends string> = {
   items: ReadonlyArray<{ tags?: string[] }>;
   tag: string;
   onTagChange: (tag: string) => void;
-  visible: ReadonlyArray<{ id: string }>;
-  selected: ReadonlySet<string>;
-  onSelectionChange: (selected: Set<string>) => void;
-  selectionDisabled?: boolean;
+  selection?: ScenarioVisibleSelectionProps;
 };
 
 export function ScenarioListToolbar<Status extends string>({
   label, searchLabel, placeholder, query, onQueryChange, status, items, tag, onTagChange,
-  visible, selected, onSelectionChange, selectionDisabled = false,
+  selection,
 }: ScenarioListToolbarProps<Status>) {
   const search = useRef<HTMLInputElement>(null);
-  const selectAll = useRef<HTMLInputElement>(null);
   const tagMenu = useRef<HTMLDetailsElement>(null);
   const tagCounts = new Map<string, number>();
   for (const item of items) {
     for (const value of new Set(item.tags ?? [])) tagCounts.set(value, (tagCounts.get(value) ?? 0) + 1);
   }
   const tags = [...tagCounts.keys()].sort();
-  const allChecked = visible.length > 0 && visible.every(item => selected.has(item.id));
-  const someChecked = visible.some(item => selected.has(item.id));
   const activeTagLabel = tag ? `${tag} (${tagCounts.get(tag) ?? 0})` : `Todas las etiquetas (${items.length})`;
 
-  useEffect(() => {
-    if (selectAll.current) selectAll.current.indeterminate = !allChecked && someChecked;
-  }, [allChecked, someChecked]);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== 'k' || (!event.ctrlKey && !event.metaKey) || !search.current?.getClientRects().length) return;
@@ -74,15 +99,6 @@ export function ScenarioListToolbar<Status extends string>({
     if (tagMenu.current) tagMenu.current.open = false;
   }
 
-  function toggleVisible() {
-    const next = new Set(selected);
-    for (const item of visible) {
-      if (allChecked) next.delete(item.id);
-      else next.add(item.id);
-    }
-    onSelectionChange(next);
-  }
-
   return <section className="scenario-toolbar" aria-label={label}>
     <div className="scenario-toolbar__top">
       <label className="scenario-search"><Search size={15} aria-hidden="true" />
@@ -110,9 +126,7 @@ export function ScenarioListToolbar<Status extends string>({
             onClick={() => pickTag(tag === value ? '' : value)}>{value} ({tagCounts.get(value)})</button>)}
         </div>
       </details>
-      <label className="scenario-select-all"><input ref={selectAll} type="checkbox" checked={allChecked}
-        disabled={selectionDisabled || !visible.length} onChange={toggleVisible} />Seleccionar visibles ({visible.length})</label>
-      <span className="scenario-selection-count" role="status">{selected.size} seleccionados · {visible.length} visibles</span>
+      {selection && <ScenarioVisibleSelection {...selection} />}
     </div>
   </section>;
 }

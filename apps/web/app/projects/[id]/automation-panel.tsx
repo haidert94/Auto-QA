@@ -14,7 +14,7 @@ import { useAutomationHeader, useScenarioSuite } from './project-tabs';
 import { AutomationRunStatus } from './automation-run-status';
 import { downloadSpecs, scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
-import { ScenarioListToolbar } from './scenario-list-toolbar';
+import { ScenarioListToolbar, ScenarioVisibleSelection } from './scenario-list-toolbar';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 
 const AUTOMATION_STATUS_LABELS = {
@@ -213,17 +213,20 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         options: (Object.keys(AUTOMATION_STATUS_LABELS) as AutomationFilter[]).map(value => ({
           value, label: AUTOMATION_STATUS_LABELS[value].replace('…', ''), count: statusCounts[value],
         })) }}
-      items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }} visible={visible.map(row => row.scenario)}
-      selected={selected} onSelectionChange={setSelected} selectionDisabled={busy}
+      items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }}
     />
     {header?.active && <AutomationRunStatus projectId={project.id} canStop={canRunSuite} />}
     {(project.status !== 'READY' || !environments.length) && <p className="automation-message">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
     <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
-      <header><div><h2 id="automation-scenarios-heading">Escenarios para Playwright</h2>
-        <p>{selected.size} seleccionados · {ready.length} con código guardado</p></div>
+      <header>
+        <h2 id="automation-scenarios-heading">Escenarios para Playwright</h2>
         <div className="automation-scenarios__tools">
           <span className="automation-suite-count">Suite {selected.size}/{scenarios?.length ?? '…'}</span>
           <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button>
+        </div>
+        <div className="automation-scenarios__selection">
+          <ScenarioVisibleSelection visible={visible.map(row => row.scenario)} selected={selected}
+            onSelectionChange={setSelected} selectionDisabled={busy} />
         </div>
       </header>
       {listError ? <div className="automation-list-message" role="alert"><p className="error">{listError}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar automatización</button></div>
