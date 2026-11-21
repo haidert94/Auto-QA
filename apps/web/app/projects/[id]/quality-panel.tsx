@@ -13,6 +13,7 @@ import { levelFor, type IpaSummary } from './ipa-hero';
 import { dateText, durationText, runLabels } from './run-report-data';
 import { useScenarioInsights } from './scenario-insights';
 import { CodeHealthCard } from './code-health';
+import { IcspDetailModal, IpaDetailModal } from './quality-detail-modal';
 
 type Ipa = IpaSummary & {
   documents?: { declared: number; uploaded: number; processed: number; validated: number };
@@ -53,6 +54,8 @@ export function QualityPanel({ project }: { project: Project }) {
   const [refresh, setRefresh] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [ipaOpen, setIpaOpen] = useState(false);
+  const [icspOpen, setIcspOpen] = useState(false);
   const exportMenu = useRef<HTMLDetailsElement>(null);
   const insights = useScenarioInsights(project.id, !!header?.active, refresh);
 
@@ -182,7 +185,7 @@ export function QualityPanel({ project }: { project: Project }) {
           </li>)}</ol>
           {preparation.documents && <dl className="quality-document-counts">{Object.entries(preparation.documents).map(([key, count]) => <div key={key}><dt>{({ declared: 'Declarados', uploaded: 'Cargados', processed: 'Procesados', validated: 'Validados' } as Record<string, string>)[key]}</dt><dd>{count}</dd></div>)}</dl>}
           {preparation.blockers?.length ? <div className="quality-attention"><strong>Bloqueos</strong><ul>{preparation.blockers.map((item, i) => <li key={i}>{item}</li>)}</ul></div> : null}
-          <Link className="quality-detail-link" href={`/projects/${project.id}/ipa`}>Ver evaluación IPA y sus fuentes →</Link></div>}
+          <button type="button" className="quality-detail-link" onClick={() => setIpaOpen(true)}>Ver evaluación IPA y sus fuentes →</button></div>}
       </EvaluationCard>
       <EvaluationCard index="02" title="Índice Compuesto de Salud del Producto (ICSP)" badge={health ? hasResults ? `Evaluado (${health.score}/100)` : 'Sin resultados de ejecución' : icsp.loading ? 'Consultando' : 'Sin evaluación'}>
         {icsp.loading ? <p className="quality-message" role="status">Consultando ICSP…</p> : icsp.error ? <div className="quality-message" role="alert"><p className="error">{icsp.error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar ICSP</button></div>
@@ -198,7 +201,7 @@ export function QualityPanel({ project }: { project: Project }) {
           </li>)}</ol>
           <div className="quality-gaps">{([['requirementsWithoutScenario', 'Requisitos sin escenario'], ['scenariosNotExecuted', 'Escenarios sin ejecución'], ['unstableScenarios', 'Escenarios inestables']] as const).map(([key, title]) => <details key={key}>
             <summary>{title} ({health.gaps[key].length})</summary>{health.gaps[key].length ? <ul>{health.gaps[key].map(item => <li key={item.id}>{item.label}{item.detail && <small>{item.detail}</small>}</li>)}</ul> : <p>Sin brechas reportadas en esta categoría.</p>}
-          </details>)}</div><Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
+          </details>)}</div><button type="button" className="quality-detail-link" onClick={() => setIcspOpen(true)}>Ver dimensiones e histórico de ICSP →</button></div>}
       </EvaluationCard>
     </div>
     {(() => {
@@ -260,5 +263,9 @@ export function QualityPanel({ project }: { project: Project }) {
         : <ol>{data.value.slice(0, 3).map(item => <li key={item.id}><strong>{item.score ?? '—'}</strong><span>{dateText(item.createdAt)}</span><small>Variación: {item.delta === null ? 'Sin comparación' : item.delta > 0 ? `+${item.delta}` : item.delta}</small></li>)}</ol>}</section>)}</div>
     <nav className="quality-tools" aria-label="Otras herramientas de calidad"><Link href={`/projects/${project.id}/report`}>Reporte consolidado</Link><Link href={`/projects/${project.id}/performance`}>Performance · Lighthouse</Link>
       <Link href={`/projects/${project.id}/load`}>Carga controlada</Link><Link href={`/projects/${project.id}/monitors`}>Monitores</Link></nav>
+    {ipaOpen && preparation && <IpaDetailModal projectId={project.id} ipa={preparation}
+      generatedAt={ipa.value?.generatedAt} history={ipaHistory.value ?? []} onClose={() => setIpaOpen(false)} />}
+    {icspOpen && health && <IcspDetailModal projectId={project.id} icsp={health}
+      generatedAt={health.generatedAt} history={icspHistory.value ?? []} onClose={() => setIcspOpen(false)} />}
   </section>;
 }
