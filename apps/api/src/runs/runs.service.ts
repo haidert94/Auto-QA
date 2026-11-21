@@ -94,6 +94,40 @@ export class RunsService {
       `;
       const latest = current.length ? await this.findRuns(tx, projectId, true, current.map(run => run.id)) : [];
       const history = await this.findRuns(tx, projectId, true);
+
+      // Para que los escenarios MANUALES sin run aún aparezcan en el
+      // reporte y el usuario pueda cargarles evidencia, inyectamos
+      // pseudo-runs "pendientes" que viven solo en la respuesta: su id
+      // tiene prefijo manual-pending-, el targetProvider es 'manual' y
+      // llevan un TestResult sintético en SKIPPED. Al adjuntar evidencia,
+      // el endpoint upsertManualRun crea el TestRun real y en el siguiente
+      // refresh el pseudo-run desaparece.
+      const covered = new Set(latest.flatMap(run => run.scenarioId ? [run.scenarioId] : []));
+      const manualsSinRun = await tx.testScenario.findMany({
+        where: {
+          projectId, archivedAt: null, tags: { has: '@manual' },
+          NOT: { id: { in: [...covered] } },
+        },
+        select: { id: true, title: true, tags: true },
+      });
+      const now = new Date();
+      for (const scenario of manualsSinRun) {
+        latest.push({
+          id: `manual-pending-${scenario.id}`,
+          status: 'COMPLETED',
+          scenarioId: scenario.id,
+          environmentId: null,
+          targetBrowser: 'manual',
+          targetDevice: null,
+          targetProvider: 'manual',
+          startedAt: null,
+          completedAt: null,
+          errorCode: null,
+          createdAt: now,
+          scenario: { id: scenario.id, title: scenario.title, tags: scenario.tags },
+          results: [{ id: `manual-result-${scenario.id}`, status: 'SKIPPED', durationMs: null, errorMessage: null, evidenceKey: null }],
+        } as unknown as (typeof latest)[number]);
+      }
       return { latest, history };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
@@ -109,7 +143,7 @@ export class RunsService {
         id: true, status: true, scenarioId: true, environmentId: true,
         targetBrowser: true, targetDevice: true, targetProvider: true,
         startedAt: true, completedAt: true, errorCode: true, createdAt: true,
-        scenario: { select: { id: true, title: true } },
+        scenario: { select: { id: true, title: true, tags: true } },
         results: {
           where: forReport ? { scenario: { archivedAt: null } } : undefined,
           select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true },
@@ -168,7 +202,7 @@ export class RunsService {
     const run = await this.prisma.testRun.findFirst({
       where: { id: runId, projectId },
       include: {
-        scenario: { select: { id: true, title: true } },
+        scenario: { select: { id: true, title: true, tags: true } },
         environment: { select: { id: true, baseUrl: true, type: true } },
         results: true,
       },
@@ -232,6 +266,85 @@ export class RunsService {
         results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidenceKey: true } },
       },
       take: 50,
+    });
+  }
+
+  // Crea o actualiza un TestRun manual para un escenario marcado con el
+  // tag @manual. En lugar de encolar al worker, deja un TestRun en estado
+  // COMPLETED con un único TestResult que lleva el status elegido por el
+  // usuario y las screenshots que subió como data URL (base64) dentro del
+  // JSON `evidence`. Si ya hay un TestRun manual previo, lo actualiza en
+  // vez de crear otro (el usuario pidió "actualiza el último"). Vale como
+  // registro para el reporte y para el ICSP, que calcula sobre los
+  // TestResult sin importar su origen.
+  async upsertManualRun(projectId: string, scenarioId: string, workspace: Workspace, body: {
+    status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED';
+    notes?: string;
+    screenshots: Array<{ filename: string; mimetype: string; buffer: Buffer }>;
+  }) {
+    await this.ensureProject(projectId, workspace);
+    const scenario = await this.prisma.testScenario.findFirst({
+      where: { id: scenarioId, projectId, archivedAt: null },
+      select: { id: true, tags: true, title: true },
+    });
+    if (!scenario) throw new NotFoundException('Escenario no encontrado.');
+    if (!isManualScenario(scenario)) throw new BadRequestException('Este escenario no está marcado como manual.');
+    if (!['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED'].includes(body.status)) {
+      throw new BadRequestException('Estado inválido.');
+    }
+    if (body.screenshots.length > 8) {
+      throw new BadRequestException('Como máximo 8 imágenes por evidencia.');
+    }
+    for (const file of body.screenshots) {
+      if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.mimetype)) {
+        throw new BadRequestException(`Formato no soportado: ${file.mimetype}. Usa PNG, JPG, WebP o GIF.`);
+      }
+      if (file.buffer.byteLength > 1_500_000) {
+        throw new BadRequestException(`La imagen ${file.filename} supera 1.5 MB.`);
+      }
+    }
+    const screenshots = body.screenshots.map((file, index) => ({
+      ordinal: index + 1,
+      filename: file.filename.slice(0, 120),
+      contentType: file.mimetype,
+      data: `data:${file.mimetype};base64,${file.buffer.toString('base64')}`,
+    }));
+    const notes = body.notes?.trim().slice(0, 2000) || null;
+    const now = new Date();
+    const evidence: Prisma.InputJsonValue = { manual: true, screenshots, notes, updatedAt: now.toISOString() };
+
+    // Transacción: lee último run manual del escenario; si existe, actualiza
+    // su único TestResult; si no, crea TestRun + TestResult nuevos.
+    return this.prisma.$transaction(async tx => {
+      const existing = await tx.testRun.findFirst({
+        where: { projectId, scenarioId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true, results: { select: { id: true } } },
+      });
+      if (existing && existing.status === 'COMPLETED' && existing.results.length) {
+        await tx.testResult.update({
+          where: { id: existing.results[0].id },
+          data: { status: body.status, evidence, errorMessage: notes, durationMs: 0 },
+        });
+        await tx.testRun.update({ where: { id: existing.id }, data: { completedAt: now, startedAt: now, status: 'COMPLETED' } });
+        return { id: existing.id, updated: true };
+      }
+      const run = await tx.testRun.create({
+        data: {
+          projectId, scenarioId, environmentId: null,
+          status: 'COMPLETED', runKey: null, createdByUserId: workspace.userId ?? null,
+          startedAt: now, completedAt: now,
+          targetBrowser: 'manual', targetProvider: 'manual', targetDevice: null,
+        },
+        select: { id: true },
+      });
+      await tx.testResult.create({
+        data: {
+          runId: run.id, scenarioId, status: body.status, evidence,
+          errorMessage: notes, durationMs: 0,
+        },
+      });
+      return { id: run.id, updated: false };
     });
   }
 
@@ -343,7 +456,7 @@ export class RunsService {
       select: {
         id: true, status: true, createdAt: true, startedAt: true, completedAt: true, errorCode: true,
         targetBrowser: true, targetDevice: true, targetProvider: true,
-        scenario: { select: { id: true, title: true } },
+        scenario: { select: { id: true, title: true, tags: true } },
         results: { select: { id: true, status: true, durationMs: true, errorMessage: true, evidence: true, evidenceKey: true } },
       },
       orderBy: { createdAt: 'desc' },

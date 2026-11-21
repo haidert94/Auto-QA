@@ -10,7 +10,8 @@ export type AutomationTestType =
   | 'compatibility'
   | 'availability'
   | 'performance'
-  | 'ux';
+  | 'ux'
+  | 'manual';
 
 export const TEST_TYPE_META: Record<AutomationTestType, {
   label: string;
@@ -46,6 +47,15 @@ export const TEST_TYPE_META: Record<AutomationTestType, {
     label: 'Análisis UX (IA)',
     description: 'Revisión asistida de usabilidad y accesibilidad con heurísticas Nielsen + WCAG básico.',
     capability: 'UX_ANALYSIS',
+  },
+  manual: {
+    // Casos ejecutados por una persona. No pasan por el agente ni por
+    // Playwright: la evidencia (imágenes y estado final) se carga desde
+    // Reporte. Reusa BROWSER_TESTS porque todos los planes incluyen la
+    // posibilidad de registrar ejecuciones manuales.
+    label: 'Casos manuales',
+    description: 'Escenarios que ejecuta una persona y registran evidencia (imágenes y estado) desde la pestaña Reporte.',
+    capability: 'BROWSER_TESTS',
   },
 };
 

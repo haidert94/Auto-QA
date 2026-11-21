@@ -9,9 +9,10 @@ export type ReportRun = {
   id: string; scenarioId: string | null; environmentId: string | null;
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
   createdAt: string; startedAt: string | null; completedAt: string | null; errorCode: string | null;
-  scenario: { id: string; title: string } | null; results: RunResult[];
+  scenario: { id: string; title: string; tags?: string[] } | null; results: RunResult[];
   targetBrowser?: string | null; targetDevice?: string | null; targetProvider?: string | null;
 };
+export const isManualRun = (run: ReportRun) => run.scenario?.tags?.includes('@manual') ?? run.targetProvider === 'manual';
 
 export const resultLabels = { PASSED: 'Pasó', FAILED: 'Falló', BLOCKED: 'Bloqueada', SKIPPED: 'Omitida' };
 export const runLabels = { QUEUED: 'En cola', RUNNING: 'En curso', COMPLETED: 'Completada', FAILED: 'Falló', CANCELED: 'Cancelada' };

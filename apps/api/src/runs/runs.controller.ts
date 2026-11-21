@@ -1,8 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Header, HttpCode, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { isUUID } from 'class-validator';
 import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateRunDto } from './dto/create-run.dto';
 import { RunsService } from './runs.service';
+
+type UploadedFile = { originalname: string; mimetype: string; buffer: Buffer };
 
 type HttpResponse = { setHeader(name: string, value: string): unknown };
 
@@ -73,6 +76,32 @@ export class RunsController {
     @CurrentWorkspace() workspace: Workspace,
   ) {
     return this.service.create(projectId, scenarioId, dto, workspace);
+  }
+
+  // Ejecución manual: multipart con status + notas + N imágenes. La ruta
+  // solo acepta escenarios con el tag @manual (lo valida el servicio).
+  // Si el escenario ya tiene un run manual previo, lo actualiza.
+  @Post('projects/:projectId/scenarios/:scenarioId/runs/manual')
+  @RequiresRole('EDITOR')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  @UseInterceptors(FilesInterceptor('screenshots', 8, { limits: { fileSize: 1_500_000, files: 8 } }))
+  manualRun(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('scenarioId', ParseUUIDPipe) scenarioId: string,
+    @Body('status') status: string,
+    @Body('notes') notes: string | undefined,
+    @UploadedFiles() files: UploadedFile[] = [],
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    const normalized = (status ?? '').toUpperCase();
+    if (!['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED'].includes(normalized)) {
+      throw new BadRequestException('Estado inválido.');
+    }
+    return this.service.upsertManualRun(projectId, scenarioId, workspace, {
+      status: normalized as 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED',
+      notes,
+      screenshots: files.map(file => ({ filename: file.originalname, mimetype: file.mimetype, buffer: file.buffer })),
+    });
   }
 
   @Post('projects/:projectId/runs/:runId/explain')
