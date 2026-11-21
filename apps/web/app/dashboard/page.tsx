@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { accountFetch, requireAccount, type Usage } from '../autoqa-server';
 import { environmentTypes, statusLabels, type ProjectSummary } from '../projects/onboarding';
+import { AppPageHeading } from '../app-page-heading';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,20 +27,16 @@ export default async function Dashboard() {
   const nextSteps = buildNextSteps(account, projects);
 
   return <>
-    <section className="dashboard-hero panel">
-      <div>
-        <p className="section-label">{account.organization.name}</p>
-        <h1>Hola, {account.name?.split(' ')[0] ?? account.email}</h1>
-        <p className="muted">
-          Plan actual: <strong>{account.subscription.plan?.name ?? 'sin plan'}</strong>
-          {' · '}Estado: <strong>{account.subscription.status}</strong>
-        </p>
-      </div>
-      <div className="dashboard-cta">
+    <AppPageHeading
+      crumbs={[{ label: account.organization.name }, { label: 'Resumen' }]}
+      title={`Hola, ${account.name?.split(' ')[0] ?? account.email}`}
+      badge={{ label: `Plan ${account.subscription.plan?.name ?? 'sin plan'} · ${account.subscription.status}`, tone: account.subscription.status === 'ACTIVE' ? 'ready' : 'draft' }}
+      summary="Estado general de tu cuenta, proyectos activos y uso del plan."
+      actions={<>
         <Link href="/onboarding" className="button-like">Registrar aplicación</Link>
-        <Link href="/projects" className="button-like outline">Ver proyectos</Link>
-      </div>
-    </section>
+        <Link href="/projects" className="secondary button-like">Ver proyectos</Link>
+      </>}
+    />
 
     {projects.length > 0 && <section className="panel">
       <h2>Automatiza un proyecto con IA</h2>

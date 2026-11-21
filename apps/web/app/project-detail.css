@@ -5,6 +5,10 @@
 .project-breadcrumb, .project-revision { display: flex; align-items: center; gap: 10px; font: 400 10px/1.5 var(--mono); letter-spacing: .045em; text-transform: uppercase; color: var(--muted); min-width: 0; }
 .project-breadcrumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--blue); }
 .project-breadcrumb a, .project-breadcrumb svg, .project-revision { flex-shrink: 0; }
+.app-page-heading__crumb { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.app-page-heading__crumb > a { color: inherit; text-decoration: none; }
+.app-page-heading__crumb > a:hover { color: var(--blue); }
+.app-page-heading__crumb > span { color: var(--blue); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 0 24px; }
 .project-heading__identity { min-width: 0; flex: 1; }
 .project-heading__title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }

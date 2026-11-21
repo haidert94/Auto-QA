@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { accountFetch, requireAccount } from '../autoqa-server';
+import { AppPageHeading } from '../app-page-heading';
 import { can } from '../permissions';
 import { type ProjectSummary } from './onboarding';
 import { ProjectCard } from './project-card';
@@ -23,19 +24,19 @@ export default async function Projects() {
 
   const visible = projects.filter(p => p.status !== 'ARCHIVED');
 
-  return (
-    <section className="panel projects-panel">
-      <header className="projects-panel__head">
-        <div>
-          <h1>Proyectos</h1>
-          <p className="muted">
-            {visible.length === 0 ? 'Aún no has registrado aplicaciones.'
-              : `${visible.length} ${visible.length === 1 ? 'aplicación registrada' : 'aplicaciones registradas'}.`}
-          </p>
-        </div>
-        {canCreate && <Link href="/projects/new" className="button-like">Registrar aplicación</Link>}
-      </header>
+  const summary = visible.length === 0 ? 'Aún no has registrado aplicaciones.'
+    : `${visible.length} ${visible.length === 1 ? 'aplicación registrada' : 'aplicaciones registradas'}.`;
 
+  return (
+    <>
+    <AppPageHeading
+      crumbs={[{ label: account?.organization.name ?? 'AutoQA' }, { label: 'Proyectos' }]}
+      title="Proyectos"
+      summary={summary}
+      aside={visible.length > 0 ? `${visible.length} activos` : undefined}
+      actions={canCreate ? <Link href="/projects/new" className="button-like">Registrar aplicación</Link> : undefined}
+    />
+    <section className="panel projects-panel">
       {error && <p className="error" role="alert">{error}</p>}
 
       {visible.length === 0 && !error && (
@@ -56,5 +57,6 @@ export default async function Projects() {
         </div>
       )}
     </section>
+    </>
   );
 }

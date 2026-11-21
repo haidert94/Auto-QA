@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { accountFetch, requireAccount } from '../../autoqa-server';
+import { AppPageHeading } from '../../app-page-heading';
 import { MembersPanel } from './members-panel';
 
 type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
@@ -23,25 +23,35 @@ export default async function MembersPage() {
   const account = await requireAccount();
   const response = await accountFetch('/commerce/members');
   if (!response.ok) {
-    return <section className="panel">
-      <p><Link href="/projects">← Volver</Link></p>
-      <p className="error" role="alert">No se pudieron cargar los miembros.</p>
-    </section>;
+    return <>
+      <AppPageHeading
+        crumbs={[{ label: account.organization.name }, { label: 'Miembros' }]}
+        title="Miembros"
+        summary="Hubo un problema al cargar la lista de miembros."
+      />
+      <section className="panel">
+        <p className="error" role="alert">No se pudieron cargar los miembros.</p>
+      </section>
+    </>;
   }
   const data: { members: Member[]; invites: Invite[]; orgProjects: ProjectRef[] } = await response.json();
   const myMember = data.members.find(m => m.user.email.toLowerCase() === account.email.toLowerCase());
   const myRole: OrgRole = myMember?.role ?? 'VIEWER';
 
-  return <section className="panel members-panel">
-    <p><Link href="/projects">← Volver a proyectos</Link></p>
-    <header>
-      <h1>Miembros de {account.organization.name}</h1>
-      <p className="muted">Tu rol en esta organización: <strong>{myRole}</strong>.</p>
-    </header>
-    <MembersPanel
-      initial={data}
-      currentUserId={myMember?.userId ?? ''}
-      myRole={myRole}
+  return <>
+    <AppPageHeading
+      crumbs={[{ label: account.organization.name }, { label: 'Miembros' }]}
+      title={`Miembros de ${account.organization.name}`}
+      badge={{ label: `Tu rol · ${myRole}`, tone: 'ready' }}
+      summary="Invita personas, asigna proyectos y controla roles OWNER/ADMIN/EDITOR/VIEWER."
+      aside={`${data.members.length} activos · ${data.invites.length} invitaciones`}
     />
-  </section>;
+    <section className="panel members-panel">
+      <MembersPanel
+        initial={data}
+        currentUserId={myMember?.userId ?? ''}
+        myRole={myRole}
+      />
+    </section>
+  </>;
 }
