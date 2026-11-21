@@ -171,6 +171,9 @@ const api = createServer(async (request, response) => {
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
   if (path === base + '/scenarios/requirements') return send([requirement]);
+  if (path === base + '/scenarios/insights') {
+    return send({ scenarios: scenarios.length, steps: 0, duplicateGroups: 0, duplicatedSteps: 0, groups: [] });
+  }
   if (path === base + '/scenarios/delete-selected' && request.method === 'POST') {
     const chunks = []; for await (const chunk of request) chunks.push(chunk);
     const { scenarioIds } = JSON.parse(Buffer.concat(chunks).toString());
@@ -674,12 +677,16 @@ async function verifySavedAutomationAfterReload(page) {
     await expect(runner).toBeEnabled();
     await expect(section.getByText('2 con código guardado.', { exact: true })).toBeVisible();
 
+    await expect(section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true })).toBeDisabled();
     const requestStart = previewRequests.length;
     await page.reload();
     await page.getByRole('tab', { name: 'Escenarios (3)', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Seleccionar ' + scenarios[2].title, exact: true }).uncheck();
     await expect(page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true })).toBeEnabled();
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await expect(section.getByRole('button', { name: 'Generar seleccionados (3)', exact: true })).toBeEnabled();
+    await rows.nth(2).getByRole('checkbox').uncheck();
+    await expect(section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true })).toBeDisabled();
     await states.getByRole('button', { name: 'Generado (2)', exact: true }).click();
     await expect(rows).toHaveCount(2);
     await expect(second.getByText('Generado', { exact: true })).toBeVisible();
@@ -700,6 +707,7 @@ async function verifySavedAutomationAfterReload(page) {
     await expect(states.getByRole('button', { name: 'Generado (1)', exact: true })).toBeVisible();
     await expect(rows).toHaveCount(1);
     await expect(states.getByRole('button', { name: 'Pendiente (2)', exact: true })).toBeVisible();
+    await expect(section.getByRole('button', { name: 'Generar seleccionados (2)', exact: true })).toBeEnabled();
   } finally {
     savedPlaywright.delete(scenarioA);
     savedPlaywright.delete(scenarioB);
@@ -1337,9 +1345,20 @@ async function verifyQuality(page, screenshots) {
   await page.setViewportSize({ width: 1170, height: 1000 });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: join(screenshots, 'project-quality-desktop.png'), fullPage: true, animations: 'disabled' });
-  await page.getByText('Exportar informe', { exact: true }).click();
+  const exportTrigger = page.getByText('Exportar informe', { exact: true });
+  const downloadButton = page.getByRole('button', { name: 'Descargar informe JSON', exact: true });
+  await exportTrigger.click();
+  await expect(downloadButton).toBeVisible();
+  await page.getByRole('heading', { name: project.name, exact: true }).click();
+  await expect(downloadButton).toBeHidden();
+  await exportTrigger.click();
+  await downloadButton.focus();
+  await page.keyboard.press('Escape');
+  await expect(downloadButton).toBeHidden();
+  await expect(exportTrigger).toBeFocused();
+  await exportTrigger.click();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Descargar informe JSON', exact: true }).click();
+  await downloadButton.click();
   const file = await downloadPromise;
   assert.equal(file.suggestedFilename(), 'autoqa-informe-calidad.json');
   const text = await readFile(await file.path(), 'utf8');
@@ -1591,14 +1610,18 @@ async function run() {
     await page.locator('.detail-fields').getByText('Pendiente de confirmación', { exact: true }).waitFor();
     assert.ok((await page.locator('.detail-url').textContent()).includes('https://qa.example.test/'));
     await page.getByLabel('Entorno seleccionado').selectOption(environment.id);
+    const exportSpec = page.getByRole('button', { name: 'Exportar especificación', exact: true });
+    await expect(exportSpec).toHaveCount(0);
+    await page.getByRole('tab', { name: 'Historial', exact: true }).click();
     const downloadPromise = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Exportar especificación' }).click();
+    await exportSpec.click();
     const download = await downloadPromise;
     const exportedText = await readFile(await download.path(), 'utf8');
     const exported = JSON.parse(exportedText);
     assert.equal(exported.id, projectId);
     assert.equal(exported.roles[0].permissions[1].allowed, false);
     for (const privateValue of ['secretReference', 'credentialUser', 'synthetic-private', 'hasCredentials']) assert.ok(!exportedText.includes(privateValue));
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
     const screenshots = process.env.AUTOQA_UI_SCREENSHOT_DIR || join(tmpdir(), 'autoqa-project-detail-preview');
     await mkdir(screenshots, { recursive: true });
     await page.locator('.app-nav').screenshot({ path: join(screenshots, 'app-navigation-desktop.png') });

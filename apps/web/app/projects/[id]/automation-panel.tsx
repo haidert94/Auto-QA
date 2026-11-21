@@ -168,10 +168,11 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const selectedScenarios = items.filter(scenario => selected.has(scenario.id));
   const ready = rows.filter(({ scenario, status }) => selected.has(scenario.id) && status === 'generated').map(({ scenario }) => scenario);
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError;
+  const generationDisabled = busy || !!listError || ready.length === selectedScenarios.length;
 
   function toggle(id: string) { setSelected(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
   async function prepare() {
-    if (busy || !selectedScenarios.length) return;
+    if (generationDisabled) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const results = [];
@@ -186,7 +187,6 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     finally { if (mounted.current) setBusy(false); }
   }
 
-  const generationDisabled = busy || !selectedScenarios.length || !!listError;
   return <section className="automation-panel" aria-label="Automatización Playwright">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Genera y ejecuta el código Playwright de los escenarios seleccionados."

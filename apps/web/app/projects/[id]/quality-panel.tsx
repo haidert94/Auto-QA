@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { ArrowRight, Download, RefreshCw } from 'lucide-react';
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Project } from '../onboarding';
 import { ProjectHeading } from './project-heading';
 import { useQualityHeader } from './project-tabs';
@@ -53,6 +53,7 @@ export function QualityPanel({ project }: { project: Project }) {
   const [refresh, setRefresh] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const exportMenu = useRef<HTMLDetailsElement>(null);
   const insights = useScenarioInsights(project.id, !!header?.active, refresh);
 
   useEffect(() => {
@@ -82,6 +83,31 @@ export function QualityPanel({ project }: { project: Project }) {
     });
     return () => controller.abort();
   }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion]);
+
+  useEffect(() => {
+    if (!header?.active) return;
+
+    function closeOnOutside(event: PointerEvent) {
+      const menu = exportMenu.current;
+      if (menu?.open && !menu.contains(event.target as Node)) menu.open = false;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      const menu = exportMenu.current;
+      if (event.key !== 'Escape' || !menu?.open) return;
+      const restoreFocus = menu.contains(document.activeElement);
+      menu.open = false;
+      if (restoreFocus) menu.querySelector('summary')?.focus();
+    }
+
+    document.addEventListener('pointerdown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+      if (exportMenu.current) exportMenu.current.open = false;
+    };
+  }, [header?.active]);
 
   async function exportJson() {
     if (exporting || !canGenerate) return;
@@ -133,7 +159,7 @@ export function QualityPanel({ project }: { project: Project }) {
   return <section className="quality-panel" aria-label="Calidad del proyecto">
     {header?.element && createPortal(<ProjectHeading project={project}
       summary="Evaluación de preparación (IPA), salud del producto (ICSP) y auditorías registradas. Consulta las fuentes y los datos pendientes antes de interpretar los indicadores."
-      actions={<><details className="quality-export"><summary><Download size={14} />Exportar informe</summary><div>
+      actions={<><details ref={exportMenu} className="quality-export"><summary><Download size={14} />Exportar informe</summary><div>
         <button type="button" disabled={exporting || !canGenerate} onClick={() => void exportJson()}>{exporting ? 'Exportando…' : 'Descargar informe JSON'}</button>
         <button type="button" disabled={exporting || !canGenerate} onClick={() => void printReport()}>Imprimir / Guardar como PDF</button>
         {canGenerate && <Link href={`/projects/${project.id}/report`}>Abrir informe consolidado</Link>}

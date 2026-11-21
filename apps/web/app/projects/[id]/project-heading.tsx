@@ -7,8 +7,9 @@ import { useId, useRef, useState, type ReactNode } from 'react';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
-export function ProjectHeading({ project, actions, summary, role, showScheduleButton = false }: {
-  project: Project; actions?: ReactNode; summary?: string; role?: OrgRole; showScheduleButton?: boolean;
+export function ProjectHeading({ project, actions, summary, role, showScheduleButton = false, showSpecificationExport = true }: {
+  project: Project; actions?: ReactNode; summary?: string; role?: OrgRole;
+  showScheduleButton?: boolean; showSpecificationExport?: boolean;
 }) {
   const canGenerate = can(role, 'automation.generate');
   const scheduleDialog = useRef<HTMLDialogElement>(null);
@@ -55,14 +56,14 @@ export function ProjectHeading({ project, actions, summary, role, showScheduleBu
         <span className={`project-status project-status--${project.status.toLowerCase()}`}><i aria-hidden="true" />{statusLabels[project.status]}</span>
         <p>{summary ?? project.description ?? 'Agrega una descripción para documentar el propósito de la aplicación.'}</p>
       </div>
-      <div className="project-heading__actions">
+      {(actions != null || showSpecificationExport || showScheduleButton || canGenerate) && <div className="project-heading__actions">
         {actions ?? <>
-        <button type="button" className="secondary" onClick={exportSpecification}><Download size={14} /> Exportar especificación</button>
+        {showSpecificationExport && <button type="button" className="secondary" onClick={exportSpecification}><Download size={14} /> Exportar especificación</button>}
         {showScheduleButton && <button type="button" className="secondary" aria-haspopup="dialog" aria-controls={scheduleId}
           onClick={openSchedule}>Programar ejecución</button>}
         {canGenerate && <a className="button-like" href="#automatizacion">Automatizar con IA <ArrowRight size={15} /></a>}
         </>}
-      </div>
+      </div>}
     </header>
     {showScheduleButton && <dialog ref={scheduleDialog} id={scheduleId} className="scenario-run-dialog"
       aria-labelledby={scheduleId + '-title'} aria-describedby={scheduleId + '-description'}>

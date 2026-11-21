@@ -169,7 +169,8 @@ export function ProjectTabs({
     <QualityHeaderContext.Provider value={qualityHeader}>
     <ExplorationHeaderContext.Provider value={explorationHeader}>
       {(active === 'datos' || active === 'historial') &&
-        <ProjectHeading project={project} showScheduleButton={active === 'datos' && showScheduleButton} />}
+        <ProjectHeading project={project} showScheduleButton={active === 'datos' && showScheduleButton}
+          showSpecificationExport={active === 'historial'} />}
       <div ref={setHeaderElement} hidden={active !== 'escenarios'} className="scenario-heading-slot" />
       <div ref={setAutomationElement} hidden={active !== 'automatizacion'} className="automation-heading-slot" />
       <div ref={setReportElement} hidden={active !== 'reporte'} className="report-heading-slot" />
