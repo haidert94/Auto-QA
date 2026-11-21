@@ -1,4 +1,10 @@
-# Arquitectura objetivo
+# Arquitectura de AutoQA
+
+![Diagrama de componentes y flujo de ejecución de AutoQA](arquitectura-autoqa.png)
+
+La web y la API comparten el proceso Node.js en el despliegue documentado. PostgreSQL conserva los datos y la cola que consume Explorer. Las guías de [despliegue](DEPLOY.md) y del [worker](EXPLORER_DEPLOY.md) detallan la configuración.
+
+## Arquitectura objetivo
 Web Next.js -> API NestJS -> PostgreSQL/Prisma. API publica trabajos a Redis/BullMQ; workers Playwright aislados ejecutan exploración y tests; almacenamiento S3-compatible conserva documentos/evidencias; motor IA enruta reglas -> modelo local -> proveedor externo. No implementar todos los servicios en la primera fase.
 
 ## Módulos
