@@ -40,7 +40,30 @@
 .quality-document-counts dd { font-size: 18px; font-weight: 500; margin: 4px 0 0; }
 .quality-attention { margin-top: 16px; background: var(--warn-bg); padding: 12px; font-size: 11px; color: var(--warn); }
 .quality-attention ul { padding-left: 16px; margin-bottom: 0; line-height: 1.7; }
-.quality-detail-link { display: block; text-align: center; font-size: 11px; border: 1px solid #e9e7e1; padding: 10px; margin-top: 22px; }
+/* Botones unificados de las tarjetas de Calidad: caja blanca con borde
+   fino, texto en azul, uppercase mono. Replica el patrón de los botones
+   "Retirar validación / Eliminar documento / Cerrar" del modal de
+   Documentos asociados para mantener coherencia visual. */
+.quality-detail-link,
+.quality-detail-reveal > summary,
+.quality-message button,
+.quality-audits header a,
+.quality-history + .quality-tools a,
+.quality-tools a {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 10px 16px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--blue); border-radius: 2px;
+  font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em;
+  text-decoration: none; cursor: pointer; transition: border-color .12s, background .12s, color .12s;
+}
+.quality-detail-link:hover,
+.quality-detail-reveal > summary:hover,
+.quality-message button:hover,
+.quality-audits header a:hover,
+.quality-tools a:hover { border-color: var(--blue); background: var(--quiet); color: var(--blue); }
+.quality-detail-link { display: flex; width: 100%; margin-top: 22px; }
+.quality-tools { padding: 20px 0 4px; }
+.quality-tools a { flex: 0 1 auto; }
 .quality-gaps { display: grid; gap: 10px; margin-top: 22px; border-top: 1px solid #e9e7e1; padding-top: 16px; }
 .quality-gaps details { margin: 0; background: var(--quiet); padding: 10px; }
 .quality-gaps summary { font-size: 11px; font-weight: 500; }
@@ -139,12 +162,13 @@
 .code-health-badge.is-low { background: #1d4ed8; color: #fff; }
 .code-health-badge.is-note { background: #4b5563; color: #fff; }
 
-/* Plegable "Ver detalle" en tarjetas de calidad (03 y 05). */
-.quality-detail-reveal { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
-.quality-detail-reveal > summary { cursor: pointer; font: 500 11px/1.4 var(--mono); color: var(--blue); list-style: none; padding: 4px 0; display: inline-flex; align-items: center; gap: 6px; }
+/* Plegable "Ver detalle" en tarjetas de calidad (03 y 05). El summary
+   reusa el estilo botón-caja de arriba. */
+.quality-detail-reveal { margin-top: 18px; }
+.quality-detail-reveal > summary { list-style: none; width: 100%; }
 .quality-detail-reveal > summary::-webkit-details-marker, .quality-detail-reveal > summary::marker { display: none; content: ''; }
-.quality-detail-reveal[open] > summary { color: var(--ink); }
-.quality-detail-reveal > *:not(summary) { margin-top: 12px; }
+.quality-detail-reveal[open] > summary { border-color: var(--blue); background: var(--quiet); color: var(--blue); }
+.quality-detail-reveal > *:not(summary) { margin-top: 14px; }
 
 /* Barras por severidad reutilizando quality-dimensions. */
 .quality-dimensions li.code-health-dim.is-critical .quality-progress > span,
