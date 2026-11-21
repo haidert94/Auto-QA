@@ -3,7 +3,16 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
-import { dateText } from './run-report-data';
+import { dateText, durationText } from './run-report-data';
+
+export type LighthouseCategory = 'performance' | 'accessibility' | 'bestPractices' | 'seo';
+
+export type LighthouseAudit = {
+  performanceScore: number | null; accessibilityScore: number | null;
+  bestPracticesScore: number | null; seoScore: number | null;
+  lcpMs: number | null; fcpMs: number | null; tbtMs: number | null; cls: number | null;
+  completedAt: string | null;
+};
 
 type Signal = { criterion: string; weight: number; points: number; missing: string[] };
 type IpaDetail = {
@@ -92,6 +101,126 @@ export function IpaDetailModal({ projectId, ipa, history, generatedAt, onClose }
         <small>{item.delta === null ? 'Sin comparación' : item.delta > 0 ? `+${item.delta}` : item.delta}</small>
       </li>)}</ol>
     </section>}
+  </Shell>;
+}
+
+const LIGHTHOUSE_META: Record<LighthouseCategory, {
+  label: string; scoreKey: 'performanceScore' | 'accessibilityScore' | 'bestPracticesScore' | 'seoScore';
+  description: string;
+  thresholds: Array<{ label: string; range: string; tone: 'good' | 'warn' | 'poor' }>;
+  tips: string[];
+}> = {
+  performance: {
+    label: 'Performance',
+    scoreKey: 'performanceScore',
+    description: 'Velocidad de carga e interactividad percibida por el usuario. Mide cuánto tarda el sitio en ser visible y responder.',
+    thresholds: [
+      { label: 'Excelente', range: '90–100', tone: 'good' },
+      { label: 'A mejorar', range: '50–89', tone: 'warn' },
+      { label: 'Bajo', range: '0–49', tone: 'poor' },
+    ],
+    tips: [
+      'LCP (Largest Contentful Paint) ideal < 2.5 s.',
+      'TBT (Total Blocking Time) ideal < 200 ms.',
+      'CLS (Cumulative Layout Shift) ideal < 0.1.',
+      'Optimiza imágenes (formato moderno, lazy loading, tamaños correctos) y reduce el JS que bloquea el render.',
+    ],
+  },
+  accessibility: {
+    label: 'Accesibilidad',
+    scoreKey: 'accessibilityScore',
+    description: 'Qué tan usable es el sitio para personas con discapacidades: contraste, lectores de pantalla, navegación por teclado y etiquetas ARIA.',
+    thresholds: [
+      { label: 'Excelente', range: '90–100', tone: 'good' },
+      { label: 'A mejorar', range: '50–89', tone: 'warn' },
+      { label: 'Bajo', range: '0–49', tone: 'poor' },
+    ],
+    tips: [
+      'Asegura contraste suficiente entre texto y fondo (WCAG AA ≥ 4.5:1).',
+      'Añade atributos alt descriptivos a las imágenes.',
+      'Usa roles y labels ARIA para elementos interactivos.',
+      'El orden de tabulación con el teclado debe seguir el flujo visual.',
+    ],
+  },
+  bestPractices: {
+    label: 'Buenas prácticas',
+    scoreKey: 'bestPracticesScore',
+    description: 'Cumplimiento de estándares web modernos: seguridad, consola sin errores, uso correcto de APIs del navegador.',
+    thresholds: [
+      { label: 'Excelente', range: '90–100', tone: 'good' },
+      { label: 'A mejorar', range: '50–89', tone: 'warn' },
+      { label: 'Bajo', range: '0–49', tone: 'poor' },
+    ],
+    tips: [
+      'HTTPS obligatorio en toda la navegación.',
+      'Elimina errores y warnings en la consola del navegador.',
+      'Declara el ancho correcto en imágenes para evitar reflow.',
+      'Evita librerías con vulnerabilidades conocidas (npm audit).',
+    ],
+  },
+  seo: {
+    label: 'SEO',
+    scoreKey: 'seoScore',
+    description: 'Qué tan bien pueden los motores de búsqueda entender e indexar el sitio.',
+    thresholds: [
+      { label: 'Excelente', range: '90–100', tone: 'good' },
+      { label: 'A mejorar', range: '50–89', tone: 'warn' },
+      { label: 'Bajo', range: '0–49', tone: 'poor' },
+    ],
+    tips: [
+      'Cada página con título único, meta descripción y <h1>.',
+      'Declara un robots.txt y un sitemap.xml accesibles.',
+      'URLs legibles, canonicals correctos.',
+      'Añade open-graph y Twitter cards para compartir en redes.',
+      'Datos estructurados (schema.org) donde aplique.',
+    ],
+  },
+};
+
+function scoreTone(score: number | null): 'good' | 'warn' | 'poor' | 'empty' {
+  if (score === null) return 'empty';
+  if (score >= 90) return 'good';
+  if (score >= 50) return 'warn';
+  return 'poor';
+}
+
+export function LighthouseDetailModal({ projectId, category, audit, onClose }: {
+  projectId: string; category: LighthouseCategory; audit: LighthouseAudit; onClose: () => void;
+}) {
+  const meta = LIGHTHOUSE_META[category];
+  const score = audit[meta.scoreKey];
+  const tone = scoreTone(score);
+  const toneLabel = tone === 'good' ? 'Excelente' : tone === 'warn' ? 'A mejorar' : tone === 'poor' ? 'Bajo' : 'Sin dato';
+  return <Shell title={`Lighthouse · ${meta.label}`} onClose={onClose}
+    extraLink={{ href: `/projects/${projectId}/performance`, label: 'Ver auditorías y configuración →' }}>
+    <section>
+      <h4>Puntaje</h4>
+      <div className={`quality-detail-score is-${tone}`}>
+        <strong>{score ?? '—'}</strong><span>/ 100</span>
+        <em>{toneLabel}</em>
+      </div>
+      <p>{meta.description}</p>
+      {audit.completedAt && <small className="muted">Evaluado: {dateText(audit.completedAt)}</small>}
+    </section>
+    <section>
+      <h4>Rangos de referencia</h4>
+      <ol className="quality-detail-list">{meta.thresholds.map(t => <li key={t.label} className={`is-${t.tone}`}>
+        <div><strong>{t.label}</strong><span>{t.range}</span></div>
+      </li>)}</ol>
+    </section>
+    {category === 'performance' && <section>
+      <h4>Métricas de esta auditoría</h4>
+      <dl className="quality-detail-dl">
+        <div><dt>LCP · Carga principal</dt><dd>{durationText(audit.lcpMs)}</dd></div>
+        <div><dt>FCP · Primer contenido</dt><dd>{durationText(audit.fcpMs)}</dd></div>
+        <div><dt>TBT · Bloqueo total</dt><dd>{durationText(audit.tbtMs)}</dd></div>
+        <div><dt>CLS · Desplazamiento</dt><dd>{audit.cls !== null ? audit.cls.toFixed(3) : 'No disponible'}</dd></div>
+      </dl>
+    </section>}
+    <section>
+      <h4>Qué revisar</h4>
+      <ul className="quality-detail-bullets">{meta.tips.map((tip, i) => <li key={i}>{tip}</li>)}</ul>
+    </section>
   </Shell>;
 }
 

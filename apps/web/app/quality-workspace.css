@@ -214,3 +214,26 @@
 .quality-detail-panel > footer .quality-detail-link { margin: 0; width: auto; flex: 0 1 auto; }
 .quality-detail-panel > footer > button { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 8px 18px; border: 1px solid var(--line); background: var(--surface); color: var(--blue); border-radius: 2px; cursor: pointer; font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; }
 .quality-detail-panel > footer > button:hover { border-color: var(--blue); background: var(--quiet); }
+
+/* Tarjetas clicables de Lighthouse en la sección 04. */
+.quality-audit-card { all: unset; cursor: pointer; display: block; padding: 14px; background: var(--quiet); border: 1px solid #e9e7e1; border-radius: 2px; transition: border-color .12s, background .12s; min-height: unset; }
+.quality-audit-card:hover { border-color: var(--blue); background: var(--surface); }
+.quality-audit-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.quality-audit-card span { color: var(--muted); font: 400 9px/1.7 var(--mono); text-transform: uppercase; display: block; }
+.quality-audit-card strong { display: block; margin-top: 7px; font-size: 24px; font-weight: 500; color: var(--ink); }
+.quality-audit-card small { color: var(--muted); margin-left: 5px; font: 400 9px/1.5 var(--mono); }
+
+/* Score grande en el modal Lighthouse. */
+.quality-detail-score { display: flex; align-items: baseline; gap: 10px; padding: 14px 16px; border-radius: 2px; background: var(--quiet); border-left: 4px solid var(--line); }
+.quality-detail-score strong { font: 500 36px/1 var(--sans); color: var(--ink); }
+.quality-detail-score span { font: 400 14px/1 var(--mono); color: var(--muted); }
+.quality-detail-score em { margin-left: auto; font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; padding: 4px 10px; border-radius: 2px; background: var(--surface); color: var(--muted); font-style: normal; border: 1px solid var(--line); }
+.quality-detail-score.is-good { border-left-color: #15803d; }
+.quality-detail-score.is-good em { color: #15803d; border-color: #15803d33; background: #15803d12; }
+.quality-detail-score.is-warn { border-left-color: #b45309; }
+.quality-detail-score.is-warn em { color: #b45309; border-color: #b4530933; background: #b4530912; }
+.quality-detail-score.is-poor { border-left-color: #991b1b; }
+.quality-detail-score.is-poor em { color: #991b1b; border-color: #991b1b33; background: #991b1b12; }
+.quality-detail-list li.is-good { border-left: 3px solid #15803d; padding-left: 8px; }
+.quality-detail-list li.is-warn { border-left: 3px solid #b45309; padding-left: 8px; }
+.quality-detail-list li.is-poor { border-left: 3px solid #991b1b; padding-left: 8px; }
