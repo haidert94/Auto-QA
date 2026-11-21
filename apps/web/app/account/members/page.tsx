@@ -46,7 +46,8 @@ export default async function MembersPage() {
       summary="Invita personas, asigna proyectos y controla roles OWNER/ADMIN/EDITOR/VIEWER."
       aside={`${data.members.length} activos · ${data.invites.length} invitaciones`}
     />
-    <section className="panel members-panel">
+    <section className="app-section members-panel">
+      <header><h2><span>01 //</span> EQUIPO E INVITACIONES</h2></header>
       <MembersPanel
         initial={data}
         currentUserId={myMember?.userId ?? ''}

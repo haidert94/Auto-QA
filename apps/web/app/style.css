@@ -543,3 +543,14 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
   .projects-panel__head { flex-direction: column; align-items: stretch; }
   .projects-panel__head .button-like { width: 100%; }
 }
+
+/* Sección estándar del shell (Resumen/Proyectos/Miembros): replica el
+   patrón visual de las tarjetas del detalle de proyecto (header mono
+   uppercase numerado, borde fino, fondo blanco). */
+.app-section { border: 1px solid var(--line); background: var(--surface); padding: 20px; margin-top: 20px; border-radius: 3px; min-width: 0; }
+.app-section > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e9e7e1; padding-bottom: 14px; margin-bottom: 15px; }
+.app-section > header h2 { margin: 0; font: 500 11px/1.7 var(--mono); text-transform: uppercase; letter-spacing: .02em; }
+.app-section > header h2 > span { color: var(--blue); }
+.app-section > p { font-size: 11px; color: var(--muted); line-height: 1.8; margin: 0 0 14px; }
+.app-section__link { font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--blue); text-decoration: none; }
+.app-section__link:hover { text-decoration: underline; }

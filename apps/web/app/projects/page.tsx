@@ -36,7 +36,9 @@ export default async function Projects() {
       aside={visible.length > 0 ? `${visible.length} activos` : undefined}
       actions={canCreate ? <Link href="/projects/new" className="button-like">Registrar aplicación</Link> : undefined}
     />
-    <section className="panel projects-panel">
+    <section className="app-section projects-panel">
+      <header><h2><span>01 //</span> APLICACIONES REGISTRADAS</h2>
+        {canCreate && <Link href="/projects/new" className="app-section__link">Registrar aplicación →</Link>}</header>
       {error && <p className="error" role="alert">{error}</p>}
 
       {visible.length === 0 && !error && (
