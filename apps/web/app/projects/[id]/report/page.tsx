@@ -38,14 +38,14 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
   if (!response?.ok) {
     const reason = response?.status === 409 ? await response.json().catch(() => null) : null;
     return <section className="panel">
-      <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+      <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
       <p className="error" role="alert">{typeof reason?.message === 'string' ? reason.message : 'No se pudo generar el reporte.'}</p>
     </section>;
   }
   const report: Report = await response.json();
 
   return <section className="panel report-panel">
-    <p className="report-back"><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+    <p className="report-back"><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
     <ReportToolbar projectId={id} />
 
     <header className="report-header">

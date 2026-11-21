@@ -44,7 +44,7 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
   if (current?.status === 404) notFound();
   if (!current?.ok) {
     return <section className="panel">
-      <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+      <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
       <p className="error" role="alert">No se pudo cargar el ICSP.</p>
     </section>;
   }
@@ -57,7 +57,7 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
   const canSnapshot = can(role, 'icsp.snapshot');
 
   return <section className="panel ipa-panel">
-    <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+    <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
     <header className="ipa-header">
       <div>
         <h1>ICSP — Salud del Producto</h1>

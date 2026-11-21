@@ -71,7 +71,7 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
   if (current?.status === 404) notFound();
   if (!current?.ok) {
     return <section className="panel">
-      <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+      <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
       <p className="error" role="alert">No se pudo cargar el IPA.</p>
     </section>;
   }
@@ -80,7 +80,7 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
   const historyRows: HistoryItem[] = history?.ok ? await history.json() : [];
 
   return <section className="panel ipa-diagnostic">
-    <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+    <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
     <IpaHero ipa={ipa} generatedAt={generatedAt} subtitle="Reglas en readiness.ts." />
 
     {ipa.blockers.length > 0 && <section className="ipa-blockers">

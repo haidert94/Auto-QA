@@ -14,7 +14,7 @@ export default async function PerformancePage({ params }: { params: Promise<{ id
   if (project?.status === 404) notFound();
   if (!project?.ok) {
     return <section className="panel">
-      <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+      <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
       <p className="error" role="alert">No se pudo cargar el proyecto.</p>
     </section>;
   }
@@ -26,7 +26,7 @@ export default async function PerformancePage({ params }: { params: Promise<{ id
   try { role = (await requireAccount()).role; } catch {}
 
   return <section className="panel">
-    <p><Link href={`/projects/${id}`}>← Volver al proyecto</Link></p>
+    <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
     <h1>Performance · Lighthouse</h1>
     <PerformancePanel projectId={id} environments={envs.map(e => ({ id: e.id, type: e.type, baseUrl: e.baseUrl }))} role={role} />
   </section>;
