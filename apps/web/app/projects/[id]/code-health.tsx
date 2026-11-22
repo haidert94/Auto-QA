@@ -118,15 +118,15 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
     - (workflowRate !== null && workflowRate !== undefined ? (1 - workflowRate) * 20 : 0),
   )));
 
-  // Nivel y badge se eligen por severidad máxima, no por el score: es
-  // más entendible para el cliente final. "Código seguro" sólo si no
-  // hay alertas abiertas de ningún tipo.
+  // Nivel y badge expresan el estado de SALUD del código: 100 = salud
+  // excelente (sin alertas), menos = problemas detectados proporcionales
+  // a la severidad máxima.
   const level = !data?.configured ? null
-    : critical > 0 ? 'CRÍTICO'
-    : high > 0 ? 'URGENTE'
-    : medium > 0 ? 'ATENCIÓN'
-    : alertsTotal > 0 ? 'ACEPTABLE'
-    : 'SEGURO';
+    : critical > 0 ? 'SALUD CRÍTICA'
+    : high > 0 ? 'SALUD BAJA'
+    : medium > 0 ? 'SALUD PARCIAL'
+    : alertsTotal > 0 ? 'SALUD BUENA'
+    : 'SALUD EXCELENTE';
   const badge = loading ? 'Consultando' : level ? `${level} · ${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'}` : 'Sin evaluación';
 
   // Headline cliente-friendly: explica qué significa el estado del código
@@ -152,7 +152,7 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
       : !data ? null
       : !data.configured ? <p className="quality-message muted">{data.message ?? 'Configura AUTOQA_GITHUB_TOKEN y AUTOQA_GITHUB_REPO para ver la salud del código.'}</p>
       : <div className="quality-evaluation__body">
-        <div className="quality-score-summary"><Score label="Salud del código" value={score} /><div>
+        <div className="quality-score-summary"><Score label="Estado de salud del código" value={score} /><div>
           <h3>{headline}</h3>
           <p>{alertsTotal} alerta{alertsTotal === 1 ? '' : 's'} abierta{alertsTotal === 1 ? '' : 's'}
             {workflowRate !== null && workflowRate !== undefined ? ` · CI: ${Math.round(workflowRate * 100)}% de éxito` : ''}.</p>
