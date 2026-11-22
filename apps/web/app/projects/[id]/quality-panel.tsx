@@ -212,6 +212,7 @@ export function QualityPanel({ project }: { project: Project }) {
           <Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
       </EvaluationCard>
     </div>
+    <div className="quality-grid">
     {(() => {
       // Tarjeta 03: patrones de pasos que aparecen ≥ 3 veces son candidatos
       // reales a extraer como page object compartido. El score mide cuántos
@@ -314,6 +315,7 @@ export function QualityPanel({ project }: { project: Project }) {
       </EvaluationCard>;
     })()}
     <CodeHealthCard active={!!header?.active} projectId={project.id} />
+    </div>
     <div className="quality-history-grid">{([{ title: 'Histórico IPA', data: ipaHistory }, { title: 'Histórico ICSP', data: icspHistory }]).map(({ title, data }) => <section className="quality-history" key={title} aria-label={title}>
       <h2>{title}</h2>{data.loading ? <p>Consultando histórico…</p> : data.error ? <p className="muted">{data.error}</p> : !data.value?.length ? <p>Sin evaluaciones guardadas.</p>
         : <ol>{data.value.slice(0, 3).map(item => <li key={item.id}><strong>{item.score ?? '—'}</strong><span>{dateText(item.createdAt)}</span><small>Variación: {item.delta === null ? 'Sin comparación' : item.delta > 0 ? `+${item.delta}` : item.delta}</small></li>)}</ol>}</section>)}</div>
