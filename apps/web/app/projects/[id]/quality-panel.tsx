@@ -270,22 +270,51 @@ export function QualityPanel({ project }: { project: Project }) {
           </div>}
       </EvaluationCard>;
     })()}
-    <section className="quality-audits" aria-label="Auditorías Lighthouse registradas"><header><h2><span>04 //</span> Auditorías Lighthouse</h2><Link href={`/projects/${project.id}/performance`}>Ver auditorías y configuración →</Link></header>
-      {audits.loading ? <p role="status">Consultando auditorías…</p> : audits.error ? <p className="muted">{audits.error}</p>
-        : <>{lastAudit && <p>Última solicitud: {runLabels[lastAudit.status]} · {dateText(lastAudit.createdAt)}</p>}
-          {completedAudit ? <><div className="quality-audit-values">{([
-            ['performance', 'performanceScore', 'Performance'],
-            ['accessibility', 'accessibilityScore', 'Accesibilidad'],
-            ['bestPractices', 'bestPracticesScore', 'Buenas prácticas'],
-            ['seo', 'seoScore', 'SEO'],
-          ] as const).map(([cat, key, label]) => <button key={key} type="button"
-            className="quality-audit-card" onClick={() => setLighthouseOpen(cat)}
-            aria-label={`Abrir explicación de ${label}`}>
-            <span>{label}</span><strong>{completedAudit[key] ?? '—'}<small>/100</small></strong>
-          </button>)}</div>
-            <p>Última auditoría completada: {dateText(completedAudit.completedAt)}. LCP: {durationText(completedAudit.lcpMs)} · TBT: {durationText(completedAudit.tbtMs)} · CLS: {completedAudit.cls ?? 'No disponible'}.</p></>
-            : <p>No hay auditorías Lighthouse completadas. Puedes configurar una auditoría con su entorno y alcance autorizados.</p>}</>}
-    </section>
+    {(() => {
+      // Tarjeta 04 con el mismo patrón visual que IPA/ICSP: anillo con score
+      // consolidado (promedio ponderado), headline con el nivel, badge en el
+      // header, barras por dimensión (las 4 tarjetas de Lighthouse se
+      // mantienen clicables para ver la explicación por categoría) y el
+      // enlace a la página standalone al final.
+      const scores = completedAudit ? [completedAudit.performanceScore, completedAudit.accessibilityScore, completedAudit.bestPracticesScore, completedAudit.seoScore].filter((n): n is number => typeof n === 'number') : [];
+      const lhScore = scores.length ? Math.round(scores.reduce((sum, n) => sum + n, 0) / scores.length) : null;
+      const lhLevel = lhScore === null ? null
+        : lhScore >= 90 ? 'ÓPTIMO'
+        : lhScore >= 70 ? 'ACEPTABLE'
+        : lhScore >= 50 ? 'MEJORABLE'
+        : 'CRÍTICO';
+      const lhBadge = audits.loading ? 'Consultando' : completedAudit ? `${lhLevel} · ${lhScore}/100` : 'Sin evaluación';
+      const lhHeadline = !completedAudit ? 'No hay auditorías Lighthouse completadas.'
+        : lhScore === null ? 'Sin puntajes registrados aún.'
+        : lhScore >= 90 ? 'Performance y calidad frontend óptimas.'
+        : lhScore >= 70 ? 'Buen nivel con margen de mejora en alguna dimensión.'
+        : lhScore >= 50 ? 'Varias dimensiones requieren atención.'
+        : 'Alta deuda frontend: prioriza las dimensiones con score bajo.';
+      return <EvaluationCard index="04" title="Auditorías Lighthouse" badge={lhBadge}>
+        {audits.loading ? <p className="quality-message" role="status">Consultando auditorías…</p>
+          : audits.error ? <p className="quality-message muted">{audits.error}</p>
+          : !completedAudit ? <p className="quality-message muted">No hay auditorías Lighthouse completadas. Puedes configurar una auditoría con su entorno y alcance autorizados.</p>
+          : <div className="quality-evaluation__body">
+            <div className="quality-score-summary"><Score label="Lighthouse" value={lhScore} /><div>
+              <h3>{lhHeadline}</h3>
+              <p>{lastAudit && <>Última solicitud: {runLabels[lastAudit.status]} · {dateText(lastAudit.createdAt)}. </>}
+                LCP: {durationText(completedAudit.lcpMs)} · TBT: {durationText(completedAudit.tbtMs)} · CLS: {completedAudit.cls ?? 'No disponible'}.</p>
+              <small>Completada: {dateText(completedAudit.completedAt)}</small>
+            </div></div>
+            <div className="quality-audit-values">{([
+              ['performance', 'performanceScore', 'Performance'],
+              ['accessibility', 'accessibilityScore', 'Accesibilidad'],
+              ['bestPractices', 'bestPracticesScore', 'Buenas prácticas'],
+              ['seo', 'seoScore', 'SEO'],
+            ] as const).map(([cat, key, label]) => <button key={key} type="button"
+              className="quality-audit-card" onClick={() => setLighthouseOpen(cat)}
+              aria-label={`Abrir explicación de ${label}`}>
+              <span>{label}</span><strong>{completedAudit[key] ?? '—'}<small>/100</small></strong>
+            </button>)}</div>
+            <Link className="quality-detail-link" href={`/projects/${project.id}/performance`}>Ver auditorías y configuración →</Link>
+          </div>}
+      </EvaluationCard>;
+    })()}
     <CodeHealthCard active={!!header?.active} />
     <div className="quality-history-grid">{([{ title: 'Histórico IPA', data: ipaHistory }, { title: 'Histórico ICSP', data: icspHistory }]).map(({ title, data }) => <section className="quality-history" key={title} aria-label={title}>
       <h2>{title}</h2>{data.loading ? <p>Consultando histórico…</p> : data.error ? <p className="muted">{data.error}</p> : !data.value?.length ? <p>Sin evaluaciones guardadas.</p>
