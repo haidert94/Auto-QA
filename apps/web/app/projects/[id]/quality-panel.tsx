@@ -235,11 +235,14 @@ export function QualityPanel({ project }: { project: Project }) {
         : candidates.length <= 6 ? 'ATENCIÓN'
         : 'URGENTE';
       const badge = insights.loading ? 'Consultando' : level ? `${level} · ${candidates.length} candidato${candidates.length === 1 ? '' : 's'}` : 'Sin evaluación';
+      // Headline cliente-friendly: explica qué significa para el mantenimiento
+      // y qué debe hacer el analista. Sin citar el número (ya está abajo en
+      // el resumen y en la lista de candidatos).
       const headline = !data ? 'Sin pasos registrados aún.'
-        : candidates.length === 0 ? 'Código limpio: cada paso vive en un solo lugar.'
-        : candidates.length <= 2 ? `${candidates.length} paso${candidates.length === 1 ? '' : 's'} se repite${candidates.length === 1 ? '' : 'n'} en varios escenarios — poco riesgo si cambia un selector.`
-        : candidates.length <= 6 ? `${candidates.length} pasos aparecen en varios escenarios — conviene consolidarlos antes de que la aplicación crezca.`
-        : `${candidates.length} pasos están muy repetidos — un cambio de selector hoy te obligaría a editar varios escenarios.`;
+        : candidates.length === 0 ? 'El código de pruebas está limpio: cada paso vive en un solo lugar y es fácil de mantener.'
+        : candidates.length <= 2 ? 'Poca repetición detectada. Un cambio en la aplicación afectaría a pocos escenarios — no requiere acción inmediata.'
+        : candidates.length <= 6 ? 'Hay pasos que se repiten entre escenarios. Agenda un refactor para consolidarlos antes de que la aplicación crezca y se vuelva costoso mantener.'
+        : 'Alta repetición de pasos. Asigna un analista para extraer los pasos repetidos a helpers compartidos — hoy un cambio de selector te obliga a editar varios escenarios y es la principal fuente de bugs de mantenimiento.';
       const topCandidates = candidates.slice(0, 4);
       return <EvaluationCard index="03" title="Candidatos a Page Object" badge={badge}>
         {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
