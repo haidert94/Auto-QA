@@ -221,7 +221,6 @@ export function QualityPanel({ project }: { project: Project }) {
       // tocar múltiples specs cuando cambia un selector.
       const data = insights.data;
       const candidates = data ? data.groups.filter(group => group.occurrences.length >= 3) : [];
-      const candidateOccurrences = candidates.reduce((sum, group) => sum + group.occurrences.length, 0);
       const score = !data ? null
         : candidates.length === 0 ? 100
         : candidates.length <= 2 ? 85
@@ -243,7 +242,6 @@ export function QualityPanel({ project }: { project: Project }) {
         : candidates.length <= 2 ? 'El código cumple el patrón en su mayoría. Un cambio en la aplicación afectaría a pocos escenarios — no requiere acción inmediata.'
         : candidates.length <= 6 ? 'El código cumple parcialmente el patrón: hay pasos que se repiten entre escenarios. Agenda un refactor para consolidarlos antes de que la aplicación crezca y se vuelva costoso mantener.'
         : 'El código no cumple el patrón de diseño: hay alta repetición de pasos. Asigna un analista para extraer los pasos repetidos a helpers compartidos — hoy un cambio de selector obliga a editar varios escenarios y es la principal fuente de bugs de mantenimiento.';
-      const topCandidates = candidates.slice(0, 4);
       return <EvaluationCard index="03" title="Patrón de diseño del código" badge={badge}>
         {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
           : insights.error ? <p className="quality-message muted">{insights.error}</p>
@@ -254,15 +252,7 @@ export function QualityPanel({ project }: { project: Project }) {
               <p>{data.steps} pasos revisados · {candidates.length} desviación{candidates.length === 1 ? '' : 'es'} del patrón (pasos que se repiten en 3 o más escenarios).</p>
               {candidates.length > 0 && <small>El patrón exige que cada paso viva en un único lugar. Las desviaciones obligan a mantener el mismo código en varios archivos — un cambio en la aplicación debe replicarse manualmente en cada escenario.</small>}
             </div></div>
-            {topCandidates.length > 0 && <ol className="quality-dimensions">{topCandidates.map((group, i) => {
-              const pct = candidateOccurrences > 0 ? Math.round(100 * group.occurrences.length / candidateOccurrences) : 0;
-              return <li key={group.normalized}>
-                <div><strong>{i + 1}. «{group.canonicalText}»</strong>
-                  <span>{group.occurrences.length}× <small>({group.scenarioCount} escenarios)</small></span></div>
-                <div className="quality-progress"><span style={{ width: `${Math.max(4, pct)}%` }} /></div>
-              </li>;
-            })}</ol>}
-            {candidates.length === 0 && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como candidato.</p>}
+            {candidates.length === 0 && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como desviación.</p>}
             {candidates.length === 0 && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
             {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver todas las desviaciones del patrón →</Link>}
           </div>}
