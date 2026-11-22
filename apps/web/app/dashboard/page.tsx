@@ -48,7 +48,9 @@ export default async function Dashboard() {
         {projects.slice(0, 3).map(p => <li key={p.id}>
           <div className="dashboard-project-head">
             <span className="dashboard-project-title">{p.name}</span>
-            <Link href={`/projects/${p.id}/automate`} className="button-like secondary">Automatizar</Link>
+            {p.status === 'READY'
+              ? <Link href={`/projects/${p.id}#automatizacion`} className="button-like secondary">Abrir automatización →</Link>
+              : <Link href={`/projects/${p.id}/automate`} className="button-like secondary">Iniciar wizard →</Link>}
           </div>
         </li>)}
       </ul>
