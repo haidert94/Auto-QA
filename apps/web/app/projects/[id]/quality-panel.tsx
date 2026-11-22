@@ -14,6 +14,7 @@ import { dateText, durationText, runLabels } from './run-report-data';
 import { useScenarioInsights } from './scenario-insights';
 import { CodeHealthCard } from './code-health';
 import { IcspGapModal } from './icsp-gap-modal';
+import { LighthouseDetailModal, type LighthouseCategory } from './quality-detail-modal';
 
 type IcspGapKind = 'requirementsWithoutScenario' | 'scenariosNotExecuted' | 'unstableScenarios';
 
@@ -57,6 +58,7 @@ export function QualityPanel({ project }: { project: Project }) {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [gapOpen, setGapOpen] = useState<IcspGapKind | null>(null);
+  const [lighthouseOpen, setLighthouseOpen] = useState<LighthouseCategory | null>(null);
   const exportMenu = useRef<HTMLDetailsElement>(null);
   const insights = useScenarioInsights(project.id, !!header?.active, refresh);
 
@@ -262,14 +264,15 @@ export function QualityPanel({ project }: { project: Project }) {
       {audits.loading ? <p role="status">Consultando auditorías…</p> : audits.error ? <p className="muted">{audits.error}</p>
         : <>{lastAudit && <p>Última solicitud: {runLabels[lastAudit.status]} · {dateText(lastAudit.createdAt)}</p>}
           {completedAudit ? <><div className="quality-audit-values">{([
-            ['performanceScore', 'Performance'],
-            ['accessibilityScore', 'Accesibilidad'],
-            ['bestPracticesScore', 'Buenas prácticas'],
-            ['seoScore', 'SEO'],
-          ] as const).map(([key, label]) => <Link key={key} href={`/projects/${project.id}/performance`}
-            className="quality-audit-card" aria-label={`Abrir detalle de ${label}`}>
+            ['performance', 'performanceScore', 'Performance'],
+            ['accessibility', 'accessibilityScore', 'Accesibilidad'],
+            ['bestPractices', 'bestPracticesScore', 'Buenas prácticas'],
+            ['seo', 'seoScore', 'SEO'],
+          ] as const).map(([cat, key, label]) => <button key={key} type="button"
+            className="quality-audit-card" onClick={() => setLighthouseOpen(cat)}
+            aria-label={`Abrir explicación de ${label}`}>
             <span>{label}</span><strong>{completedAudit[key] ?? '—'}<small>/100</small></strong>
-          </Link>)}</div>
+          </button>)}</div>
             <p>Última auditoría completada: {dateText(completedAudit.completedAt)}. LCP: {durationText(completedAudit.lcpMs)} · TBT: {durationText(completedAudit.tbtMs)} · CLS: {completedAudit.cls ?? 'No disponible'}.</p></>
             : <p>No hay auditorías Lighthouse completadas. Puedes configurar una auditoría con su entorno y alcance autorizados.</p>}</>}
     </section>
@@ -283,5 +286,7 @@ export function QualityPanel({ project }: { project: Project }) {
       kind={gapOpen}
       title={({ requirementsWithoutScenario: 'Requisitos sin escenario', scenariosNotExecuted: 'Escenarios sin ejecución', unstableScenarios: 'Escenarios inestables' } as Record<string, string>)[gapOpen]}
       items={health.gaps[gapOpen]} onClose={() => setGapOpen(null)} />}
+    {lighthouseOpen && completedAudit && <LighthouseDetailModal projectId={project.id}
+      category={lighthouseOpen} audit={completedAudit} onClose={() => setLighthouseOpen(null)} />}
   </section>;
 }
