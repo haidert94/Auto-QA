@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountFetch, requireAccount, type OrgRole } from '../../../autoqa-server';
+import { AppPageHeading } from '../../../app-page-heading';
 import { can } from '../../../permissions';
 import { SnapshotButton } from './snapshot-button';
 
@@ -43,10 +43,14 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
 
   if (current?.status === 404) notFound();
   if (!current?.ok) {
-    return <section className="panel">
-      <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
-      <p className="error" role="alert">No se pudo cargar el ICSP.</p>
-    </section>;
+    return <>
+      <AppPageHeading
+        crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'ICSP' }]}
+        title="ICSP — Salud del Producto"
+        summary="No se pudo cargar la evaluación de este proyecto."
+      />
+      <section className="app-section"><p className="error" role="alert">No se pudo cargar el ICSP.</p></section>
+    </>;
   }
 
   const icsp: Icsp = await current.json();
@@ -56,24 +60,17 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
   try { role = (await requireAccount()).role; } catch {}
   const canSnapshot = can(role, 'icsp.snapshot');
 
-  return <section className="panel ipa-panel">
-    <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
-    <header className="ipa-header">
-      <div>
-        <h1>ICSP — Salud del Producto</h1>
-        <p className="muted">
-          Ventana de {icsp.window.days} días. Pesos: cobertura requisitos 30%, cobertura ejecución 20%,
-          estabilidad 30%, trazabilidad 20%. Fórmula en <code>icsp-calculator.ts</code>.
-        </p>
-      </div>
-      <div className="ipa-score">
-        <div className="ipa-score-number ipa-assessed">{icsp.score}</div>
-        {canSnapshot && <SnapshotButton projectId={id} />}
-      </div>
-    </header>
+  return <>
+    <AppPageHeading
+      crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'ICSP' }]}
+      title="ICSP — Salud del Producto"
+      badge={{ label: `Evaluado · ${icsp.score}/100`, tone: 'ready' }}
+      summary={`Ventana de ${icsp.window.days} días. Pesos: cobertura requisitos 30%, cobertura ejecución 20%, estabilidad 30%, trazabilidad 20%. Fórmula en icsp-calculator.ts.`}
+      actions={canSnapshot ? <SnapshotButton projectId={id} /> : undefined}
+    />
 
-    <section>
-      <h2>Dimensiones</h2>
+    <section className="app-section">
+      <header><h2><span>01 //</span> DIMENSIONES</h2></header>
       <ul className="ipa-signals">
         {icsp.dimensions.map(dim => {
           const pct = Math.round(dim.value * 100);
@@ -90,15 +87,15 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
       </ul>
     </section>
 
-    <section>
-      <h2>Brechas accionables</h2>
+    <section className="app-section">
+      <header><h2><span>02 //</span> BRECHAS ACCIONABLES</h2></header>
       <GapList title="Requisitos sin escenario" gaps={icsp.gaps.requirementsWithoutScenario} empty="Todos los requisitos tienen al menos un escenario." />
       <GapList title={`Escenarios sin ejecución en ${icsp.window.days}d`} gaps={icsp.gaps.scenariosNotExecuted} empty="Todos los escenarios se han ejecutado recientemente." />
       <GapList title="Escenarios inestables" gaps={icsp.gaps.unstableScenarios} empty="Ningún escenario muestra inestabilidad en la ventana." />
     </section>
 
-    {historyRows.length > 0 && <section>
-      <h2>Histórico ({historyRows.length})</h2>
+    {historyRows.length > 0 && <section className="app-section">
+      <header><h2><span>03 //</span> HISTÓRICO ({historyRows.length})</h2></header>
       <ol className="ipa-history">
         {historyRows.map(row => {
           const delta = row.delta === null ? '—' : (row.delta > 0 ? `+${row.delta}` : String(row.delta));
@@ -111,7 +108,7 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
         })}
       </ol>
     </section>}
-  </section>;
+  </>;
 }
 
 function GapList({ title, gaps, empty }: { title: string; gaps: Gap[]; empty: string }) {

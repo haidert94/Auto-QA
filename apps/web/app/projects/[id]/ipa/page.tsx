@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { accountFetch } from '../../../autoqa-server';
+import { AppPageHeading } from '../../../app-page-heading';
 import { IpaHero } from '../ipa-hero';
 
 type Anchor = {
@@ -70,28 +71,42 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
 
   if (current?.status === 404) notFound();
   if (!current?.ok) {
-    return <section className="panel">
-      <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
-      <p className="error" role="alert">No se pudo cargar el IPA.</p>
-    </section>;
+    return <>
+      <AppPageHeading
+        crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'IPA' }]}
+        title="Evaluación IPA"
+        summary="No se pudo cargar la evaluación de este proyecto."
+      />
+      <section className="app-section"><p className="error" role="alert">No se pudo cargar el IPA.</p></section>
+    </>;
   }
 
   const { ipa, generatedAt }: { ipa: Ipa; analysisId: string | null; generatedAt: string } = await current.json();
   const historyRows: HistoryItem[] = history?.ok ? await history.json() : [];
+  const signalsWithEvidence = ipa.signals.filter(s => s.anchors.length > 0);
+  const nextIndex = (start: number) => String(start).padStart(2, '0');
 
-  return <section className="panel ipa-diagnostic">
-    <p><Link href={`/projects/${id}#calidad`}>← Volver</Link></p>
-    <IpaHero ipa={ipa} generatedAt={generatedAt} subtitle="Reglas en readiness.ts." />
+  return <>
+    <AppPageHeading
+      crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'IPA' }]}
+      title="Evaluación IPA"
+      badge={{ label: ipa.status === 'ASSESSED' ? `Evaluado · ${ipa.score}/100` : 'Bloqueado', tone: ipa.status === 'ASSESSED' ? 'ready' : 'draft' }}
+      summary="Índice de preparación para automatización. Reglas en readiness.ts; cada señal se calcula con su evidencia."
+    />
+    <section className="app-section">
+      <header><h2><span>01 //</span> RESUMEN</h2></header>
+      <IpaHero ipa={ipa} generatedAt={generatedAt} subtitle="Reglas en readiness.ts." />
+    </section>
 
-    {ipa.blockers.length > 0 && <section className="ipa-blockers">
-      <h2>Bloqueos</h2>
+    {ipa.blockers.length > 0 && <section className="app-section ipa-blockers">
+      <header><h2><span>02 //</span> BLOQUEOS ({ipa.blockers.length})</h2></header>
       <ul>{ipa.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
     </section>}
 
-    {ipa.signals.some(s => s.anchors.length > 0) && <section className="signal-evidence-list">
-      <h2>Evidencia por señal</h2>
+    {signalsWithEvidence.length > 0 && <section className="app-section signal-evidence-list">
+      <header><h2><span>{nextIndex(ipa.blockers.length > 0 ? 3 : 2)} //</span> EVIDENCIA POR SEÑAL</h2></header>
       <ul className="ipa-category-list">
-        {ipa.signals.filter(s => s.anchors.length > 0).map((signal, i) => (
+        {signalsWithEvidence.map((signal, i) => (
           <li key={i}>
             <strong>{signal.criterion}</strong>
             <details className="signal-anchors">
@@ -113,8 +128,8 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
       </ul>
     </section>}
 
-    {historyRows.length > 0 && <section>
-      <h2>Histórico (últimas {historyRows.length})</h2>
+    {historyRows.length > 0 && <section className="app-section">
+      <header><h2><span>{nextIndex(2 + (ipa.blockers.length > 0 ? 1 : 0) + (signalsWithEvidence.length > 0 ? 1 : 0))} //</span> HISTÓRICO ({historyRows.length})</h2></header>
       <ol className="ipa-history">
         {historyRows.map(row => {
           const delta = formatDelta(row.delta);
@@ -130,5 +145,5 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
         })}
       </ol>
     </section>}
-  </section>;
+  </>;
 }
