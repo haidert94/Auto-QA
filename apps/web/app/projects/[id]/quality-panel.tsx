@@ -221,23 +221,30 @@ export function QualityPanel({ project }: { project: Project }) {
       // tocar múltiples specs cuando cambia un selector.
       const data = insights.data;
       const candidates = data ? data.groups.filter(group => group.occurrences.length >= 3) : [];
+      // Un proyecto sin pasos registrados aún no se puede evaluar: no es
+      // 'cumple', es 'sin datos'. Solo calificamos cuando ya hay código de
+      // pruebas registrado en el proyecto.
+      const hasPasos = !!data && data.steps > 0;
       const score = !data ? null
+        : !hasPasos ? null
         : candidates.length === 0 ? 100
         : candidates.length <= 2 ? 85
         : candidates.length <= 6 ? 65
         : Math.max(30, 65 - (candidates.length - 6) * 3);
-      // Nivel por cumplimiento del patrón de diseño (reutilización). 100 =
-      // cumple totalmente; menos = hay pasos repetidos que rompen el patrón.
       const level = !data ? null
+        : !hasPasos ? 'SIN DATOS'
         : candidates.length === 0 ? 'CUMPLE'
         : candidates.length <= 2 ? 'CUMPLE EN SU MAYORÍA'
         : candidates.length <= 6 ? 'CUMPLIMIENTO PARCIAL'
         : 'NO CUMPLE';
-      const badge = insights.loading ? 'Consultando' : level ? `${level} · ${candidates.length} desviación${candidates.length === 1 ? '' : 'es'}` : 'Sin evaluación';
-      // Headline cliente-friendly: explica qué significa para el mantenimiento
-      // y qué debe hacer el analista. Sin citar el número (ya está abajo en
-      // el resumen y en la lista de candidatos).
+      const badge = insights.loading ? 'Consultando'
+        : !hasPasos ? 'SIN DATOS · 0 pasos'
+        : level ? `${level} · ${candidates.length} desviación${candidates.length === 1 ? '' : 'es'}`
+        : 'Sin evaluación';
+      // Headline cliente-friendly por nivel. 'Sin datos' es un estado
+      // aparte: todavía no hay código que evaluar.
       const headline = !data ? 'Sin pasos registrados aún.'
+        : !hasPasos ? 'Este proyecto aún no tiene pasos registrados. Crea escenarios y defínelos para poder evaluar el patrón de diseño del código.'
         : candidates.length === 0 ? 'El código de pruebas cumple el patrón de diseño: cada paso vive en un solo lugar y es fácil de mantener.'
         : candidates.length <= 2 ? 'El código cumple el patrón en su mayoría. Un cambio en la aplicación afectaría a pocos escenarios — no requiere acción inmediata.'
         : candidates.length <= 6 ? 'El código cumple parcialmente el patrón: hay pasos que se repiten entre escenarios. Agenda un refactor para consolidarlos antes de que la aplicación crezca y se vuelva costoso mantener.'
@@ -249,11 +256,11 @@ export function QualityPanel({ project }: { project: Project }) {
           : <div className="quality-evaluation__body">
             <div className="quality-score-summary"><Score label="Cumplimiento del patrón" value={score} /><div>
               <h3>{headline}</h3>
-              <p>{data.steps} pasos revisados · {candidates.length} desviación{candidates.length === 1 ? '' : 'es'} del patrón (pasos que se repiten en 3 o más escenarios).</p>
-              {candidates.length > 0 && <small>El patrón exige que cada paso viva en un único lugar. Las desviaciones obligan a mantener el mismo código en varios archivos — un cambio en la aplicación debe replicarse manualmente en cada escenario.</small>}
+              {hasPasos && <p>{data.steps} pasos revisados · {candidates.length} desviación{candidates.length === 1 ? '' : 'es'} del patrón (pasos que se repiten en 3 o más escenarios).</p>}
+              {hasPasos && candidates.length > 0 && <small>El patrón exige que cada paso viva en un único lugar. Las desviaciones obligan a mantener el mismo código en varios archivos — un cambio en la aplicación debe replicarse manualmente en cada escenario.</small>}
             </div></div>
-            {candidates.length === 0 && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como desviación.</p>}
-            {candidates.length === 0 && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
+            {candidates.length === 0 && hasPasos && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como desviación.</p>}
+            {candidates.length === 0 && hasPasos && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
             {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver todas las desviaciones del patrón →</Link>}
           </div>}
       </EvaluationCard>;
