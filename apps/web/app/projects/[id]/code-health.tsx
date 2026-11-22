@@ -129,12 +129,15 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
     : 'SEGURO';
   const badge = loading ? 'Consultando' : level ? `${level} · ${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'}` : 'Sin evaluación';
 
+  // Headline cliente-friendly: explica qué significa el estado del código
+  // y qué debe hacer el analista para mejorarlo. Sin citar números (ya
+  // están en los contadores debajo).
   const headline = !data?.configured ? 'Pendiente de configuración.'
-    : critical > 0 ? `${critical} alerta${critical === 1 ? '' : 's'} crítica${critical === 1 ? '' : 's'} abierta${critical === 1 ? '' : 's'} — requieren atención inmediata.`
-    : high > 0 ? `${high} alerta${high === 1 ? '' : 's'} alta${high === 1 ? '' : 's'} — revisa prioridad en los próximos días.`
-    : medium > 0 ? `${medium} alerta${medium === 1 ? '' : 's'} media${medium === 1 ? '' : 's'} — mejora sugerida sin urgencia.`
-    : alertsTotal > 0 ? 'Solo alertas informativas abiertas.'
-    : 'Código seguro: sin alertas abiertas en CodeQL ni Dependabot.';
+    : critical > 0 ? 'El escáner encontró vulnerabilidades críticas que pueden ser explotadas. Prioriza arreglarlas esta semana antes de desplegar nuevos cambios.'
+    : high > 0 ? 'Hay problemas de alto impacto en el código o en sus dependencias. Asigna un analista para revisarlos durante esta semana y evitar incidentes en producción.'
+    : medium > 0 ? 'Mejoras de calidad o seguridad sin urgencia inmediata. Agéndalas para el próximo sprint junto con el refactor regular del equipo.'
+    : alertsTotal > 0 ? 'Solo quedan recomendaciones menores de estilo o rendimiento. Atiéndelas cuando toques el archivo correspondiente.'
+    : 'El escáner no detectó vulnerabilidades ni dependencias inseguras. Mantén las actualizaciones automáticas de Dependabot activas.';
 
   const dims = data?.configured && alertsTotal > 0 ? ([
     { key: 'critical', label: 'Alertas críticas', count: critical },
