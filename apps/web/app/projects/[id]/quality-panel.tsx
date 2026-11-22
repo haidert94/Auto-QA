@@ -226,17 +226,20 @@ export function QualityPanel({ project }: { project: Project }) {
         : candidates.length <= 2 ? 85
         : candidates.length <= 6 ? 65
         : Math.max(30, 65 - (candidates.length - 6) * 3);
-      const level = score === null ? null
-        : score >= 95 ? 'ÓPTIMO'
-        : score >= 80 ? 'ACEPTABLE'
-        : score >= 55 ? 'ALTO POTENCIAL'
-        : 'CRÍTICO';
+      // Nivel por cantidad de candidatos (misma lógica que Salud del código):
+      // más entendible que un número abstracto. 0 = ÓPTIMO, 1-2 = BUENO,
+      // 3-6 = ATENCIÓN, 7+ = URGENTE.
+      const level = !data ? null
+        : candidates.length === 0 ? 'ÓPTIMO'
+        : candidates.length <= 2 ? 'BUENO'
+        : candidates.length <= 6 ? 'ATENCIÓN'
+        : 'URGENTE';
       const badge = insights.loading ? 'Consultando' : level ? `${level} · ${candidates.length} candidato${candidates.length === 1 ? '' : 's'}` : 'Sin evaluación';
       const headline = !data ? 'Sin pasos registrados aún.'
-        : candidates.length === 0 ? 'Sin patrones repetidos: nada que extraer a helpers hoy.'
-        : candidates.length <= 2 ? 'Pocos patrones reutilizables. Consolidarlos es un refactor opcional.'
-        : candidates.length <= 6 ? 'Hay varios patrones listos para extraer a page objects — evitas tocar múltiples specs si cambia un selector.'
-        : 'Muchos patrones repetidos sin consolidar. Un cambio de selector hoy obligaría a editar muchos archivos.';
+        : candidates.length === 0 ? 'Código limpio: cada paso vive en un solo lugar.'
+        : candidates.length <= 2 ? `${candidates.length} paso${candidates.length === 1 ? '' : 's'} se repite${candidates.length === 1 ? '' : 'n'} en varios escenarios — poco riesgo si cambia un selector.`
+        : candidates.length <= 6 ? `${candidates.length} pasos aparecen en varios escenarios — conviene consolidarlos antes de que la aplicación crezca.`
+        : `${candidates.length} pasos están muy repetidos — un cambio de selector hoy te obligaría a editar varios escenarios.`;
       const topCandidates = candidates.slice(0, 4);
       return <EvaluationCard index="03" title="Candidatos a Page Object" badge={badge}>
         {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
@@ -245,8 +248,8 @@ export function QualityPanel({ project }: { project: Project }) {
           : <div className="quality-evaluation__body">
             <div className="quality-score-summary"><Score label="Consolidación" value={score} /><div>
               <h3>{headline}</h3>
-              <p>{data.steps} pasos registrados · {candidates.length} patrones aparecen 3+ veces · {candidateOccurrences} ocurrencias en total.</p>
-              <small>Un patrón candidato es un paso idéntico (o casi) en 3 o más escenarios: extraerlo a un helper reduce el blast-radius de un cambio en la página.</small>
+              <p>{data.steps} pasos revisados · {candidates.length} se repiten en 3 o más escenarios.</p>
+              {candidates.length > 0 && <small>Cada paso repetido obliga a mantener el mismo código en varios lugares. Consolidarlos en un único punto hace que un cambio en la aplicación se aplique a todos los escenarios de golpe.</small>}
             </div></div>
             {topCandidates.length > 0 && <ol className="quality-dimensions">{topCandidates.map((group, i) => {
               const pct = candidateOccurrences > 0 ? Math.round(100 * group.occurrences.length / candidateOccurrences) : 0;
