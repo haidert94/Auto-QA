@@ -258,15 +258,7 @@ export function QualityPanel({ project }: { project: Project }) {
             })}</ol>}
             {candidates.length === 0 && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como candidato.</p>}
             {candidates.length === 0 && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
-            {data.groups.length > 0 && <details className="quality-detail-reveal"><summary>Ver todos los candidatos y sus escenarios →</summary>
-              <ol className="quality-duplicates">{data.groups.map(group => <li key={group.normalized}>
-                <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
-                  <span>{group.occurrences.length}× · {group.scenarioCount} escenarios {group.occurrences.length >= 3 && <em className="muted">· candidato a page object</em>}</span></div>
-                <ul>{group.occurrences.map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
-                  <Link href={`/projects/${project.id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
-                  <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}</ul>
-              </li>)}</ol>
-            </details>}
+            {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver todos los candidatos y sus escenarios →</Link>}
           </div>}
       </EvaluationCard>;
     })()}
