@@ -7,7 +7,19 @@ import { ProjectCard } from './project-card';
 
 export const dynamic = 'force-dynamic';
 
-export default async function Projects() {
+type StatusFilter = 'all' | 'ready' | 'in-progress' | 'draft';
+const FILTER_META: Record<StatusFilter, { label: string; summary: string }> = {
+  all: { label: 'Todos', summary: 'Todas las aplicaciones registradas no archivadas.' },
+  ready: { label: 'Listos', summary: 'Proyectos con al menos un snapshot ICSP guardado (versión congelada en el historial).' },
+  'in-progress': { label: 'En proceso', summary: 'Proyectos con pruebas ejecutadas pero sin snapshot de versión aún.' },
+  draft: { label: 'Borrador', summary: 'Proyectos sin ejecuciones completadas todavía.' },
+};
+
+export default async function Projects({ searchParams }: { searchParams?: Promise<{ status?: string }> }) {
+  const params = (await searchParams) ?? {};
+  const status: StatusFilter = params.status === 'ready' || params.status === 'in-progress' || params.status === 'draft' ? params.status : 'all';
+  const meta = FILTER_META[status];
+
   const account = await requireAccount().catch(() => null);
   let projects: ProjectSummary[] = [];
   let error = '';
@@ -22,22 +34,39 @@ export default async function Projects() {
   const canCreate = can(account?.role, 'project.create');
   const canRemove = can(account?.role, 'project.delete');
 
-  const visible = projects.filter(p => p.status !== 'ARCHIVED');
+  const notArchived = projects.filter(p => p.status !== 'ARCHIVED');
+  const visible = notArchived.filter(p => {
+    const snapshots = p.icspSnapshots ?? 0;
+    const runs = p.completedRuns ?? 0;
+    if (status === 'ready') return snapshots > 0;
+    if (status === 'in-progress') return runs > 0 && snapshots === 0;
+    if (status === 'draft') return runs === 0 && snapshots === 0;
+    return true;
+  });
 
-  const summary = visible.length === 0 ? 'Aún no has registrado aplicaciones.'
-    : `${visible.length} ${visible.length === 1 ? 'aplicación registrada' : 'aplicaciones registradas'}.`;
+  const summary = visible.length === 0 ? `No hay proyectos en la categoría "${meta.label}".`
+    : `${visible.length} ${visible.length === 1 ? 'aplicación' : 'aplicaciones'} · ${meta.summary}`;
 
   return (
     <>
     <AppPageHeading
-      crumbs={[{ label: account?.organization.name ?? 'AutoQA' }, { label: 'Proyectos' }]}
-      title="Proyectos"
+      back={status !== 'all' ? { href: '/dashboard' } : undefined}
+      crumbs={[{ label: account?.organization.name ?? 'AutoQA' }, { href: '/projects', label: 'Proyectos' }, ...(status !== 'all' ? [{ label: meta.label }] : [])]}
+      title={status === 'all' ? 'Proyectos' : `Proyectos · ${meta.label}`}
       summary={summary}
-      aside={visible.length > 0 ? `${visible.length} activos` : undefined}
+      aside={visible.length > 0 ? `${visible.length} de ${notArchived.length}` : undefined}
       actions={canCreate ? <Link href="/projects/new" className="button-like">Registrar aplicación</Link> : undefined}
     />
+    <nav className="projects-filter-tabs" aria-label="Filtrar proyectos por estado">
+      {(['all', 'ready', 'in-progress', 'draft'] as StatusFilter[]).map(key => <Link key={key}
+        href={key === 'all' ? '/projects' : `/projects?status=${key}`}
+        aria-current={status === key ? 'page' : undefined}
+        className={status === key ? 'is-active' : ''}>
+        {FILTER_META[key].label}
+      </Link>)}
+    </nav>
     <section className="app-section projects-panel">
-      <header><h2><span>01 //</span> APLICACIONES REGISTRADAS</h2>
+      <header><h2><span>01 //</span> APLICACIONES ({visible.length})</h2>
         {canCreate && <Link href="/projects/new" className="app-section__link">Registrar aplicación →</Link>}</header>
       {error && <p className="error" role="alert">{error}</p>}
 

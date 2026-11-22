@@ -554,3 +554,14 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .app-section > p { font-size: 11px; color: var(--muted); line-height: 1.8; margin: 0 0 14px; }
 .app-section__link { font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--blue); text-decoration: none; }
 .app-section__link:hover { text-decoration: underline; }
+
+/* Métricas clicables (Resumen de proyectos del Dashboard). */
+.dashboard-metrics--clickable > a { display: block; text-decoration: none; color: inherit; padding: 8px; margin: -8px; border-radius: 2px; transition: background .12s; }
+.dashboard-metrics--clickable > a:hover, .dashboard-metrics--clickable > a:focus-visible { background: var(--quiet); outline: none; }
+.dashboard-metrics--clickable > a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Tabs de filtro de la pantalla Proyectos. */
+.projects-filter-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0; }
+.projects-filter-tabs a { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid var(--line); border-radius: 2px; background: var(--surface); color: var(--ink); text-decoration: none; font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; transition: border-color .12s, background .12s, color .12s; }
+.projects-filter-tabs a:hover { border-color: var(--blue); color: var(--blue); }
+.projects-filter-tabs a.is-active { background: var(--blue); color: var(--surface); border-color: var(--blue); }

@@ -87,11 +87,11 @@ export default async function Dashboard() {
 
     <section className="app-section">
       <header><h2><span>04 //</span> RESUMEN DE PROYECTOS</h2></header>
-      <dl className="dashboard-metrics">
-        <div><dt>Total</dt><dd>{projects.length}</dd></div>
-        <div><dt>Listos</dt><dd>{readyProjects.length}</dd></div>
-        <div><dt>En proceso</dt><dd>{inProgressProjects.length}</dd></div>
-        <div><dt>Borrador</dt><dd>{draftProjects.length}</dd></div>
+      <dl className="dashboard-metrics dashboard-metrics--clickable">
+        <Link href="/projects?status=all"><dt>Total</dt><dd>{projects.length}</dd></Link>
+        <Link href="/projects?status=ready"><dt>Listos</dt><dd>{readyProjects.length}</dd></Link>
+        <Link href="/projects?status=in-progress"><dt>En proceso</dt><dd>{inProgressProjects.length}</dd></Link>
+        <Link href="/projects?status=draft"><dt>Borrador</dt><dd>{draftProjects.length}</dd></Link>
       </dl>
     </section>
 
