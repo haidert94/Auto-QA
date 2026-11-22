@@ -184,7 +184,6 @@ export function QualityPanel({ project }: { project: Project }) {
           </div></div><ol className="quality-dimensions">{preparation.signals.map((signal, i) => <li key={i}>
             <div><strong>{i + 1}. {signal.criterion}</strong><span>{signal.weight > 0 ? `${Math.round(100 * signal.points / signal.weight)}%` : 'No aplica'} <small>({signal.points}/{signal.weight})</small></span></div>
             {signal.weight > 0 && <div className="quality-progress"><span style={{ width: `${Math.max(0, Math.min(100, 100 * signal.points / signal.weight))}%` }} /></div>}
-            {signal.missing.length > 0 && <p>Pendiente: {signal.missing.join(' · ')}</p>}
           </li>)}</ol>
           {preparation.documents && <dl className="quality-document-counts">{Object.entries(preparation.documents).map(([key, count]) => <div key={key}><dt>{({ declared: 'Declarados', uploaded: 'Cargados', processed: 'Procesados', validated: 'Validados' } as Record<string, string>)[key]}</dt><dd>{count}</dd></div>)}</dl>}
           {preparation.blockers?.length ? <div className="quality-attention"><strong>Bloqueos</strong><ul>{preparation.blockers.map((item, i) => <li key={i}>{item}</li>)}</ul></div> : null}
