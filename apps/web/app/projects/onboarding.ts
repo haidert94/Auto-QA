@@ -59,6 +59,8 @@ export type ProjectSummary = {
   status: keyof typeof statusLabels;
   ownerLabel: string | null;
   environments: Environment[];
+  completedRuns?: number;
+  icspSnapshots?: number;
 };
 
 export type Project = ProjectSummary & {

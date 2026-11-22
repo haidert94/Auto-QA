@@ -52,10 +52,28 @@ export class ProjectsService {
   }
 
   async list(workspace: Workspace) {
+    // Incluimos conteos de TestRun COMPLETED y QualityAssessment (ICSP
+    // snapshot) por proyecto para que el dashboard clasifique en
+    // Borrador / En proceso / Listos sin tener que hacer N llamadas.
     const records = await this.prisma.project.findMany({
-      where: projectScope(workspace), include: { environments }, orderBy: { createdAt: 'desc' },
+      where: projectScope(workspace),
+      include: {
+        environments,
+        _count: {
+          select: {
+            runs: { where: { status: 'COMPLETED' } },
+            assessments: { where: { type: 'TEST_QUALITY' } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
     });
-    return records.map(project => ({ ...project, environments: project.environments.map(redactEnvironment) }));
+    return records.map(project => ({
+      ...project,
+      environments: project.environments.map(redactEnvironment),
+      completedRuns: project._count.runs,
+      icspSnapshots: project._count.assessments,
+    }));
   }
 
   async get(id: string, workspace: Workspace) {

@@ -21,8 +21,13 @@ export default async function Dashboard() {
   const usage: DashboardUsage | null = usageRes?.ok ? await usageRes.json() : null;
   const exploration = usage?.exploration;
 
-  const readyProjects = projects.filter(p => p.status === 'READY');
-  const draftProjects = projects.filter(p => p.status === 'DRAFT');
+  // Clasificación operativa por ciclo de vida de pruebas:
+  //   Borrador: sin runs completados todavía (incluye DRAFT de onboarding).
+  //   En proceso: al menos un run completado pero sin snapshot ICSP guardado.
+  //   Listos: hay al menos un snapshot ICSP (versión congelada en el historial).
+  const readyProjects = projects.filter(p => (p.icspSnapshots ?? 0) > 0);
+  const inProgressProjects = projects.filter(p => (p.completedRuns ?? 0) > 0 && (p.icspSnapshots ?? 0) === 0);
+  const draftProjects = projects.filter(p => (p.completedRuns ?? 0) === 0 && (p.icspSnapshots ?? 0) === 0);
 
   const nextSteps = buildNextSteps(account, projects);
 
@@ -85,7 +90,8 @@ export default async function Dashboard() {
       <dl className="dashboard-metrics">
         <div><dt>Total</dt><dd>{projects.length}</dd></div>
         <div><dt>Listos</dt><dd>{readyProjects.length}</dd></div>
-        <div><dt>En borrador</dt><dd>{draftProjects.length}</dd></div>
+        <div><dt>En proceso</dt><dd>{inProgressProjects.length}</dd></div>
+        <div><dt>Borrador</dt><dd>{draftProjects.length}</dd></div>
       </dl>
     </section>
 
