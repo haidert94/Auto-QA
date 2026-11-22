@@ -62,6 +62,7 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
 
   return <>
     <AppPageHeading
+      back={{ href: `/projects/${id}#calidad` }}
       crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'ICSP' }]}
       title="ICSP — Salud del Producto"
       badge={{ label: `Evaluado · ${icsp.score}/100`, tone: 'ready' }}

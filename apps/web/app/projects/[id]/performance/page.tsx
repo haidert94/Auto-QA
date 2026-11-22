@@ -31,6 +31,7 @@ export default async function PerformancePage({ params }: { params: Promise<{ id
 
   return <>
     <AppPageHeading
+      back={{ href: `/projects/${id}#calidad` }}
       crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'Performance' }]}
       title="Performance · Lighthouse"
       badge={{ label: `${envs.length} entorno${envs.length === 1 ? '' : 's'} elegible${envs.length === 1 ? '' : 's'}`, tone: envs.length > 0 ? 'ready' : 'draft' }}

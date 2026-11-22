@@ -88,6 +88,7 @@ export default async function IpaPage({ params }: { params: Promise<{ id: string
 
   return <>
     <AppPageHeading
+      back={{ href: `/projects/${id}#calidad` }}
       crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'IPA' }]}
       title="Evaluación IPA"
       badge={{ label: ipa.status === 'ASSESSED' ? `Evaluado · ${ipa.score}/100` : 'Bloqueado', tone: ipa.status === 'ASSESSED' ? 'ready' : 'draft' }}

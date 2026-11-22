@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 // Encabezado estándar para las páginas del shell de cuenta (Resumen,
@@ -14,7 +14,7 @@ export type Crumb = { href?: string; label: string };
 export type HeadingBadge = { label: string; tone?: 'ready' | 'draft' | 'archived' | 'muted' };
 
 export function AppPageHeading({
-  crumbs = [], title, badge, summary, actions, aside,
+  crumbs = [], title, badge, summary, actions, aside, back,
 }: {
   crumbs?: Crumb[];
   title: string;
@@ -22,8 +22,15 @@ export function AppPageHeading({
   summary?: string;
   actions?: ReactNode;
   aside?: ReactNode;
+  // Opcional: muestra un enlace "← Volver" sobre el breadcrumb apuntando
+  // al href dado. Útil en páginas standalone que se abren desde una
+  // pestaña del detalle de proyecto (Calidad, Reporte, etc.).
+  back?: { href: string; label?: string };
 }) {
   return <>
+    {back && <p className="app-page-heading__back">
+      <Link href={back.href}><ArrowLeft size={14} aria-hidden="true" />{back.label ?? 'Volver'}</Link>
+    </p>}
     {(crumbs.length > 0 || aside) && <div className="project-breadcrumb-row">
       <nav className="project-breadcrumb" aria-label="Ruta de la página">
         {crumbs.map((crumb, i) => <span key={i} className="app-page-heading__crumb">
