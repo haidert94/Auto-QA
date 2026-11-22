@@ -237,3 +237,19 @@
 .quality-detail-list li.is-good { border-left: 3px solid #15803d; padding-left: 8px; }
 .quality-detail-list li.is-warn { border-left: 3px solid #b45309; padding-left: 8px; }
 .quality-detail-list li.is-poor { border-left: 3px solid #991b1b; padding-left: 8px; }
+
+/* Brechas ICSP como tarjetas estilo quality-document-counts pero clicables. */
+.quality-gap-counts { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.quality-gap-count { all: unset; display: block; cursor: pointer; padding: 16px 14px; background: transparent; border: 0; border-top: 1px solid #e9e7e1; border-right: 1px solid transparent; text-align: left; transition: background .12s, border-color .12s; }
+.quality-gap-count:first-child { padding-left: 0; }
+.quality-gap-count:hover, .quality-gap-count:focus-visible { background: var(--quiet); }
+.quality-gap-count:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.quality-gap-count dt { font: 400 8px/1.7 var(--mono); color: var(--muted); text-transform: uppercase; overflow-wrap: anywhere; margin: 0; }
+.quality-gap-count dd { font-size: 20px; font-weight: 500; margin: 4px 0 0; color: var(--ink); }
+
+/* Lista de items dentro del modal ICSP. */
+.icsp-gap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.icsp-gap-list li { padding: 8px 10px; background: var(--quiet); border-radius: 2px; display: flex; flex-direction: column; gap: 2px; }
+.icsp-gap-list li > a, .icsp-gap-list li > span { font: 500 12px/1.4 var(--sans); color: var(--ink); text-decoration: none; }
+.icsp-gap-list li > a:hover { color: var(--blue); text-decoration: underline; }
+.icsp-gap-list li > small { color: var(--muted); font: 400 10px/1.4 var(--mono); }

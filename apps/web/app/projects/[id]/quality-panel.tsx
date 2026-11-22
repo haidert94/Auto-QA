@@ -13,6 +13,9 @@ import { levelFor, type IpaSummary } from './ipa-hero';
 import { dateText, durationText, runLabels } from './run-report-data';
 import { useScenarioInsights } from './scenario-insights';
 import { CodeHealthCard } from './code-health';
+import { IcspGapModal } from './icsp-gap-modal';
+
+type IcspGapKind = 'requirementsWithoutScenario' | 'scenariosNotExecuted' | 'unstableScenarios';
 
 type Ipa = IpaSummary & {
   documents?: { declared: number; uploaded: number; processed: number; validated: number };
@@ -53,6 +56,7 @@ export function QualityPanel({ project }: { project: Project }) {
   const [refresh, setRefresh] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const [gapOpen, setGapOpen] = useState<IcspGapKind | null>(null);
   const exportMenu = useRef<HTMLDetailsElement>(null);
   const insights = useScenarioInsights(project.id, !!header?.active, refresh);
 
@@ -196,9 +200,16 @@ export function QualityPanel({ project }: { project: Project }) {
             <div className="quality-progress"><span style={{ width: `${dimension.denominator > 0 ? Math.max(0, Math.min(100, dimension.value * 100)) : 0}%` }} /></div>
             <p>{dimension.description ?? `Peso en el índice: ${dimension.weight}%.`}</p>
           </li>)}</ol>
-          <div className="quality-gaps">{([['requirementsWithoutScenario', 'Requisitos sin escenario'], ['scenariosNotExecuted', 'Escenarios sin ejecución'], ['unstableScenarios', 'Escenarios inestables']] as const).map(([key, title]) => <details key={key}>
-            <summary>{title} ({health.gaps[key].length})</summary>{health.gaps[key].length ? <ul>{health.gaps[key].map(item => <li key={item.id}>{item.label}{item.detail && <small>{item.detail}</small>}</li>)}</ul> : <p>Sin brechas reportadas en esta categoría.</p>}
-          </details>)}</div><Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
+          <dl className="quality-document-counts quality-gap-counts">{([
+            ['requirementsWithoutScenario', 'Requisitos sin escenario'],
+            ['scenariosNotExecuted', 'Escenarios sin ejecución'],
+            ['unstableScenarios', 'Escenarios inestables'],
+          ] as const).map(([key, title]) => <button key={key} type="button"
+            className="quality-gap-count" onClick={() => setGapOpen(key)}
+            aria-label={`Abrir detalle de ${title}`}>
+            <dt>{title}</dt><dd>{health.gaps[key].length}</dd>
+          </button>)}</dl>
+          <Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
       </EvaluationCard>
     </div>
     {(() => {
@@ -268,5 +279,9 @@ export function QualityPanel({ project }: { project: Project }) {
         : <ol>{data.value.slice(0, 3).map(item => <li key={item.id}><strong>{item.score ?? '—'}</strong><span>{dateText(item.createdAt)}</span><small>Variación: {item.delta === null ? 'Sin comparación' : item.delta > 0 ? `+${item.delta}` : item.delta}</small></li>)}</ol>}</section>)}</div>
     <nav className="quality-tools" aria-label="Otras herramientas de calidad"><Link href={`/projects/${project.id}/report`}>Reporte consolidado</Link><Link href={`/projects/${project.id}/performance`}>Performance · Lighthouse</Link>
       <Link href={`/projects/${project.id}/load`}>Carga controlada</Link><Link href={`/projects/${project.id}/monitors`}>Monitores</Link></nav>
+    {gapOpen && health && <IcspGapModal projectId={project.id}
+      kind={gapOpen}
+      title={({ requirementsWithoutScenario: 'Requisitos sin escenario', scenariosNotExecuted: 'Escenarios sin ejecución', unstableScenarios: 'Escenarios inestables' } as Record<string, string>)[gapOpen]}
+      items={health.gaps[gapOpen]} onClose={() => setGapOpen(null)} />}
   </section>;
 }
