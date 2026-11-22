@@ -227,33 +227,32 @@ export function QualityPanel({ project }: { project: Project }) {
         : candidates.length <= 2 ? 85
         : candidates.length <= 6 ? 65
         : Math.max(30, 65 - (candidates.length - 6) * 3);
-      // Nivel por cantidad de candidatos (misma lógica que Salud del código):
-      // más entendible que un número abstracto. 0 = ÓPTIMO, 1-2 = BUENO,
-      // 3-6 = ATENCIÓN, 7+ = URGENTE.
+      // Nivel por cumplimiento del patrón de diseño (reutilización). 100 =
+      // cumple totalmente; menos = hay pasos repetidos que rompen el patrón.
       const level = !data ? null
-        : candidates.length === 0 ? 'ÓPTIMO'
-        : candidates.length <= 2 ? 'BUENO'
-        : candidates.length <= 6 ? 'ATENCIÓN'
-        : 'URGENTE';
-      const badge = insights.loading ? 'Consultando' : level ? `${level} · ${candidates.length} candidato${candidates.length === 1 ? '' : 's'}` : 'Sin evaluación';
+        : candidates.length === 0 ? 'CUMPLE'
+        : candidates.length <= 2 ? 'CUMPLE EN SU MAYORÍA'
+        : candidates.length <= 6 ? 'CUMPLIMIENTO PARCIAL'
+        : 'NO CUMPLE';
+      const badge = insights.loading ? 'Consultando' : level ? `${level} · ${candidates.length} desviación${candidates.length === 1 ? '' : 'es'}` : 'Sin evaluación';
       // Headline cliente-friendly: explica qué significa para el mantenimiento
       // y qué debe hacer el analista. Sin citar el número (ya está abajo en
       // el resumen y en la lista de candidatos).
       const headline = !data ? 'Sin pasos registrados aún.'
-        : candidates.length === 0 ? 'El código de pruebas está limpio: cada paso vive en un solo lugar y es fácil de mantener.'
-        : candidates.length <= 2 ? 'Poca repetición detectada. Un cambio en la aplicación afectaría a pocos escenarios — no requiere acción inmediata.'
-        : candidates.length <= 6 ? 'Hay pasos que se repiten entre escenarios. Agenda un refactor para consolidarlos antes de que la aplicación crezca y se vuelva costoso mantener.'
-        : 'Alta repetición de pasos. Asigna un analista para extraer los pasos repetidos a helpers compartidos — hoy un cambio de selector te obliga a editar varios escenarios y es la principal fuente de bugs de mantenimiento.';
+        : candidates.length === 0 ? 'El código de pruebas cumple el patrón de diseño: cada paso vive en un solo lugar y es fácil de mantener.'
+        : candidates.length <= 2 ? 'El código cumple el patrón en su mayoría. Un cambio en la aplicación afectaría a pocos escenarios — no requiere acción inmediata.'
+        : candidates.length <= 6 ? 'El código cumple parcialmente el patrón: hay pasos que se repiten entre escenarios. Agenda un refactor para consolidarlos antes de que la aplicación crezca y se vuelva costoso mantener.'
+        : 'El código no cumple el patrón de diseño: hay alta repetición de pasos. Asigna un analista para extraer los pasos repetidos a helpers compartidos — hoy un cambio de selector obliga a editar varios escenarios y es la principal fuente de bugs de mantenimiento.';
       const topCandidates = candidates.slice(0, 4);
-      return <EvaluationCard index="03" title="Candidatos a Page Object" badge={badge}>
+      return <EvaluationCard index="03" title="Patrón de diseño del código" badge={badge}>
         {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
           : insights.error ? <p className="quality-message muted">{insights.error}</p>
           : !data ? null
           : <div className="quality-evaluation__body">
-            <div className="quality-score-summary"><Score label="Consolidación" value={score} /><div>
+            <div className="quality-score-summary"><Score label="Cumplimiento del patrón" value={score} /><div>
               <h3>{headline}</h3>
-              <p>{data.steps} pasos revisados · {candidates.length} se repiten en 3 o más escenarios.</p>
-              {candidates.length > 0 && <small>Cada paso repetido obliga a mantener el mismo código en varios lugares. Consolidarlos en un único punto hace que un cambio en la aplicación se aplique a todos los escenarios de golpe.</small>}
+              <p>{data.steps} pasos revisados · {candidates.length} desviación{candidates.length === 1 ? '' : 'es'} del patrón (pasos que se repiten en 3 o más escenarios).</p>
+              {candidates.length > 0 && <small>El patrón exige que cada paso viva en un único lugar. Las desviaciones obligan a mantener el mismo código en varios archivos — un cambio en la aplicación debe replicarse manualmente en cada escenario.</small>}
             </div></div>
             {topCandidates.length > 0 && <ol className="quality-dimensions">{topCandidates.map((group, i) => {
               const pct = candidateOccurrences > 0 ? Math.round(100 * group.occurrences.length / candidateOccurrences) : 0;
@@ -265,7 +264,7 @@ export function QualityPanel({ project }: { project: Project }) {
             })}</ol>}
             {candidates.length === 0 && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como candidato.</p>}
             {candidates.length === 0 && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
-            {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver todos los candidatos y sus escenarios →</Link>}
+            {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver todas las desviaciones del patrón →</Link>}
           </div>}
       </EvaluationCard>;
     })()}

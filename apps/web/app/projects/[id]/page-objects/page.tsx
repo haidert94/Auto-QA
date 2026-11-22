@@ -20,11 +20,11 @@ export default async function PageObjectsPage({ params }: { params: Promise<{ id
     return <>
       <AppPageHeading
         back={{ href: `/projects/${id}#calidad` }}
-        crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'Candidatos a Page Object' }]}
-        title="Candidatos a Page Object"
+        crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'Patrón de diseño' }]}
+        title="Patrón de diseño del código"
         summary="No se pudo cargar el análisis de pasos duplicados."
       />
-      <section className="app-section"><p className="error" role="alert">No se pudieron consultar los candidatos.</p></section>
+      <section className="app-section"><p className="error" role="alert">No se pudieron consultar las desviaciones.</p></section>
     </>;
   }
   const data: ScenarioInsights = await response.json();
@@ -34,16 +34,16 @@ export default async function PageObjectsPage({ params }: { params: Promise<{ id
   return <>
     <AppPageHeading
       back={{ href: `/projects/${id}#calidad` }}
-      crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'Candidatos a Page Object' }]}
-      title="Candidatos a Page Object"
-      badge={{ label: `${candidates.length} con 3+ repeticiones`, tone: candidates.length > 6 ? 'draft' : 'ready' }}
-      summary={`${data.steps} pasos registrados en ${data.scenarios} escenarios · ${data.duplicatedSteps} ocurrencias en grupos repetidos. Los grupos con 3+ repeticiones son candidatos a extraer como helper compartido para que un cambio de selector afecte un solo archivo.`}
+      crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'Patrón de diseño' }]}
+      title="Patrón de diseño del código"
+      badge={{ label: `${candidates.length} desviación${candidates.length === 1 ? '' : 'es'}`, tone: candidates.length > 6 ? 'draft' : 'ready' }}
+      summary={`${data.steps} pasos registrados en ${data.scenarios} escenarios · ${data.duplicatedSteps} ocurrencias que se desvían del patrón. El patrón exige que cada paso viva en un único lugar: las desviaciones son candidatas a extraer como helper compartido para que un cambio en la aplicación se aplique a todos los escenarios de golpe.`}
     />
 
     <section className="app-section">
-      <header><h2><span>01 //</span> CANDIDATOS PRIORITARIOS ({candidates.length})</h2></header>
+      <header><h2><span>01 //</span> DESVIACIONES PRIORITARIAS ({candidates.length})</h2></header>
       {candidates.length === 0
-        ? <p className="muted">Sin patrones con 3 o más repeticiones. No hay refactor urgente que proponer.</p>
+        ? <p className="muted">No hay pasos repetidos en 3 o más escenarios. El patrón se cumple.</p>
         : <ol className="quality-duplicates">{candidates.map(group => <li key={group.normalized}>
           <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
             <span>{group.occurrences.length}× · {group.scenarioCount} escenarios</span></div>
