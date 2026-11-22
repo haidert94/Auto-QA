@@ -213,48 +213,60 @@ export function QualityPanel({ project }: { project: Project }) {
       </EvaluationCard>
     </div>
     {(() => {
-      // El "score" de reutilización mide pasos únicos sobre total. 100 = cero
-      // duplicación. Las dimensiones son los primeros 4 grupos y su peso
-      // relativo dentro del total de pasos duplicados — visualmente idéntico
-      // a las barras de IPA/ICSP.
+      // Tarjeta 03: patrones de pasos que aparecen ≥ 3 veces son candidatos
+      // reales a extraer como page object compartido. El score mide cuántos
+      // candidatos quedan pendientes: menos = mejor (ya consolidados o pocos
+      // flujos). Más = oportunidad fuerte de refactor para evitar tener que
+      // tocar múltiples specs cuando cambia un selector.
       const data = insights.data;
-      const score = data && data.steps > 0 ? Math.max(0, Math.min(100, Math.round(100 - (data.duplicatedSteps / data.steps) * 100))) : null;
-      const level = score === null ? null : score >= 95 ? 'ÓPTIMO' : score >= 80 ? 'ACEPTABLE' : 'MEJORABLE';
-      const badge = insights.loading ? 'Consultando' : level ? `Nivel: ${level} (${score}/100)` : 'Sin evaluación';
-      const headline = score === null ? 'Sin pasos registrados aún.'
-        : score === 100 ? 'No se detectaron pasos duplicados.'
-        : score >= 95 ? 'Baja redundancia: pocos pasos repetidos.'
-        : score >= 80 ? 'Redundancia moderada. Vale la pena reutilizar.'
-        : 'Alta redundancia: muchos pasos se repiten entre escenarios.';
-      const topGroups = data ? data.groups.slice(0, 4) : [];
-      return <EvaluationCard index="03" title="Reutilización de pasos" badge={badge}>
+      const candidates = data ? data.groups.filter(group => group.occurrences.length >= 3) : [];
+      const candidateOccurrences = candidates.reduce((sum, group) => sum + group.occurrences.length, 0);
+      const score = !data ? null
+        : candidates.length === 0 ? 100
+        : candidates.length <= 2 ? 85
+        : candidates.length <= 6 ? 65
+        : Math.max(30, 65 - (candidates.length - 6) * 3);
+      const level = score === null ? null
+        : score >= 95 ? 'ÓPTIMO'
+        : score >= 80 ? 'ACEPTABLE'
+        : score >= 55 ? 'ALTO POTENCIAL'
+        : 'CRÍTICO';
+      const badge = insights.loading ? 'Consultando' : level ? `${level} · ${candidates.length} candidato${candidates.length === 1 ? '' : 's'}` : 'Sin evaluación';
+      const headline = !data ? 'Sin pasos registrados aún.'
+        : candidates.length === 0 ? 'Sin patrones repetidos: nada que extraer a helpers hoy.'
+        : candidates.length <= 2 ? 'Pocos patrones reutilizables. Consolidarlos es un refactor opcional.'
+        : candidates.length <= 6 ? 'Hay varios patrones listos para extraer a page objects — evitas tocar múltiples specs si cambia un selector.'
+        : 'Muchos patrones repetidos sin consolidar. Un cambio de selector hoy obligaría a editar muchos archivos.';
+      const topCandidates = candidates.slice(0, 4);
+      return <EvaluationCard index="03" title="Candidatos a Page Object" badge={badge}>
         {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
           : insights.error ? <p className="quality-message muted">{insights.error}</p>
           : !data ? null
           : <div className="quality-evaluation__body">
-            <div className="quality-score-summary"><Score label="Reutilización" value={score} /><div>
+            <div className="quality-score-summary"><Score label="Consolidación" value={score} /><div>
               <h3>{headline}</h3>
-              <p>{data.steps} pasos registrados · {data.duplicatedSteps} repetidos en {data.duplicateGroups} grupos.</p>
+              <p>{data.steps} pasos registrados · {candidates.length} patrones aparecen 3+ veces · {candidateOccurrences} ocurrencias en total.</p>
+              <small>Un patrón candidato es un paso idéntico (o casi) en 3 o más escenarios: extraerlo a un helper reduce el blast-radius de un cambio en la página.</small>
             </div></div>
-            {topGroups.length > 0 && <ol className="quality-dimensions">{topGroups.map((group, i) => {
-              const pct = data.duplicatedSteps > 0 ? Math.round(100 * group.occurrences.length / data.duplicatedSteps) : 0;
+            {topCandidates.length > 0 && <ol className="quality-dimensions">{topCandidates.map((group, i) => {
+              const pct = candidateOccurrences > 0 ? Math.round(100 * group.occurrences.length / candidateOccurrences) : 0;
               return <li key={group.normalized}>
                 <div><strong>{i + 1}. «{group.canonicalText}»</strong>
-                  <span>{pct}% <small>({group.occurrences.length}/{data.duplicatedSteps})</small></span></div>
-                <div className="quality-progress"><span style={{ width: `${Math.max(2, pct)}%` }} /></div>
-                <p>Aparece en {group.scenarioCount} escenarios distintos.</p>
+                  <span>{group.occurrences.length}× <small>({group.scenarioCount} escenarios)</small></span></div>
+                <div className="quality-progress"><span style={{ width: `${Math.max(4, pct)}%` }} /></div>
               </li>;
             })}</ol>}
-            {data.groups.length > 0 && <details className="quality-detail-reveal"><summary>Ver todos los grupos duplicados →</summary>
+            {candidates.length === 0 && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como candidato.</p>}
+            {candidates.length === 0 && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
+            {data.groups.length > 0 && <details className="quality-detail-reveal"><summary>Ver todos los candidatos y sus escenarios →</summary>
               <ol className="quality-duplicates">{data.groups.map(group => <li key={group.normalized}>
                 <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
-                  <span>{group.occurrences.length} pasos · {group.scenarioCount} escenarios</span></div>
+                  <span>{group.occurrences.length}× · {group.scenarioCount} escenarios {group.occurrences.length >= 3 && <em className="muted">· candidato a page object</em>}</span></div>
                 <ul>{group.occurrences.map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
                   <Link href={`/projects/${project.id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
                   <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}</ul>
               </li>)}</ol>
             </details>}
-            {!data.groups.length && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
           </div>}
       </EvaluationCard>;
     })()}
