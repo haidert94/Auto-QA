@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { accountFetch, requireAccount, type Usage } from '../autoqa-server';
-import { environmentTypes, statusLabels, type ProjectSummary } from '../projects/onboarding';
+import type { ProjectSummary } from '../projects/onboarding';
 import { AppPageHeading } from '../app-page-heading';
 
 export const dynamic = 'force-dynamic';
@@ -103,30 +103,6 @@ export default async function Dashboard() {
       </dl>
     </section>}
 
-    <section className="app-section">
-      <header><h2><span>06 //</span> PROYECTOS RECIENTES</h2>
-        {projects.length > 0 && <Link href="/projects" className="app-section__link">Ver todos →</Link>}</header>
-      {projects.length === 0
-        ? <p className="muted">Aún no has registrado aplicaciones. Empieza con <Link href="/onboarding">Registrar aplicación</Link>.</p>
-        : <ul className="dashboard-projects">
-          {projects.slice(0, 5).map(project => <li key={project.id}>
-            <div className="dashboard-project-head">
-              <Link href={`/projects/${project.id}`} className="dashboard-project-title">{project.name}</Link>
-              <span className="muted">{statusLabels[project.status]}</span>
-            </div>
-            {project.environments.length > 0 && <ul className="dashboard-envs">
-              {project.environments.slice(0, 3).map(env => <li key={env.id}>
-                {env.type ? environmentTypes[env.type] : 'pendiente'} · {env.baseUrl ?? '—'}
-              </li>)}
-            </ul>}
-            <div className="dashboard-project-links">
-              <Link href={`/projects/${project.id}/ipa`}>IPA</Link>
-              <Link href={`/projects/${project.id}/icsp`}>ICSP</Link>
-              <Link href={`/projects/${project.id}/report`}>Reporte</Link>
-            </div>
-          </li>)}
-        </ul>}
-    </section>
   </>;
 }
 
