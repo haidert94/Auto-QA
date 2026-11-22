@@ -200,7 +200,6 @@ export function QualityPanel({ project }: { project: Project }) {
           </div></div><ol className="quality-dimensions">{health.dimensions.map((dimension, i) => <li key={dimension.code}>
             <div><strong>{i + 1}. {dimension.label}</strong><span>{dimension.denominator > 0 ? `${Math.round(100 * dimension.value)}%` : 'Sin datos'} <small>({dimension.numerator}/{dimension.denominator})</small></span></div>
             <div className="quality-progress"><span style={{ width: `${dimension.denominator > 0 ? Math.max(0, Math.min(100, dimension.value * 100)) : 0}%` }} /></div>
-            <p>{dimension.description ?? `Peso en el índice: ${dimension.weight}%.`}</p>
           </li>)}</ol>
           <dl className="quality-document-counts quality-gap-counts">{([
             ['requirementsWithoutScenario', 'Requisitos sin escenario'],
