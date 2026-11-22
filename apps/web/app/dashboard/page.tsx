@@ -49,7 +49,7 @@ export default async function Dashboard() {
           <div className="dashboard-project-head">
             <span className="dashboard-project-title">{p.name}</span>
             {p.status === 'READY'
-              ? <Link href={`/projects/${p.id}#automatizacion`} className="button-like secondary">Abrir automatización →</Link>
+              ? <Link href={`/projects/${p.id}#datos`} className="button-like secondary">Abrir proyecto →</Link>
               : <Link href={`/projects/${p.id}/automate`} className="button-like secondary">Iniciar wizard →</Link>}
           </div>
         </li>)}
