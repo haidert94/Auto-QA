@@ -100,24 +100,48 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
   // que IPA/ICSP y lea de un vistazo si hay deuda urgente.
   const codeqlCounts = data?.codeql?.counts;
   const depCounts = data?.dependabot?.counts;
-  const alertPenalty = (c?: AlertCounts) => c ? c.critical * 25 + c.high * 10 + c.medium * 4 + c.low * 1 : 0;
   const alertsTotal = (codeqlCounts?.total ?? 0) + (depCounts?.total ?? 0);
+  const critical = (codeqlCounts?.critical ?? 0) + (depCounts?.critical ?? 0);
+  const high = (codeqlCounts?.high ?? 0) + (depCounts?.high ?? 0);
+  const medium = (codeqlCounts?.medium ?? 0) + (depCounts?.medium ?? 0);
+  const low = (codeqlCounts?.low ?? 0) + (depCounts?.low ?? 0);
   const workflowRate = data?.workflow?.successRate;
-  const score = !data?.configured ? null
-    : Math.max(0, Math.min(100, Math.round(100 - alertPenalty(codeqlCounts) - alertPenalty(depCounts) - (workflowRate !== null && workflowRate !== undefined ? (1 - workflowRate) * 20 : 0))));
-  const level = score === null ? null : score >= 90 ? 'ÓPTIMO' : score >= 70 ? 'ACEPTABLE' : 'MEJORABLE';
-  const badge = loading ? 'Consultando' : level ? `Nivel: ${level} (${score}/100)` : 'Sin evaluación';
-  const headline = score === null ? 'Pendiente de configuración.'
-    : score === 100 ? 'Sin alertas y CI al 100%.'
-    : score >= 90 ? 'Bajo nivel de deuda detectada.'
-    : score >= 70 ? 'Hay deuda que conviene atender.'
-    : 'Alta deuda: prioriza alertas críticas y altas.';
-  const dims: Array<{ key: string; label: string; count: number; total: number; url?: string | null }> = data?.configured ? [
-    { key: 'critical', label: 'Alertas críticas', count: (codeqlCounts?.critical ?? 0) + (depCounts?.critical ?? 0), total: Math.max(1, alertsTotal), url: data.codeql?.url },
-    { key: 'high', label: 'Alertas altas', count: (codeqlCounts?.high ?? 0) + (depCounts?.high ?? 0), total: Math.max(1, alertsTotal) },
-    { key: 'medium', label: 'Alertas medias', count: (codeqlCounts?.medium ?? 0) + (depCounts?.medium ?? 0), total: Math.max(1, alertsTotal) },
-    { key: 'low', label: 'Alertas bajas', count: (codeqlCounts?.low ?? 0) + (depCounts?.low ?? 0), total: Math.max(1, alertsTotal) },
-  ] : [];
+
+  // Score por niveles, no lineal: 100 si no hay nada; cada severidad
+  // tiene un tope de penalización para que una dimensión sola no coma
+  // todo el puntaje. Bajas y notas son informativas: no restan.
+  const score = !data?.configured ? null : Math.max(0, Math.min(100, Math.round(
+    100
+    - Math.min(40, critical * 12)
+    - Math.min(25, high * 3)
+    - Math.min(15, Math.max(0, medium - 5) * 1)
+    - (workflowRate !== null && workflowRate !== undefined ? (1 - workflowRate) * 20 : 0),
+  )));
+
+  // Nivel y badge se eligen por severidad máxima, no por el score: es
+  // más entendible para el cliente final. "Código seguro" sólo si no
+  // hay alertas abiertas de ningún tipo.
+  const level = !data?.configured ? null
+    : critical > 0 ? 'CRÍTICO'
+    : high > 0 ? 'URGENTE'
+    : medium > 0 ? 'ATENCIÓN'
+    : alertsTotal > 0 ? 'ACEPTABLE'
+    : 'SEGURO';
+  const badge = loading ? 'Consultando' : level ? `${level} · ${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'}` : 'Sin evaluación';
+
+  const headline = !data?.configured ? 'Pendiente de configuración.'
+    : critical > 0 ? `${critical} alerta${critical === 1 ? '' : 's'} crítica${critical === 1 ? '' : 's'} abierta${critical === 1 ? '' : 's'} — requieren atención inmediata.`
+    : high > 0 ? `${high} alerta${high === 1 ? '' : 's'} alta${high === 1 ? '' : 's'} — revisa prioridad en los próximos días.`
+    : medium > 0 ? `${medium} alerta${medium === 1 ? '' : 's'} media${medium === 1 ? '' : 's'} — mejora sugerida sin urgencia.`
+    : alertsTotal > 0 ? 'Solo alertas informativas abiertas.'
+    : 'Código seguro: sin alertas abiertas en CodeQL ni Dependabot.';
+
+  const dims = data?.configured && alertsTotal > 0 ? ([
+    { key: 'critical', label: 'Alertas críticas', count: critical },
+    { key: 'high', label: 'Alertas altas', count: high },
+    { key: 'medium', label: 'Alertas medias', count: medium },
+    { key: 'low', label: 'Alertas bajas', count: low },
+  ] as const).filter(d => d.count > 0) : [];
 
   return <EvaluationCard index="05" title="Salud del código" badge={badge}>
     {loading ? <p className="quality-message" role="status">Consultando GitHub…</p>
@@ -127,18 +151,20 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
       : <div className="quality-evaluation__body">
         <div className="quality-score-summary"><Score label="Salud del código" value={score} /><div>
           <h3>{headline}</h3>
-          <p>{alertsTotal} alertas abiertas{workflowRate !== null && workflowRate !== undefined ? ` · CI: ${Math.round(workflowRate * 100)}% de éxito` : ''}.</p>
+          <p>{alertsTotal} alerta{alertsTotal === 1 ? '' : 's'} abierta{alertsTotal === 1 ? '' : 's'}
+            {workflowRate !== null && workflowRate !== undefined ? ` · CI: ${Math.round(workflowRate * 100)}% de éxito` : ''}.</p>
           {data.repository && <small><GitBranch size={12} /> {data.repository}</small>}
         </div></div>
-        {alertsTotal > 0 && <ol className="quality-dimensions code-health-dims">{dims.filter(d => d.count > 0).map(d => {
-          const pct = Math.round(100 * d.count / d.total);
+        {alertsTotal > 0 && <ol className="quality-dimensions code-health-dims">{dims.map(d => {
+          const pct = Math.round(100 * d.count / Math.max(1, alertsTotal));
           return <li key={d.key} className={`code-health-dim is-${d.key}`}>
             <div><strong>{d.label}</strong><span>{pct}% <small>({d.count}/{alertsTotal})</small></span></div>
             <div className="quality-progress"><span style={{ width: `${Math.max(2, pct)}%` }} /></div>
           </li>;
         })}</ol>}
-        {alertsTotal === 0 && <p className="muted">Sin alertas abiertas en CodeQL ni Dependabot.</p>}
-        <Link className="quality-detail-link" href={`/projects/${projectId}/code-health`}>Ver detalle de CI, CodeQL y Dependabot →</Link>
+        <Link className="quality-detail-link" href={`/projects/${projectId}/code-health`}>
+          {alertsTotal > 0 ? 'Ver detalle de CI, CodeQL y Dependabot →' : 'Ver estado del CI y del escáner →'}
+        </Link>
       </div>}
   </EvaluationCard>;
 }
