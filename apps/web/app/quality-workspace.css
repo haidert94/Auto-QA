@@ -238,14 +238,14 @@
 .quality-detail-list li.is-warn { border-left: 3px solid #b45309; padding-left: 8px; }
 .quality-detail-list li.is-poor { border-left: 3px solid #991b1b; padding-left: 8px; }
 
-/* Brechas ICSP como tarjetas estilo quality-document-counts pero clicables. */
-.quality-gap-counts { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-.quality-gap-count { all: unset; display: block; cursor: pointer; padding: 16px 14px; background: transparent; border: 0; border-top: 1px solid #e9e7e1; border-right: 1px solid transparent; text-align: left; transition: background .12s, border-color .12s; }
-.quality-gap-count:first-child { padding-left: 0; }
-.quality-gap-count:hover, .quality-gap-count:focus-visible { background: var(--quiet); }
+/* Brechas ICSP como tarjetas tipo Lighthouse (quality-audit-card):
+   caja completa con borde y fondo gris claro, separadas por gap. */
+.quality-gap-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; padding: 0; border: 0; }
+.quality-gap-count { all: unset; display: block; cursor: pointer; padding: 14px; background: var(--quiet); border: 1px solid #e9e7e1; border-radius: 2px; text-align: left; transition: border-color .12s, background .12s; }
+.quality-gap-count:hover { border-color: var(--blue); background: var(--surface); }
 .quality-gap-count:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-.quality-gap-count dt { font: 400 8px/1.7 var(--mono); color: var(--muted); text-transform: uppercase; overflow-wrap: anywhere; margin: 0; }
-.quality-gap-count dd { font-size: 20px; font-weight: 500; margin: 4px 0 0; color: var(--ink); }
+.quality-gap-count dt { font: 400 9px/1.7 var(--mono); color: var(--muted); text-transform: uppercase; overflow-wrap: anywhere; margin: 0; display: block; }
+.quality-gap-count dd { font-size: 24px; font-weight: 500; margin: 7px 0 0; color: var(--ink); display: block; }
 
 /* Lista de items dentro del modal ICSP. */
 .icsp-gap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
