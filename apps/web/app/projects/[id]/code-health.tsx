@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ExternalLink, GitBranch, ShieldAlert } from 'lucide-react';
+import { ExternalLink, GitBranch } from 'lucide-react';
 import { EvaluationCard, Score } from './quality-panel';
 
 type AlertCounts = { critical: number; high: number; medium: number; low: number; note: number; other: number; total: number };
@@ -28,7 +29,7 @@ function runColor(run: WorkflowRun): string {
   return 'var(--warn, #b45309)';
 }
 
-function AlertsChart({ title, counts, url, top }: { title: string; counts: AlertCounts; url: string | null; top: AlertDetail[] }) {
+export function AlertsChart({ title, counts, url, top }: { title: string; counts: AlertCounts; url: string | null; top: AlertDetail[] }) {
   // Usa la misma estética de .quality-dimensions (IPA/ICSP): una fila por
   // severidad con etiqueta, conteo y barra de progreso. El denominador es
   // el total de alertas del tipo, no la severidad más poblada, para que
@@ -56,7 +57,7 @@ function AlertsChart({ title, counts, url, top }: { title: string; counts: Alert
   </div>;
 }
 
-function RunsChart({ runs, successRate }: { runs: WorkflowRun[]; successRate: number | null }) {
+export function RunsChart({ runs, successRate }: { runs: WorkflowRun[]; successRate: number | null }) {
   // Minigráfica: últimos 20 runs como barritas de alto fijo. No usamos
   // librería porque un SVG inline cumple y evita 100 KB extra en el bundle.
   if (!runs.length) return <p className="muted">Sin corridas registradas aún.</p>;
@@ -74,7 +75,7 @@ function RunsChart({ runs, successRate }: { runs: WorkflowRun[]; successRate: nu
   </div>;
 }
 
-export function CodeHealthCard({ active }: { active: boolean }) {
+export function CodeHealthCard({ active, projectId }: { active: boolean; projectId: string }) {
   const [data, setData] = useState<CodeHealth | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -137,25 +138,7 @@ export function CodeHealthCard({ active }: { active: boolean }) {
           </li>;
         })}</ol>}
         {alertsTotal === 0 && <p className="muted">Sin alertas abiertas en CodeQL ni Dependabot.</p>}
-        <details className="quality-detail-reveal"><summary>Ver detalle de CI, CodeQL y Dependabot →</summary>
-          <div className="code-health-grid">
-            <div className="code-health-widget">
-              <header>{data.workflow?.recent.some(r => r.conclusion === 'failure') ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
-                <h3>CI · {data.workflow?.name ?? '—'}</h3></header>
-              {data.workflow ? <RunsChart runs={data.workflow.recent} successRate={data.workflow.successRate} /> : <p className="muted">Sin workflow configurado.</p>}
-            </div>
-            <div className="code-health-widget">
-              <header><ShieldAlert size={14} /><h3>CodeQL</h3></header>
-              {data.codeql?.enabled ? <AlertsChart title="Alertas CodeQL" counts={data.codeql.counts} url={data.codeql.url} top={data.codeql.top ?? []} />
-                : <p className="muted">CodeQL no habilitado todavía. Activa el workflow <code>codeql.yml</code> en GitHub.</p>}
-            </div>
-            <div className="code-health-widget">
-              <header><ShieldAlert size={14} /><h3>Dependabot</h3></header>
-              {data.dependabot?.enabled ? <AlertsChart title="Alertas Dependabot" counts={data.dependabot.counts} url={data.dependabot.url} top={data.dependabot.top ?? []} />
-                : <p className="muted">Dependabot no habilitado o sin permisos. Actívalo en Security → Dependabot alerts.</p>}
-            </div>
-          </div>
-        </details>
+        <Link className="quality-detail-link" href={`/projects/${projectId}/code-health`}>Ver detalle de CI, CodeQL y Dependabot →</Link>
       </div>}
   </EvaluationCard>;
 }
