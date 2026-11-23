@@ -203,6 +203,12 @@ model Document {
   versions             DocumentVersion[]
   removedAt            DateTime?
   createdAt            DateTime             @default(now())
+  // Tipos de prueba a los que aplica este documento (functional_web,
+  // mobile_emulated, compatibility, availability, performance, ux,
+  // manual). Vacío = General (aplica a todos los tipos habilitados del
+  // plan). Cada agente del pipeline filtra por este campo para usar
+  // solo la documentación relevante a su dominio.
+  testTypes            String[]             @default([])
 
   @@index([projectId, filename, removedAt])
 }

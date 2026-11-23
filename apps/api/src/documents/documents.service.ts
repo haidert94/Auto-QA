@@ -86,7 +86,7 @@ export class DocumentsService {
     }
   }
 
-  async upload(projectId: string, files: UploadedDocument[], type: DocumentType | 'AUTO') {
+  async upload(projectId: string, files: UploadedDocument[], type: DocumentType | 'AUTO', testTypes: string[] = []) {
     if (!files.length) throw new BadRequestException('Selecciona al menos un documento.');
     await this.project(projectId, true);
     const prepared = files.map(file => {
@@ -115,7 +115,10 @@ export class DocumentsService {
           if (current?.versions[0]?.sha256 === file.hash) {
             const duplicates = await tx.document.update({
               where: { id: current.id }, select: documentSelect,
-              data: type === 'AUTO' ? {} : { type, classificationSource: 'MANUAL' },
+              data: {
+                ...(type === 'AUTO' ? {} : { type, classificationSource: 'MANUAL' }),
+                ...(testTypes.length ? { testTypes } : {}),
+              },
             });
             uploads.push(metadata(duplicates));
             continue;
@@ -133,10 +136,10 @@ export class DocumentsService {
           const document = current
             ? await tx.document.update({
               where: { id: current.id }, select: documentSelect,
-              data: { ...classification, version: number, versions: { create: version } },
+              data: { ...classification, version: number, versions: { create: version }, ...(testTypes.length ? { testTypes } : {}) },
             })
             : await tx.document.create({
-              data: { ...classification, projectId, filename: file.name, versions: { create: version } },
+              data: { ...classification, projectId, filename: file.name, versions: { create: version }, testTypes },
               select: documentSelect,
             });
           uploads.push(metadata(document));
@@ -173,6 +176,20 @@ export class DocumentsService {
     });
     if (!item) throw new NotFoundException('Documento no encontrado.');
     return metadata(item);
+  }
+
+  async reclassify(projectId: string, documentId: string, testTypes: string[]) {
+    await this.project(projectId, true);
+    const existing = await this.prisma.document.findFirst({
+      where: { projectId, id: documentId, ...active }, select: { id: true },
+    });
+    if (!existing) throw new NotFoundException('Documento no encontrado.');
+    const updated = await this.prisma.document.update({
+      where: { id: documentId },
+      data: { testTypes },
+      select: documentSelect,
+    });
+    return metadata(updated);
   }
 
   async review(projectId: string, documentId: string, input: { versionId: string; validated: boolean }) {

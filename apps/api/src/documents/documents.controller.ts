@@ -4,7 +4,9 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { DocumentType } from '@prisma/client';
-import { IsBoolean, IsIn, IsUUID, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, ValidateIf } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { ALL_TEST_TYPES } from '../automation/test-types';
 import { DocumentErrorsFilter } from './document-errors.filter';
 import { RequiresPlanCapability, RequiresRole, WorkspaceGuard } from '../commerce/workspace.guard';
 import { MAX_FILES_PER_UPLOAD, MAX_FILE_BYTES } from './document-files';
@@ -14,6 +16,34 @@ class UploadDocumentDto {
   @ValidateIf((_, value) => value !== undefined)
   @IsIn(['AUTO', ...Object.values(DocumentType)])
   type?: DocumentType | 'AUTO';
+
+  // Multipart entrega 'testTypes' como string o string[]; lo normalizo
+  // antes de validar para aceptar ambas formas.
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return [];
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : [value]; }
+      catch { return [value]; }
+    }
+    return [];
+  })
+  @IsArray()
+  @ArrayMaxSize(16)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsIn(ALL_TEST_TYPES, { each: true })
+  testTypes?: string[];
+}
+
+class ReclassifyDocumentDto {
+  @IsArray()
+  @ArrayMaxSize(16)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsIn(ALL_TEST_TYPES, { each: true })
+  testTypes!: string[];
 }
 
 class ReviewDocumentDto {
@@ -41,7 +71,19 @@ export class DocumentsController {
     @UploadedFiles() files: UploadedDocument[],
     @Body() dto: UploadDocumentDto,
   ) {
-    return this.documents.upload(projectId, files ?? [], dto?.type ?? 'AUTO');
+    return this.documents.upload(projectId, files ?? [], dto?.type ?? 'AUTO', dto?.testTypes ?? []);
+  }
+
+  // Reclasifica un documento ya subido: actualiza su lista de tipos de
+  // prueba sin alterar versiones ni archivos.
+  @Patch(':documentId/test-types')
+  @RequiresRole('EDITOR')
+  reclassify(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('documentId', ParseUUIDPipe) documentId: string,
+    @Body() dto: ReclassifyDocumentDto,
+  ) {
+    return this.documents.reclassify(projectId, documentId, dto.testTypes);
   }
 
   @Get()

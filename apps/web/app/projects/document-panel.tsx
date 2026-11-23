@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import {
-  categoryLabels, documentRequest, extensions, fileFormat, fileLimit, fileSize,
-  type Category, type PendingDocument, type Report, type SavedDocument,
+  ALL_TEST_TYPES, categoryLabels, documentRequest, extensions, fileFormat, fileLimit, fileSize,
+  TEST_TYPE_LABELS,
+  type Category, type PendingDocument, type Report, type SavedDocument, type TestTypeCode,
 } from './document-client';
 import { DocumentReport } from './document-report';
 import type { OrgRole } from '../autoqa-server';
@@ -67,7 +68,7 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
         rejected.push(file.name);
         continue;
       }
-      selected.push({ id: crypto.randomUUID(), file, type: 'AUTO', state: 'DECLARED' });
+      selected.push({ id: crypto.randomUUID(), file, type: 'AUTO', testTypes: [], state: 'DECLARED' });
     }
     setPending(queue => [...queue, ...selected].slice(0, 30));
     const overLimit = pending.length + selected.length > 30;
@@ -123,6 +124,18 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
               }}>
                 {Object.entries(categoryLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
               </select>
+              <fieldset className="document-test-types" disabled={locked}>
+                <legend>Tipos de prueba (opcional · recomendado para que cada agente use solo la documentación relevante)</legend>
+                {ALL_TEST_TYPES.map(code => <label key={code}>
+                  <input type="checkbox" checked={item.testTypes.includes(code)} onChange={event => {
+                    setPending(queue => queue.map(entry => entry.id === item.id ? {
+                      ...entry,
+                      testTypes: event.target.checked ? [...entry.testTypes, code] : entry.testTypes.filter(t => t !== code),
+                    } : entry));
+                  }} />{TEST_TYPE_LABELS[code]}
+                </label>)}
+                {item.testTypes.length === 0 && <small className="muted">Si no marcas ninguno, quedará en General.</small>}
+              </fieldset>
               <button type="button" className="secondary" disabled={locked}
                 onClick={() => setPending(queue => queue.filter(entry => entry.id !== item.id))}>Quitar archivo</button>
             </li>
@@ -136,39 +149,71 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
       {documents.length > 0 && (
         <>
           <h3>Archivos del proyecto</h3>
-          <ul className="document-list">
-            {documents.map(document => {
+          {(() => {
+            // Agrupamos por tipo de prueba: cada sección muestra los docs
+            // que el analista marcó para ese tipo (o "General" si vacío).
+            // Un mismo doc puede aparecer en varias secciones.
+            const sections: Array<{ key: string; label: string; items: SavedDocument[] }> = [
+              { key: 'general', label: 'General', items: documents.filter(d => !d.testTypes || d.testTypes.length === 0) },
+              ...ALL_TEST_TYPES.map(code => ({
+                key: code,
+                label: TEST_TYPE_LABELS[code],
+                items: documents.filter(d => (d.testTypes ?? []).includes(code)),
+              })),
+            ];
+            const docList = (document: SavedDocument) => {
               const version = document.currentVersion;
               const validated = document.state === 'VALIDATED';
-              return (
-                <li key={document.id}>
-                  <strong>{document.filename}</strong>
-                  <p>{version?.format ?? 'Formato sin registrar'} · {fileSize(version?.size)} · {states[document.state]}</p>
-                  <p>{document.classificationSource === 'PENDING' ? 'Clasificación por determinar'
-                    : categoryLabels[document.type] + (document.classificationSource === 'AUTOMATIC' ? ' · Automática' : ' · Manual')}</p>
-                  <details>
-                    <summary>Versiones ({document.versions.length})</summary>
-                    <ul>
-                      {document.versions.map(item => <li key={item.id}>Versión {item.number} · {item.format ?? 'Sin formato'} · {fileSize(item.size)}</li>)}
-                    </ul>
-                  </details>
-                  <div className="actions">
-                    {canValidate && version?.hasText && (
-                      <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
-                        onClick={() => operation('Guardando revisión…', '/' + document.id + '/validation', {
+              return <li key={document.id}>
+                <strong>{document.filename}</strong>
+                <p>{version?.format ?? 'Formato sin registrar'} · {fileSize(version?.size)} · {states[document.state]}</p>
+                <p>{document.classificationSource === 'PENDING' ? 'Clasificación por determinar'
+                  : categoryLabels[document.type] + (document.classificationSource === 'AUTOMATIC' ? ' · Automática' : ' · Manual')}</p>
+                {canUpload && <details className="document-test-types-edit">
+                  <summary>Aplica a: {document.testTypes.length === 0 ? 'General' : document.testTypes.map(t => TEST_TYPE_LABELS[t]).join(' · ')}</summary>
+                  <fieldset className="document-test-types" disabled={disabled || uploading || !!busy}>
+                    <legend>Marca los tipos de prueba a los que aplica este documento.</legend>
+                    {ALL_TEST_TYPES.map(code => <label key={code}>
+                      <input type="checkbox" checked={document.testTypes.includes(code)} onChange={event => {
+                        const next = event.target.checked
+                          ? [...document.testTypes, code]
+                          : document.testTypes.filter(t => t !== code);
+                        void operation('Actualizando tipos…', '/' + document.id + '/test-types', {
                           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ versionId: version.id, validated: !validated }),
-                        })}>{validated ? 'Retirar validación' : 'Marcar como validado'}</button>
-                    )}
-                    {canDelete && <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
-                      onClick={() => operation('Eliminando documento…', '/' + document.id, { method: 'DELETE' })}>
-                      Eliminar documento y versiones
-                    </button>}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                          body: JSON.stringify({ testTypes: next }),
+                        });
+                      }} />{TEST_TYPE_LABELS[code]}
+                    </label>)}
+                  </fieldset>
+                </details>}
+                <details>
+                  <summary>Versiones ({document.versions.length})</summary>
+                  <ul>
+                    {document.versions.map(item => <li key={item.id}>Versión {item.number} · {item.format ?? 'Sin formato'} · {fileSize(item.size)}</li>)}
+                  </ul>
+                </details>
+                <div className="actions">
+                  {canValidate && version?.hasText && (
+                    <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
+                      onClick={() => operation('Guardando revisión…', '/' + document.id + '/validation', {
+                        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ versionId: version.id, validated: !validated }),
+                      })}>{validated ? 'Retirar validación' : 'Marcar como validado'}</button>
+                  )}
+                  {canDelete && <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
+                    onClick={() => operation('Eliminando documento…', '/' + document.id, { method: 'DELETE' })}>
+                    Eliminar documento y versiones
+                  </button>}
+                </div>
+              </li>;
+            };
+            return <div className="document-sections">{sections.filter(s => s.items.length > 0).map(section => (
+              <section key={section.key} className="document-section">
+                <h4>{section.label} <span className="muted">({section.items.length})</span></h4>
+                <ul className="document-list">{section.items.map(docList)}</ul>
+              </section>
+            ))}</div>;
+          })()}
           {canAnalyze && <button type="button" disabled={disabled || uploading || !!busy || !documents.some(document => document.state !== 'DECLARED')}
             onClick={() => operation('Analizando documentos…', '/analyze', { method: 'POST' })}>Analizar documentación</button>}
         </>
