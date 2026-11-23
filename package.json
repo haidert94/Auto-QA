@@ -5,7 +5,7 @@
   "scripts": {
     "dev:api": "npm --workspace apps/api run start:dev",
     "dev:web": "npm --workspace apps/web run dev",
-    "build": "prisma generate && npm run db:deploy && npm --workspace apps/api run build && npm --workspace apps/web run build",
+    "build": "prisma generate && npm run db:deploy && npm --workspace apps/api run build && npm --workspace apps/web run build && npm --workspace apps/explorer run build",
     "start": "node server.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
