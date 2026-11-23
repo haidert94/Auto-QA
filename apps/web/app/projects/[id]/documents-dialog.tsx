@@ -143,7 +143,6 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
         const data = new FormData();
         data.append('files', item.file);
         data.append('type', item.type);
-        if (item.testTypes?.length) data.append('testTypes', JSON.stringify(item.testTypes));
         try {
           await documentRequest(projectId, '', { method: 'POST', body: data });
           setPending(queue => queue.filter(entry => entry.id !== item.id));

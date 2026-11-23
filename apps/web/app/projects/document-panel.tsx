@@ -4,7 +4,7 @@ import { useEffect, useId, useState, type Dispatch, type SetStateAction } from '
 import {
   ALL_TEST_TYPES, categoryLabels, documentRequest, extensions, fileFormat, fileLimit, fileSize,
   TEST_TYPE_LABELS,
-  type Category, type PendingDocument, type Report, type SavedDocument, type TestTypeCode,
+  type Category, type PendingDocument, type Report, type SavedDocument,
 } from './document-client';
 import { DocumentReport } from './document-report';
 import type { OrgRole } from '../autoqa-server';
@@ -40,7 +40,7 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [report, setReport] = useState<Report>();
   const [error, setError] = useState('');
-  const [selectionError, setSelectionError] = useState<{ testType?: TestTypeCode; message: string }>();
+  const [selectionError, setSelectionError] = useState('');
   const sectionId = useId();
   const [busy, setBusy] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -61,7 +61,7 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
     return () => controller.abort();
   }, [projectId, revision, refresh]);
 
-  function select(files: FileList, testType?: TestTypeCode) {
+  function select(files: FileList) {
     if (locked) return;
     const selected: PendingDocument[] = [];
     const rejected: string[] = [];
@@ -70,14 +70,14 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
         rejected.push(file.name);
         continue;
       }
-      selected.push({ id: crypto.randomUUID(), file, type: 'AUTO', testTypes: testType ? [testType] : [], state: 'DECLARED' });
+      selected.push({ id: crypto.randomUUID(), file, type: 'AUTO', state: 'DECLARED' });
     }
     const accepted = selected.slice(0, Math.max(0, 30 - pending.length));
     const message = [
       rejected.length ? 'Formato o tamaño no admitido: ' + rejected.join(', ') : '',
       accepted.length < selected.length ? 'Puedes seleccionar hasta 30 documentos.' : '',
     ].filter(Boolean).join(' ');
-    setSelectionError({ testType, message });
+    setSelectionError(message);
     if (accepted.length === 0) return;
     setPending(queue => [...queue, ...accepted]);
     if (projectId && uploadOnSelect) upload(accepted);
@@ -160,46 +160,40 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
         <h3 id={sectionId + "-uploads"}>Carga de documentos</h3>
         <p className="muted">PDF, DOCX, XLSX, CSV, TXT, MD, JSON, YAML o YML. Hasta 5 MiB por archivo.</p>
         <div className="document-uploads">
-          {sections.map(({ label, testType }) => {
-            const key = testType ?? 'general';
-            const queued = pending.filter(item => item.testTypes[0] === testType);
-            const headingId = sectionId + '-upload-' + key;
-            return <section key={key} className="document-upload" aria-labelledby={headingId}
-              onDragOver={event => event.preventDefault()}
-              onDrop={event => { event.preventDefault(); select(event.dataTransfer.files, testType); }}>
-              <header className="document-upload__head">
-                <h4 id={headingId}>{label}</h4>
-                <input type="file" multiple aria-labelledby={headingId} disabled={locked}
-                  accept={extensions.map(ext => '.' + ext).join(',')}
-                  onChange={event => {
-                    if (event.target.files) select(event.target.files, testType);
-                    event.target.value = '';
-                  }} />
-              </header>
-              {selectionError?.testType === testType && selectionError?.message &&
-                <p className="error" role="alert">{selectionError.message}</p>}
-              {queued.length > 0 && <ul className="document-list">
-                {queued.map(item => <li key={item.id}>
-                  <strong>{item.file.name}</strong>
-                  <p>{fileFormat(item.file.name).toUpperCase()} · {fileSize(item.file.size)} · {states[item.state]}</p>
-                  {item.error && <p className="error" role="alert">{item.error}</p>}
-                  <label htmlFor={'document-category-' + item.id}>Clasificación</label>
-                  <select id={'document-category-' + item.id} value={item.type} disabled={locked} onChange={event => {
-                    const type = event.target.value as Category;
-                    setPending(queue => queue.map(entry => entry.id === item.id ? { ...entry, type } : entry));
-                  }}>
-                    {Object.entries(categoryLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
-                  </select>
-                  <button type="button" className="secondary" disabled={locked}
-                    onClick={() => setPending(queue => queue.filter(entry => entry.id !== item.id))}>Quitar archivo</button>
-                </li>)}
-              </ul>}
-              {projectId && queued.length > 0 &&
-                <button type="button" disabled={locked} onClick={() => upload(queued)}>
-                  {uploadOnSelect ? 'Reintentar carga' : 'Subir archivos (' + queued.length + ')'}
-                </button>}
-            </section>;
-          })}
+          <section className="document-upload" aria-labelledby={sectionId + '-general-upload'}
+            onDragOver={event => event.preventDefault()}
+            onDrop={event => { event.preventDefault(); select(event.dataTransfer.files); }}>
+            <header className="document-upload__head">
+              <h4 id={sectionId + '-general-upload'}>General</h4>
+              <input type="file" multiple aria-labelledby={sectionId + '-general-upload'} disabled={locked}
+                accept={extensions.map(ext => '.' + ext).join(',')}
+                onChange={event => {
+                  if (event.target.files) select(event.target.files);
+                  event.target.value = '';
+                }} />
+            </header>
+            {selectionError && <p className="error" role="alert">{selectionError}</p>}
+            {pending.length > 0 && <ul className="document-list">
+              {pending.map(item => <li key={item.id}>
+                <strong>{item.file.name}</strong>
+                <p>{fileFormat(item.file.name).toUpperCase()} · {fileSize(item.file.size)} · {states[item.state]}</p>
+                {item.error && <p className="error" role="alert">{item.error}</p>}
+                <label htmlFor={'document-category-' + item.id}>Clasificación</label>
+                <select id={'document-category-' + item.id} value={item.type} disabled={locked} onChange={event => {
+                  const type = event.target.value as Category;
+                  setPending(queue => queue.map(entry => entry.id === item.id ? { ...entry, type } : entry));
+                }}>
+                  {Object.entries(categoryLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+                </select>
+                <button type="button" className="secondary" disabled={locked}
+                  onClick={() => setPending(queue => queue.filter(entry => entry.id !== item.id))}>Quitar archivo</button>
+              </li>)}
+            </ul>}
+            {projectId && pending.length > 0 &&
+              <button type="button" disabled={locked} onClick={() => upload(pending)}>
+                {uploadOnSelect ? 'Reintentar carga' : 'Subir archivos (' + pending.length + ')'}
+              </button>}
+          </section>
         </div>
       </section>}
       {error && <p className="error" role="alert">{error}</p>}

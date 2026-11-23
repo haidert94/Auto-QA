@@ -352,60 +352,40 @@ async function verifyDocumentUploads(page) {
   const dialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
   const uploadPanel = dialog.getByRole('region', { name: 'Carga de documentos' });
   const savedPanel = dialog.getByRole('region', { name: 'Archivos del proyecto' });
-  const row = name => uploadPanel.getByRole('region', { name, exact: true });
   const section = name => savedPanel.getByRole('region', { name, exact: true });
-  const picker = type => row(type).locator('input[type="file"]');
-  const choose = (type, filename) => picker(type).setInputFiles({
-    name: filename, mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba'),
-  });
+  const picker = uploadPanel.locator('input[type="file"]');
   try {
-    const types = ['General', 'Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX', 'Casos manuales'];
-    await expect(uploadPanel.getByRole('button', { name: 'Cargar archivo', exact: true })).toHaveCount(0);
-    const firstPicker = await picker('General').boundingBox();
-    for (const type of types) {
-      await expect(picker(type)).toBeVisible();
-      await expect(picker(type)).toBeEnabled();
-      await expect(picker(type)).toHaveAccessibleName(type);
-      const box = await picker(type).boundingBox();
-      assert.equal(box.x, firstPicker.x, 'Los selectores empiezan en la misma columna.');
-      assert.equal(box.width, firstPicker.width, 'Los selectores tienen el mismo ancho.');
-    }
-    const viewport = page.viewportSize();
-    await page.setViewportSize({ width: 390, height: 844 });
-    try {
-      const mobileRow = await row('Compatibilidad').boundingBox();
-      const mobilePicker = await picker('Compatibilidad').boundingBox();
-      const heading = await row('Compatibilidad').getByRole('heading').boundingBox();
-      assert.ok(mobilePicker.y >= heading.y + heading.height, 'En móvil el selector se apila debajo del nombre.');
-      assert.ok(mobilePicker.x + mobilePicker.width <= mobileRow.x + mobileRow.width, 'El selector cabe en la fila móvil.');
-    } finally {
-      await page.setViewportSize(viewport);
-    }
+    const types = ['Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX', 'Casos manuales'];
+    await expect(picker).toHaveCount(1);
+    await expect(picker).toBeVisible();
+    await expect(picker).toBeEnabled();
+    await expect(picker).toHaveAccessibleName('General');
     await expect(section('General').getByText('spec-checkout.yaml')).toBeVisible();
-    const uploads = await uploadPanel.boundingBox();
-    const saved = await savedPanel.boundingBox();
-    assert.ok(uploads.y + uploads.height <= saved.y, 'Todas las opciones de carga preceden a los archivos guardados.');
-    await choose('Performance', 'rendimiento.md');
-    await expect(section('Performance').getByText('Clasificación por determinar')).toBeVisible();
-    assert.deepEqual(documents.find(doc => doc.filename === 'rendimiento.md').testTypes, ['performance']);
-    assert.equal(documents.some(doc => doc.filename === 'manual.md'), false);
-    await choose('Casos manuales', 'manual.md');
-    await expect(section('Casos manuales').getByText('Clasificación por determinar')).toBeVisible();
-    assert.deepEqual(documents.find(doc => doc.filename === 'manual.md').testTypes, ['manual']);
-    await choose('UX', 'experiencia.md');
-    await expect(section('UX').getByText('experiencia.md')).toBeVisible();
-    assert.deepEqual(documents.find(doc => doc.filename === 'experiencia.md').testTypes, ['ux']);
-    await section('Performance').getByText('Aplica a: Performance').click();
-    await section('Performance').getByRole('checkbox', { name: 'UX', exact: true }).click();
-    await expect(section('UX').getByText('rendimiento.md')).toBeVisible();
-    assert.deepEqual(documents.find(doc => doc.filename === 'rendimiento.md').testTypes, ['performance', 'ux']);
+    await picker.setInputFiles({ name: 'requisitos-demo.md', mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba') });
+    const uploaded = section('General').locator('li').filter({ hasText: 'requisitos-demo.md' });
+    await expect(uploaded.getByText('Clasificación por determinar')).toBeVisible();
+    assert.deepEqual(documents.find(doc => doc.filename === 'requisitos-demo.md').testTypes, []);
+    await uploaded.getByText('Aplica a: General').click();
+    for (const type of types) {
+      await expect(uploaded.getByRole('checkbox', { name: type, exact: true })).toBeVisible();
+    }
+    await uploaded.getByRole('checkbox', { name: 'Funcional web', exact: true }).click();
+    const functional = section('Funcional web').locator('li').filter({ hasText: 'requisitos-demo.md' });
+    await expect(functional).toBeVisible();
+    await expect(uploaded).toHaveCount(0);
+    await functional.getByText('Aplica a: Funcional web').click();
+    await expect(functional.getByRole('checkbox', { name: 'Funcional web', exact: true })).toBeChecked();
+    await functional.getByRole('checkbox', { name: 'UX', exact: true }).click();
+    await expect(section('UX').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
+    assert.deepEqual(documents.find(doc => doc.filename === 'requisitos-demo.md').testTypes, ['functional_web', 'ux']);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
-    await expect(section('Casos manuales').getByText('manual.md')).toBeVisible();
+    await expect(section('Funcional web').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
+    await expect(section('UX').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    console.log('PASS carga documental por sección, persistencia simulada y reclasificación.');
+    console.log('PASS selector único en General, carga documental y persistencia simulada de los tipos asignados.');
   } finally {
     documents = original;
   }

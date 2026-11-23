@@ -24,7 +24,7 @@ export type TestTypeCode = keyof typeof TEST_TYPE_LABELS;
 export const ALL_TEST_TYPES = Object.keys(TEST_TYPE_LABELS) as TestTypeCode[];
 
 export type Category = keyof typeof categoryLabels;
-export type PendingDocument = { id: string; file: File; type: Category; testTypes: TestTypeCode[]; state: 'DECLARED' | 'UPLOADING' | 'ERROR'; error?: string };
+export type PendingDocument = { id: string; file: File; type: Category; state: 'DECLARED' | 'UPLOADING' | 'ERROR'; error?: string };
 
 type Version = { id: string; number: number; format: string | null; size: number | null; hasText: boolean };
 export type SavedDocument = {
