@@ -127,7 +127,7 @@ npm.cmd run test:commerce:e2e
 
 ## Documentación y requisitos
 
-En **Datos → Documentos asociados y contratos técnicos**, **General** ofrece un selector para subir archivos. Al subir un archivo, AutoQA lo convierte a Markdown para una revisión inicial local y marca en **Aplica a** los tipos de prueba que encuentra en su contenido. Puedes ajustar esas casillas. La asignación manual se conserva al subir otra versión. El formulario de registro también admite seleccionar o arrastrar archivos. El IPA muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
+En **Datos → Documentos asociados y contratos técnicos**, **General** ofrece un selector para subir archivos. Al subir un archivo, AutoQA lo convierte a Markdown para una revisión inicial local y marca en **Aplica a** los tipos de prueba que encuentra en su contenido. Cada archivo aparece una sola vez, con todos sus tipos visibles en **Aplica a**. Puedes ajustar esas casillas. La asignación manual se conserva al subir otra versión. El formulario de registro también admite seleccionar o arrastrar archivos. El IPA muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
 
 ## API de onboarding
 

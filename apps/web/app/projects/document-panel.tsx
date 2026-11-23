@@ -158,11 +158,6 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
     </li>;
   }
 
-  const sections = [
-    { label: 'General', testType: undefined },
-    ...ALL_TEST_TYPES.map(testType => ({ label: TEST_TYPE_LABELS[testType], testType })),
-  ];
-
   return (
     <section aria-labelledby="document-heading">
       <h2 id="document-heading">Documentación y requisitos</h2>
@@ -209,18 +204,7 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
       {error && <p className="error" role="alert">{error}</p>}
       {documents.length > 0 && <section aria-labelledby={sectionId + "-saved"}>
         <h3 id={sectionId + "-saved"}>Archivos del proyecto</h3>
-        <div className="document-sections">
-          {sections.map(({ label, testType }) => {
-            const key = testType ?? 'general';
-            const items = documents.filter(document => testType
-              ? (document.testTypes ?? []).includes(testType)
-              : !document.testTypes?.length);
-            return items.length > 0 && <section key={key} className="document-section" aria-labelledby={sectionId + key}>
-              <h4 id={sectionId + key}>{label} <span className="muted" aria-hidden="true">({items.length})</span></h4>
-              <ul className="document-list">{items.map(renderDocument)}</ul>
-            </section>;
-          })}
-        </div>
+        <ul className="document-list document-list--saved">{documents.map(renderDocument)}</ul>
         {canAnalyze &&
           <button type="button" disabled={disabled || uploading || !!busy || !documents.some(document => document.state !== 'DECLARED')}
             onClick={() => operation('Analizando documentos…', '/analyze', { method: 'POST' })}>Analizar documentación</button>}

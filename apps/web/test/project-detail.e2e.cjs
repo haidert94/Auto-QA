@@ -361,7 +361,7 @@ async function verifyDocumentUploads(page) {
   const dialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
   const uploadPanel = dialog.getByRole('region', { name: 'Carga de documentos' });
   const savedPanel = dialog.getByRole('region', { name: 'Archivos del proyecto' });
-  const section = name => savedPanel.getByRole('region', { name, exact: true });
+  const card = filename => savedPanel.locator('ul.document-list--saved > li').filter({ has: page.getByText(filename, { exact: true }) });
   const picker = uploadPanel.locator('input[type="file"]');
   try {
     const types = ['Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX', 'Casos manuales'];
@@ -369,9 +369,9 @@ async function verifyDocumentUploads(page) {
     await expect(picker).toBeVisible();
     await expect(picker).toBeEnabled();
     await expect(picker).toHaveAccessibleName('General');
-    await expect(section('General').getByText('spec-checkout.yaml')).toBeVisible();
+    await expect(card('spec-checkout.yaml')).toBeVisible();
     await picker.setInputFiles({ name: 'requisitos-demo.md', mimeType: 'text/markdown', buffer: Buffer.from('RF-1: Iniciar sesión.') });
-    const functional = section('Funcional web').locator('li').filter({ hasText: 'requisitos-demo.md' });
+    const functional = card('requisitos-demo.md');
     await expect(functional.getByText('Clasificación por determinar')).toBeVisible();
     await functional.getByText('Aplica a: Funcional web').click();
     await expect(functional.getByText(/Sugerencia automática/)).toBeVisible();
@@ -381,24 +381,25 @@ async function verifyDocumentUploads(page) {
     await expect(functional.getByRole('checkbox', { name: 'Funcional web', exact: true })).toBeChecked();
     await expect(functional.getByRole('checkbox', { name: 'UX', exact: true })).not.toBeChecked();
     await functional.getByRole('checkbox', { name: 'UX', exact: true }).click();
-    await expect(section('UX').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
+    await expect(functional.getByText('Aplica a: Funcional web · UX', { exact: true })).toBeVisible();
+    await expect(functional).toHaveCount(1);
+    await expect(functional.getByRole('checkbox', { name: 'Funcional web', exact: true })).toBeChecked();
+    await expect(functional.getByRole('checkbox', { name: 'UX', exact: true })).toBeChecked();
     assert.deepEqual(documents.find(doc => doc.filename === 'requisitos-demo.md').testTypes, ['functional_web', 'ux']);
-    const existing = section('General').locator('li').filter({ hasText: 'requisitos-pagos.pdf' });
+    const existing = card('requisitos-pagos.pdf');
     await existing.getByText('Aplica a: General', { exact: true }).click();
     await existing.getByRole('button', { name: 'Obtener sugerencias' }).click();
-    const reviewed = section('Compatibilidad').locator('li').filter({ hasText: 'requisitos-pagos.pdf' });
-    await expect(reviewed).toBeVisible();
-    await reviewed.getByText('Aplica a: Compatibilidad', { exact: true }).click();
-    await expect(reviewed.getByRole('checkbox', { name: 'Compatibilidad', exact: true })).toBeChecked();
-    await expect(reviewed.getByRole('button', { name: 'Obtener sugerencias' })).toHaveCount(0);
+    await expect(existing.getByText('Aplica a: Compatibilidad', { exact: true })).toBeVisible();
+    await expect(existing.getByRole('checkbox', { name: 'Compatibilidad', exact: true })).toBeChecked();
+    await expect(existing.getByRole('button', { name: 'Obtener sugerencias' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
-    await expect(section('Funcional web').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
-    await expect(section('UX').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
+    await expect(functional).toHaveCount(1);
+    await expect(functional.getByText('Aplica a: Funcional web · UX', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    console.log('PASS selector único en General, carga documental y persistencia simulada de los tipos asignados.');
+    console.log('PASS selector único en General y una sola tarjeta por archivo con todos sus tipos de prueba.');
   } finally {
     documents = original;
   }
