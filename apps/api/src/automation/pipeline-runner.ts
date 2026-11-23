@@ -164,11 +164,12 @@ async function runGenerationPhase(
     return;
   }
 
-  const review = analysis ? { stories: [] } : (previous?.result as { review?: ReviewResult } | null)?.review;
-  if (!review) {
-    await fail(prisma, claim, 'review-missing');
-    return;
-  }
+  // Review fallback: si hay análisis, usamos un review vacío porque los
+  // requirements ya traen el contexto; si no, usamos el del paso previo; si
+  // tampoco hay, generamos con stories vacías para no abortar por 'review-
+  // missing' cuando el analista pasó por el flujo nuevo sin fase A.
+  const review = analysis ? { stories: [] }
+    : (previous?.result as { review?: ReviewResult } | null)?.review ?? { stories: [] };
 
   const prioritized = analysis?.requirements.map(requirement => ({
     ...requirement,
