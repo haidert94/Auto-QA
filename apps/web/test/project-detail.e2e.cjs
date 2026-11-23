@@ -440,7 +440,9 @@ const api = createServer(async (request, response) => {
     const document = documents.find(document => document.id === path.split('/').at(-2));
     if (!document) return send({ message: 'Documento no encontrado.' }, 404);
     if (request.method === 'POST') {
-      const reviewed = { ...document, testTypes: ['compatibility'], testTypesSource: 'AUTOMATIC' };
+      if (document.testTypesSource === 'MANUAL') return send(document);
+      const testTypes = document.testTypesSource === 'AUTOMATIC' ? ['compatibility', 'availability'] : ['compatibility'];
+      const reviewed = { ...document, testTypes, testTypesSource: 'AUTOMATIC' };
       documents = documents.map(item => item.id === document.id ? reviewed : item);
       return send(reviewed);
     }
@@ -686,6 +688,10 @@ async function verifyDocumentUploads(page) {
     await expect(existing.getByText('Aplica a: Compatibilidad', { exact: true })).toBeVisible();
     await expect(existing.getByRole('checkbox', { name: 'Compatibilidad', exact: true })).toBeChecked();
     await expect(existing.getByRole('button', { name: 'Obtener sugerencias' })).toHaveCount(0);
+    await expect(existing.getByRole('checkbox', { name: 'Disponibilidad', exact: true })).not.toBeChecked();
+    await existing.getByRole('button', { name: 'Actualizar sugerencias', exact: true }).click();
+    await expect(existing.getByRole('checkbox', { name: 'Disponibilidad', exact: true })).toBeChecked();
+    await expect(functional.getByRole('button', { name: 'Actualizar sugerencias', exact: true })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
@@ -909,6 +915,7 @@ async function verifyQualityScenarios(page) {
     const qualityPanel = page.getByRole('tabpanel', { name: 'Calidad', exact: true });
     await expect(qualityPanel.getByText('Auditorías Lighthouse', { exact: true })).toHaveCount(0);
     await expect(qualityPanel.getByRole('link', { name: 'Ver resultados en Reportes →' })).toBeVisible();
+    await expect(qualityPanel.getByRole('link', { name: /^(Performance · Lighthouse|Carga controlada|Monitores)$/ })).toHaveCount(0);
     await page.goto(new URL(`/projects/${projectId}`, page.url()).href);
     assert.equal(queuedRequests.length, runCount);
     console.log('PASS Reportes reúne resultados y evidencia de los cuatro tipos y Calidad conserva un enlace a Reportes.');

@@ -111,10 +111,10 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
         : categoryLabels[document.type] + (document.classificationSource === 'AUTOMATIC' ? ' · Automática' : ' · Manual')}</p>
       {canUpload && <details className="document-test-types-edit">
         <summary>Aplica a: {testTypes.length === 0 ? 'General' : testTypes.map(t => TEST_TYPE_LABELS[t]).join(' · ')}</summary>
-        {!validated && document.testTypesSource === 'PENDING' && version && document.state !== 'DECLARED' &&
+        {!validated && (document.testTypesSource === 'PENDING' || document.testTypesSource === 'AUTOMATIC') && version && document.state !== 'DECLARED' &&
           <button type="button" className="secondary" disabled={locked}
             onClick={() => operation('Obteniendo sugerencias…', '/' + document.id + '/test-types', { method: 'POST' })}>
-            Obtener sugerencias
+            {document.testTypesSource === 'AUTOMATIC' ? 'Actualizar sugerencias' : 'Obtener sugerencias'}
           </button>}
         {validated && <p className="muted">Retira la validación para cambiar los tipos de prueba.</p>}
         {!validated && document.testTypesSource === 'AUTOMATIC' && <p className="muted">

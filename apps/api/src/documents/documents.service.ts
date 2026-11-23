@@ -198,7 +198,7 @@ export class DocumentsService {
       include: { versions: { orderBy: { number: 'desc' }, take: 1 } },
     });
     if (!document) throw new NotFoundException('Documento no encontrado.');
-    if (document.testTypesSource !== 'PENDING') return this.get(projectId, documentId);
+    if (document.testTypesSource === 'MANUAL') return this.get(projectId, documentId);
     const version = document.versions[0];
     if (version?.validatedAt) throw new ConflictException(VALIDATED_TEST_TYPES_MESSAGE);
     if (!version?.storageKey || !version.format || !version.uploadedAt) {
@@ -217,8 +217,10 @@ export class DocumentsService {
       const current = await tx.document.findFirst({ where: { id: documentId, projectId, ...active }, select: documentSelect });
       if (!current) throw new NotFoundException('Documento no encontrado.');
       if (current.versions[0]?.validatedAt) throw new ConflictException(VALIDATED_TEST_TYPES_MESSAGE);
-      if (current.testTypesSource !== 'PENDING') return metadata(current);
+      if (current.testTypesSource === 'MANUAL') return metadata(current);
       if (current.versions[0]?.id !== version.id) throw new ConflictException('El documento cambió durante la revisión. Inténtalo de nuevo.');
+      if (current.testTypesSource === 'AUTOMATIC' && current.testTypes.length === testTypes.length
+        && current.testTypes.every((type, index) => type === testTypes[index])) return metadata(current);
       const updated = await tx.document.update({
         where: { id: documentId }, data: { testTypes, testTypesSource: 'AUTOMATIC' }, select: documentSelect,
       });

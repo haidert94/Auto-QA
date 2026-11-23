@@ -88,3 +88,15 @@ test('revisa el Markdown convertido y sugiere solo tipos con indicios en el cont
   assert.deepEqual(suggestDocumentTestTypes('Manual de usuario. Datos de contacto y fechas.'), []);
   assert.deepEqual(suggestDocumentTestTypes('La experiencia de usuario requiere navegación por teclado.'), ['ux']);
 });
+
+test('sugiere disponibilidad por la categoría de una historia y distingue el inventario', () => {
+  const markdown = [
+    'Historia | Categoría | Prioridad | Criterio de aceptación',
+    'HU-D02 | Disponibilidad | Alta | Registra el resultado de cada intento.',
+  ].join('\n');
+  assert.ok(suggestDocumentTestTypes(markdown).includes('availability'));
+  assert.ok(suggestDocumentTestTypes('| HU-D03 | Disponibilidad | Alta | Registrar cada comprobación. |').includes('availability'));
+  assert.ok(suggestDocumentTestTypes('Disponibilidad de la página de inicio.').includes('availability'));
+  assert.ok(!suggestDocumentTestTypes('SKU-05 | Disponibilidad | Inventario').includes('availability'));
+  assert.ok(!suggestDocumentTestTypes('HU-01 | Funcional | Consultar la disponibilidad de productos.').includes('availability'));
+});

@@ -159,6 +159,32 @@ test('reviews a stored PDF without uploading another version or changing a manua
   assert.equal(retry.data.testTypesSource, 'MANUAL');
 });
 
+test('detecta disponibilidad en Excel y recalcula sugerencias guardadas sin subir otra versión', async () => {
+  const path = await project('Disponibilidad en Excel');
+  const ExcelJS = require('exceljs');
+  const book = new ExcelJS.Workbook();
+  const stories = book.addWorksheet('Historias de usuario');
+  stories.addRow(['Historias de la aplicación']);
+  stories.addRow(['Historia', 'Categoría', 'Prioridad', 'Criterio de aceptación']);
+  stories.addRow(['HU-D04', 'Disponibilidad', 'Media', 'Registra fecha, hora y resultado de cada intento programado.']);
+  const uploaded = await upload(path, [['historias.xlsx', await book.xlsx.writeBuffer()]]);
+  assert.equal(uploaded.status, 201, JSON.stringify(uploaded.data));
+  const [doc] = uploaded.data;
+  assert.ok(doc.testTypes.includes('availability'));
+
+  // Simula una sugerencia guardada con la regla anterior.
+  await prisma.document.update({
+    where: { id: doc.id },
+    data: { testTypes: doc.testTypes.filter(type => type !== 'availability') },
+  });
+  const refreshed = await request(path + '/' + doc.id + '/test-types', { method: 'POST', headers: authorized });
+  assert.equal(refreshed.status, 200, JSON.stringify(refreshed.data));
+  assert.deepEqual(refreshed.data.testTypes, doc.testTypes);
+  assert.equal(refreshed.data.testTypesSource, 'AUTOMATIC');
+  assert.equal(refreshed.data.currentVersion.id, doc.currentVersion.id);
+  assert.equal(refreshed.data.versions.length, 1);
+});
+
 test('rejects unsupported contents and preserves all-or-nothing upload', async () => {
   const path = await project('Validación documental');
   assert.equal((await upload(path, [['vale.md', 'RF-1: Texto.'], ['falso.pdf', 'No es PDF.']])).status, 415);
