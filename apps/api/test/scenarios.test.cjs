@@ -382,14 +382,16 @@ test('Escenarios consulta monitores, Lighthouse, carga y UX con pasos en españo
   const environment = await prisma.environment.create({ data: {
     projectId, type: 'QA', baseUrl: 'https://example.test', allowedHosts: ['example.test'], authorizationConfirmed: true,
   } });
+  const requirementId = await makeRequirement(projectId);
+  const foreignRequirementId = await makeRequirement(otherProject);
   const run = {
-    projectId, environmentId: environment.id, url: 'https://example.test/catalogo',
+    projectId, requirementId, environmentId: environment.id, url: 'https://example.test/catalogo',
     startedAt: new Date('2026-11-23T12:00:00Z'), completedAt: new Date('2026-11-23T12:00:02Z'),
     status: 'COMPLETED',
   };
   const [monitor, audit, load, ux] = await Promise.all([
     prisma.monitor.create({ data: {
-      projectId, environmentId: environment.id, name: 'Disponibilidad del catálogo', url: run.url + '?credencial=valor-de-prueba#secreto',
+      projectId, requirementId, environmentId: environment.id, name: 'Disponibilidad del catálogo', url: run.url + '?credencial=valor-de-prueba#secreto',
       timeoutMs: 7000, intervalMinutes: 12, lastStatus: 'UP', lastHttpStatus: 204, lastCheckedAt: run.completedAt, lastLatencyMs: 86,
     } }),
     prisma.performanceAudit.create({ data: { ...run, performanceScore: 94 } }),
@@ -399,12 +401,28 @@ test('Escenarios consulta monitores, Lighthouse, carga y UX con pasos en españo
     prisma.uxAudit.create({ data: { ...run, totalFindings: 2, criticalCount: 1 } }),
     prisma.monitor.create({ data: { projectId: otherProject, name: 'Monitor ajeno', url: run.url } }),
   ]);
+  const legacy = { ...run, requirementId: null };
+  const [legacyMonitor, legacyAudit, legacyLoad, legacyUx, wronglyLinked] = await Promise.all([
+    prisma.monitor.create({ data: {
+      projectId, name: 'Monitor anterior', url: run.url, lastStatus: 'UP', lastCheckedAt: run.completedAt,
+    } }),
+    prisma.performanceAudit.create({ data: legacy }),
+    prisma.loadTest.create({ data: { ...legacy, name: 'Carga anterior', stages: [] } }),
+    prisma.uxAudit.create({ data: legacy }),
+    prisma.uxAudit.create({ data: { ...run, requirementId: foreignRequirementId } }),
+  ]);
   const root = `${baseUrl}/projects/${projectId}/scenarios`;
   const response = await request(root + '/quality');
   assert.equal(response.status, 200);
   const cards = await response.json();
   assert.equal(cards.length, 4);
+  assert.ok(cards.every(card => card.requirementId === requirementId));
   const byResource = new Map(cards.map(card => [card.quality.resourceId, card]));
+  const historical = await (await request(`${baseUrl}/projects/${projectId}/report/quality`)).json();
+  for (const record of [legacyMonitor, legacyAudit, legacyLoad, legacyUx, wronglyLinked]) {
+    assert.ok(!byResource.has(record.id));
+    assert.ok(historical.some(item => item.id === record.id));
+  }
   assert.deepEqual(byResource.get(monitor.id).tags, ['@disponibilidad']);
   assert.equal(byResource.get(monitor.id).quality.status.label, 'Disponible');
   assert.equal(byResource.get(monitor.id).quality.result, 'Última respuesta HTTP 204.');
@@ -479,7 +497,8 @@ test('los agentes conservan el archivo, rechazan planes inválidos y permiten co
     projectId, type: 'QA', baseUrl: 'https://example.test', allowedHosts: ['example.test'],
     allowedPaths: ['/checkout'], authorizationConfirmed: true,
   } });
-  const source = { projectId, environmentId: environment.id, url: 'https://example.test/checkout?token=fixture-private' };
+  const requirementId = await makeRequirement(projectId);
+  const source = { projectId, requirementId, environmentId: environment.id, url: 'https://example.test/checkout?token=fixture-private' };
   const [ux, load, audit, wrongTarget] = await Promise.all([
     prisma.uxAudit.create({ data: { ...source, status: 'COMPLETED' } }),
     prisma.loadTest.create({ data: { ...source, name: 'Carga', stages: [{ duration: '5s', target: 2 }], status: 'COMPLETED' } }),

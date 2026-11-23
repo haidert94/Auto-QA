@@ -103,7 +103,8 @@ function scenario(
 }
 
 export async function readQualityScenarios(db: Prisma.TransactionClient, projectId: string) {
-  const where = { projectId };
+  // Los registros de herramientas e intentos antiguos se consultan en Reportes.
+  const where = { projectId, requirement: { is: { projectId } } };
   const [monitors, audits, loads, uxAudits] = await Promise.all([
     db.monitor.findMany({
       where,
