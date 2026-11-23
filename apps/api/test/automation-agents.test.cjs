@@ -20,7 +20,7 @@ const context = {
   url: 'https://example.test',
   description: null,
   review: { stories: [{ title: 'Inicio de sesión', coverage: 'completa', notes: 'La ayuda de acceso debe ser comprensible.' }] },
-  requirements: [{ id: 'requirement-id', title: 'Información de errores', criteria: [{ text: 'El mensaje debe indicar cómo volver a intentar.' }] }],
+  requirements: [{ id: 'requirement-id', externalKey: 'HU-D01', title: 'Información de errores', criteria: [{ text: 'El mensaje debe indicar cómo volver a intentar.' }] }],
 };
 const steps = [{ action: 'navigate: /login' }, { action: 'expect-text: Iniciar sesión' }];
 const readyProject = {
@@ -46,13 +46,14 @@ for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobil
           assert.match(prompt, /aserción explícita/);
           assert.ok(prompt.includes(context.review.stories[0].notes));
           assert.ok(prompt.includes(context.requirements[0].criteria[0].text));
+          assert.match(prompt, /\[HU-D01\]/);
           assert.ok(prompt.includes(context.review.stories[0].title));
           return {
             model: 'test',
             text: JSON.stringify({
               scenarios: [
                 { title: 'Validar credenciales incorrectas', flow: 'alterno', regression: true, tags: ['@regression', '@login'], steps },
-                { title: 'Omitir clasificación explícita nueva', flow: 'basico', tags: [' @Regresión '], steps },
+                { title: 'Omitir clasificación explícita nueva', flow: 'basico', requirementId: 'HU-D01', tags: [' @Regresión '], steps },
                 { title: 'Primer acceso a un módulo nuevo', flow: 'basico', regression: false, tags: ['@regresion', '@nuevo'], steps },
                 { title: 'Caso sin clasificar', flow: 'basico', tags: ['@manual'], requirementId: 'unrelated', steps },
                 { title: 'Conservar regresión al limitar las etiquetas', regression: true, tags: Array.from({ length: 24 }, (_, i) => '@tag' + i), steps },
@@ -252,7 +253,11 @@ test('la API solo confirma tipos con documentos pendientes y comprueba que el al
     createdAt: new Date('2026-11-20T00:00:00Z'),
     result: { generation: { outcomes: completed } },
   };
-  const jobs = [historical];
+  const jobs = [historical, {
+    inputs: { documentGenerationSources: { performance: [{ versionId: 'perf-version', clarifiedAt: null }] } },
+    createdAt: new Date('2026-11-21T00:00:00Z'),
+    result: { generation: { outcomes: [{ type: 'performance', created: 0, errorCount: 0 }] } },
+  }];
   const writes = [];
   let job;
   let approvedAt;

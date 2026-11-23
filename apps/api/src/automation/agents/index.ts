@@ -30,9 +30,22 @@ function agentContext(ctx: AgentContext, type: string): AgentContext {
   const requirements = (ctx.requirements ?? []).filter(requirement =>
     !versionIds || requirement.documentVersionIds?.some(id => versionIds.has(id)),
   );
-  const missing = ['functional_web', 'mobile_emulated', 'manual'].includes(type)
-    ? requirements.filter(requirement => !requirement.scenarios?.some(scenario => scenarioTestType(scenario.tags) === type)).slice(0, 20)
+  const pending = ['functional_web', 'mobile_emulated', 'manual'].includes(type)
+    ? requirements.filter(requirement => !requirement.scenarios?.some(scenario => scenarioTestType(scenario.tags) === type))
     : requirements;
+  const specialized = type === 'mobile_emulated' || type === 'manual';
+  const declared: typeof pending = [];
+  const withoutCategory: typeof pending = [];
+  for (const requirement of pending) {
+    const versions = requirement.documentVersionIds?.filter(id => !versionIds || versionIds.has(id)) ?? [];
+    const key = requirement.externalKey?.toUpperCase();
+    const keys = specialized ? versions.flatMap(id => ctx.documentRequirementTypes?.[id]?.[type] ?? []) : [];
+    if (key && keys.includes(key)) declared.push(requirement);
+    else if (!keys.length) withoutCategory.push(requirement);
+  }
+  const missing = specialized || type === 'functional_web'
+    ? [...declared, ...withoutCategory].slice(0, 20)
+    : pending;
   return {
     ...ctx,
     requirements: missing,

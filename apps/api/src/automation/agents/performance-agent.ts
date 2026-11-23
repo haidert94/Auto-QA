@@ -2,7 +2,7 @@
 // un LoadTest (k6) sobre URLs clave detectadas por la IA.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
 
 type Payload = {
   audits?: Array<{ requirementId?: string; url?: string }>;
@@ -45,12 +45,11 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
   const parsed = extractJson<Payload>(response.text) ?? {};
   const audits = Array.isArray(parsed.audits) ? parsed.audits.slice(0, 3) : [];
   const loadTests = Array.isArray(parsed.loadTests) ? parsed.loadTests.slice(0, 2) : [];
-  const errors: string[] = [];
+  const errors = generationResponseErrors(response, Array.isArray(parsed.audits) || Array.isArray(parsed.loadTests));
   let created = 0;
 
-  if (!audits.length && !loadTests.length) errors.push('performance-no-linked-cases');
   for (const [index, a] of audits.entries()) {
-    const requirementId = linkedRequirementId(ctx, a.requirementId);
+    const requirementId = linkedRequirementId(ctx, a?.requirementId);
     if (!requirementId) { errors.push('audit-' + index + '-sin-requisito'); continue; }
     const url = typeof a.url === 'string' ? a.url.trim() : '';
     if (!url) { errors.push('audit-' + index + '-sin-url'); continue; }
@@ -72,7 +71,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
   }
 
   for (const [index, lt] of loadTests.entries()) {
-    const requirementId = linkedRequirementId(ctx, lt.requirementId);
+    const requirementId = linkedRequirementId(ctx, lt?.requirementId);
     if (!requirementId) { errors.push('load-' + index + '-sin-requisito'); continue; }
     const name = typeof lt.name === 'string' ? lt.name.trim() : '';
     const url = typeof lt.url === 'string' ? lt.url.trim() : '';

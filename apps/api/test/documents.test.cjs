@@ -382,11 +382,15 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
     projectId, requirementId: original.requirementId, title: 'Consultar el catálogo',
     steps: [{ ordinal: 1, action: 'expect-text: Catálogo' }], tags: ['@funcional'],
   } });
+  await prisma.testScenario.create({ data: {
+    projectId, requirementId: original.requirementId, title: 'Revisar el catálogo manualmente',
+    steps: [{ ordinal: 1, action: 'Abre el catálogo.', expected: 'El título Catálogo está visible.' }], tags: ['@manual'],
+  } });
   await prisma.automationJob.create({ data: {
     projectId, status: 'COMPLETED', stage: 'generated',
     inputs: { documentAnalysisId: first.data.analysis.id },
     result: { generation: { outcomes: [
-      { type: 'functional_web', created: 1, errorCount: 0 }, { type: 'manual', created: 0, errorCount: 0 },
+      { type: 'functional_web', created: 1, errorCount: 0 }, { type: 'manual', created: 1, errorCount: 0 },
     ] } },
   } });
 
@@ -411,14 +415,31 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
     body: JSON.stringify({ url: 'https://example.test', documentTestTypes }),
   });
   assert.equal((await createJob(['functional_web', 'manual', 'performance'])).status, 409);
-  const job = await createJob(['performance']);
-  assert.equal(job.status, 201, JSON.stringify(job.data));
-  const selection = await request(base + '/' + job.data.id + '/select', {
-    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ types: ['performance'] }),
+  async function queuePerformance() {
+    const job = await createJob(['performance']);
+    assert.equal(job.status, 201, JSON.stringify(job.data));
+    const selection = await request(base + '/' + job.data.id + '/select', {
+      method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ types: ['performance'] }),
+    });
+    assert.equal(selection.status, 201, JSON.stringify(selection.data));
+    return prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  }
+  const empty = await queuePerformance();
+  const { runAutomation } = require('../dist/automation/pipeline-runner');
+  await runAutomation(prisma, {
+    id: empty.id, projectId, inputs: empty.inputs, runKey: empty.runKey, priorStage: empty.stage,
+  }, {
+    async dispatch() { return { model: 'rule-based', usedFallback: true, text: 'Sin respuesta del proveedor.' }; },
   });
-  assert.equal(selection.status, 201, JSON.stringify(selection.data));
-  const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  const failed = await read(base + '/' + empty.id);
+  assert.equal(failed.data.status, 'FAILED');
+  assert.equal(failed.data.errorCode, 'generation-empty');
+  assert.equal(failed.data.result.generation.totalCreated, 0);
+  assert.equal(failed.data.result.generation.outcomes[0].issue, 'ai-unavailable');
+  assert.equal(await prisma.performanceAudit.count({ where: { projectId } }), 0);
+  assert.deepEqual((await read(base + '/types/pending')).data.types, [{ code: 'performance', available: true }]);
+  const saved = await queuePerformance();
   assert.deepEqual(saved.inputs.selection, ['performance']);
   assert.deepEqual(saved.inputs.documentGenerationSources, {
     performance: [{ versionId: uploadPerf.data[0].currentVersion.id, clarifiedAt: null }],
@@ -426,7 +447,6 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   assert.equal(saved.stage, 'selection-done');
   const perfRequirement = second.data.analysis.findings.find(item => item.kind === 'NON_FUNCTIONAL' && item.requirementId);
   assert.ok(perfRequirement);
-  const { runAutomation } = require('../dist/automation/pipeline-runner');
   const prompts = [];
   await runAutomation(prisma, {
     id: saved.id, projectId, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
@@ -450,6 +470,86 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   assert.equal(await prisma.performanceAudit.count({ where: { projectId, environmentId: environment.id } }), 1);
   const audit = await prisma.performanceAudit.findFirstOrThrow({ where: { projectId } });
   assert.equal(audit.requirementId, perfRequirement.requirementId);
-  assert.equal(await prisma.testScenario.count({ where: { projectId } }), 1);
+  assert.equal(await prisma.testScenario.count({ where: { projectId } }), 2);
   assert.equal((await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } })).requirementId, original.requirementId);
+});
+
+test('reintenta Móvil y Manual sin repetir Funcional y usa la categoría de cada historia', async () => {
+  const path = await project('Generación por categoría');
+  const projectId = path.split('/')[1];
+  const base = '/' + projectId + '/automation';
+  await authorizeTestProject(projectId);
+  const types = ['functional_web', 'mobile_emulated', 'manual'];
+  const functional = Array.from({ length: 22 }, (_, i) => {
+    const number = i + 10;
+    return [
+      `HU-${number},Historia de usuario,Funcional web,Consultar la sección ${number} del catálogo.,`,
+      `CA-${number},Criterio de aceptación,,Se muestra el catálogo de la sección ${number}.,HU-${number}`,
+    ];
+  }).flat();
+  const file = await upload(path, [['historias.csv', [
+    'ID,Tipo,Categoría,Texto,Requisito',
+    ...functional,
+    'HU-M01,Historia de usuario,Móvil emulado,Consultar la cesta en una pantalla de 390 por 844 píxeles.,',
+    'CA-101,Criterio de aceptación,,El total de la cesta queda visible.,HU-M01',
+    'HU-X01,Historia de usuario,Casos manuales,Comprobar manualmente el recibo PDF.,',
+    'CA-102,Criterio de aceptación,,El recibo incluye el total del pedido.,HU-X01',
+  ].join('\n')]], 'REQUIREMENTS', authorized, types);
+  assert.equal(file.status, 201, JSON.stringify(file.data));
+  const analysis = await request(path + '/analyze', { method: 'POST', headers: authorized });
+  assert.equal(analysis.status, 200, JSON.stringify(analysis.data));
+  const versionId = file.data[0].currentVersion.id;
+  const source = [{ versionId, clarifiedAt: null }];
+  const web = await prisma.requirement.findFirstOrThrow({ where: { projectId, externalKey: 'HU-10' } });
+  await prisma.testScenario.create({ data: {
+    projectId, requirementId: web.id, title: 'Consultar catálogo',
+    steps: [{ ordinal: 1, action: 'expect-text: Catálogo' }], tags: ['@funcional'],
+  } });
+  await prisma.automationJob.create({ data: {
+    projectId, status: 'COMPLETED', stage: 'generated',
+    inputs: { documentAnalysisId: analysis.data.analysis.id, documentGenerationSources: Object.fromEntries(types.map(type => [type, source])) },
+    result: { generation: { outcomes: types.map(type => ({ type, created: Number(type === 'functional_web'), errorCount: 0 })) } },
+  } });
+  const pending = await read(base + '/types/pending');
+  const remaining = ['mobile_emulated', 'manual'];
+  assert.deepEqual(pending.data.types, remaining.map(code => ({ code, available: true })));
+  const job = await request(base, {
+    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.test', documentTestTypes: remaining }),
+  });
+  assert.equal(job.status, 201, JSON.stringify(job.data));
+  const selected = await request(base + '/' + job.data.id + '/select', {
+    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ types: remaining }),
+  });
+  assert.equal(selected.status, 201, JSON.stringify(selected.data));
+  const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  assert.deepEqual(saved.inputs.documentRequirementTypes, { [versionId]: { mobile_emulated: ['HU-M01'], manual: ['HU-X01'] } });
+  const { runAutomation } = require('../dist/automation/pipeline-runner');
+  await runAutomation(prisma, {
+    id: saved.id, projectId, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
+  }, {
+    async dispatch({ prompt }) {
+      assert.doesNotMatch(prompt, /Consultar la sección/);
+      if (prompt.includes('HU-M01')) {
+        assert.doesNotMatch(prompt, /HU-X01/);
+        return { model: 'test', text: JSON.stringify({ scenarios: [{
+          title: 'Consultar cesta en móvil', mode: 'playwright', requirementId: 'HU-M01',
+          steps: [{ action: 'navigate: /cesta' }, { action: 'expect-text: Total' }],
+        }] }) };
+      }
+      assert.match(prompt, /HU-X01/);
+      return { model: 'test', text: JSON.stringify({ scenarios: [{
+        title: 'Revisar recibo manualmente', mode: 'manual', requirementId: 'HU-X01',
+        expectedResult: 'El recibo incluye el total.', steps: [{ action: 'Abre el recibo.', expected: 'Se muestra el total.' }],
+      }] }) };
+    },
+  });
+  const generated = await prisma.testScenario.findMany({
+    where: { projectId }, select: { tags: true, requirement: { select: { externalKey: true } } },
+  });
+  assert.equal(generated.length, 3);
+  assert.equal(generated.find(item => item.tags.includes('@mobile')).requirement.externalKey, 'HU-M01');
+  assert.equal(generated.find(item => item.tags.includes('@manual')).requirement.externalKey, 'HU-X01');
+  assert.deepEqual((await read(base + '/types/pending')).data.types, []);
 });

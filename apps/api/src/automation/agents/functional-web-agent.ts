@@ -3,7 +3,7 @@
 import type { Prisma } from '@prisma/client';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
   const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
@@ -54,7 +54,7 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
 
   const parsed = extractJson<ScenarioPayload>(response.text) ?? {};
   const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.slice(0, 10) : [];
-  const errors: string[] = [];
+  const errors = generationResponseErrors(response, Array.isArray(parsed.scenarios));
   let created = 0;
 
   for (const [index, s] of scenarios.entries()) {

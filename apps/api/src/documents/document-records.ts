@@ -119,7 +119,7 @@ export async function currentScenarioRequirements(tx: Prisma.TransactionClient, 
       where: { criteria: { some: {} }, sources: { some: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false } } },
       orderBy: { id: 'asc' as const },
       select: {
-        id: true, title: true,
+        id: true, externalKey: true, title: true,
         criteria: { take: 6, orderBy: { id: 'asc' as const }, select: { text: true } },
         sources: includeCoverage && {
           where: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false },

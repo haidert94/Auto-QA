@@ -3,7 +3,7 @@
 // el análisis real (Playwright + DOM a11y + IA) ocurre en ux-runner.ts.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
 
 type Payload = { audits?: Array<{ requirementId?: string; url?: string }> };
 
@@ -35,11 +35,11 @@ export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<Ag
 
   const parsed = extractJson<Payload>(response.text) ?? {};
   const audits = Array.isArray(parsed.audits) ? parsed.audits.slice(0, 3) : [];
-  const errors: string[] = audits.length ? [] : ['ux-no-linked-cases'];
+  const errors = generationResponseErrors(response, Array.isArray(parsed.audits));
   let created = 0;
 
   for (const [index, a] of audits.entries()) {
-    const requirementId = linkedRequirementId(ctx, a.requirementId);
+    const requirementId = linkedRequirementId(ctx, a?.requirementId);
     if (!requirementId) { errors.push('ux-' + index + '-sin-requisito'); continue; }
     const url = typeof a.url === 'string' ? a.url.trim() : '';
     if (!url) { errors.push('ux-' + index + '-sin-url'); continue; }

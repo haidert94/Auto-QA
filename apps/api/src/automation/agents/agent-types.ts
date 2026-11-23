@@ -3,6 +3,7 @@
 // cliente) y devuelve un recuento de lo que creó.
 
 import type { PrismaClient } from '@prisma/client';
+import type { AiResponse } from '../../ai/ai-provider';
 import type { AiRouter } from '../../ai/ai-router';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import type { ReviewResult } from '../review-prompt';
@@ -18,8 +19,9 @@ export type AgentContext = {
   review: Pick<ReviewResult, 'stories'>;
   documentTestTypesConfirmed?: boolean;
   documentGenerationSources?: import('../document-generation').DocumentGenerationSources;
+  documentRequirementTypes?: import('../document-requirement-types').DocumentRequirementTypes;
   requirements?: Array<{
-    id: string; title: string; criteria: Array<{ text: string }>;
+    id: string; externalKey?: string | null; title: string; criteria: Array<{ text: string }>;
     scenarios?: Array<{ tags: string[] }>; documentVersionIds?: string[];
   }>;
 };
@@ -80,7 +82,7 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
   const stories = ctx.review.stories.filter(story => story.coverage !== 'no-cubierta').slice(0, 20)
     .map(story => '- ' + story.title + ' [' + story.coverage + ']' + (story.notes ? ' · ' + story.notes : ''));
   const requirements = (ctx.requirements ?? []).map(requirement =>
-    '- ' + requirement.id + ' · ' + requirement.title.slice(0, 350)
+    '- ' + requirement.id + (requirement.externalKey ? ` [${requirement.externalKey}]` : '') + ' · ' + requirement.title.slice(0, 350)
     + requirement.criteria.map(criterion => '\n  - ' + criterion.text.slice(0, 250)).join(''),
   );
   const context = ctx.documentTestTypesConfirmed ? requirements : [...stories, ...requirements];
@@ -88,10 +90,21 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
 }
 
 export function linkedRequirementId(ctx: AgentContext, id: unknown) {
-  return ctx.requirements?.find(requirement => requirement.id === id && requirement.criteria.length > 0)?.id;
+  if (typeof id !== 'string' || !id.trim()) return undefined;
+  const reference = id.trim();
+  const requirements = ctx.requirements ?? [];
+  const direct = requirements.find(requirement => requirement.id === reference);
+  if (direct) return direct.criteria.length ? direct.id : undefined;
+  const matches = requirements.filter(requirement => requirement.externalKey?.toUpperCase() === reference.toUpperCase());
+  return matches.length === 1 && matches[0].criteria.length ? matches[0].id : undefined;
 }
 
-export const LINKED_REQUIREMENT_INSTRUCTION = 'Cada caso debe incluir requirementId de la lista. Usa solo historias o requisitos que sustenten el caso. Devuelve una lista vacía si no corresponde ninguno.';
+export function generationResponseErrors(response: AiResponse, hasExpectedList: boolean): string[] {
+  if (response.usedFallback) return ['ai-unavailable'];
+  return hasExpectedList ? [] : ['invalid-agent-response'];
+}
+
+export const LINKED_REQUIREMENT_INSTRUCTION = 'Cada caso debe incluir requirementId. Copia el ID o la clave documental de una historia o requisito de la lista que sustente el caso. Devuelve una lista vacía si no corresponde ninguno.';
 
 export const MANUAL_SCENARIO_INSTRUCTION = [
   'Para cada caso indica "mode": "playwright" si sus verificaciones se pueden expresar con el vocabulario indicado.',
@@ -101,7 +114,7 @@ export const MANUAL_SCENARIO_INSTRUCTION = [
 ].join('\n');
 
 export const MANUAL_ONLY_INSTRUCTION = [
-  'Genera únicamente casos manuales sustentados que requieren criterio humano, un dispositivo físico o una acción externa al navegador.',
+  'Genera casos sustentados que una persona pueda ejecutar paso a paso. Prioriza las historias de casos manuales, recorridos de regresión y comprobaciones visuales. Incluye recorridos verificables aunque también puedan automatizarse.',
   'Usa mode: manual y redacta los pasos en español natural con un resultado esperado observable.',
   'Incluye al menos un paso de comprobación con el valor expected. Si no hay casos sustentados, devuelve la lista vacía.',
 ].join('\n');

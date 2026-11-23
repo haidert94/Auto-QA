@@ -2,7 +2,7 @@
 // IA vincule con las historias y requisitos analizados.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
 
 type Payload = { monitors?: Array<{ requirementId?: string; name?: string; url?: string; intervalMinutes?: number }> };
 
@@ -34,14 +34,13 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
 
   const parsed = extractJson<Payload>(response.text) ?? {};
   const monitors = Array.isArray(parsed.monitors) ? parsed.monitors.slice(0, 5) : [];
-  const errors: string[] = [];
+  const errors = generationResponseErrors(response, Array.isArray(parsed.monitors));
   let created = 0;
 
-  if (!monitors.length) errors.push('availability-no-linked-cases');
   for (const [index, m] of monitors.entries()) {
-    const name = typeof m.name === 'string' ? m.name.trim() : '';
-    const url = typeof m.url === 'string' ? m.url.trim() : '';
-    const requirementId = linkedRequirementId(ctx, m.requirementId);
+    const name = typeof m?.name === 'string' ? m.name.trim() : '';
+    const url = typeof m?.url === 'string' ? m.url.trim() : '';
+    const requirementId = linkedRequirementId(ctx, m?.requirementId);
     if (!requirementId) { errors.push('monitor-' + index + '-sin-requisito'); continue; }
     if (!name || !url) { errors.push('monitor-' + index + '-incompleto'); continue; }
     const intervalMinutes = Math.min(Math.max(typeof m.intervalMinutes === 'number' ? m.intervalMinutes : 15, 5), 60);

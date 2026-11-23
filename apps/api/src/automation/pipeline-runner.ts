@@ -15,9 +15,11 @@ import type { PrismaClient } from '@prisma/client';
 import { convertDocument, needsAiFallback, type ConvertedDocument } from './document-converter';
 import { buildReviewPrompt, parseReviewResponse, type ReviewResult } from './review-prompt';
 import { currentScenarioRequirements } from '../documents/document-records';
+import { summarizeGeneration } from './generation-result';
 import { currentReadiness } from '../documents/readiness';
 import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { readGenerationSources, type DocumentGenerationSources } from './document-generation';
+import { parseDocumentRequirementTypes, type DocumentRequirementTypes } from './document-requirement-types';
 import { runSelectedAgents } from './agents';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
 
@@ -41,6 +43,7 @@ type Inputs = {
   documentTestTypesConfirmed: boolean;
   documentAnalysisId?: string;
   documentGenerationSources?: DocumentGenerationSources;
+  documentRequirementTypes: DocumentRequirementTypes;
 };
 
 function readInputs(raw: unknown): Inputs {
@@ -56,6 +59,7 @@ function readInputs(raw: unknown): Inputs {
     documentTestTypesConfirmed: Array.isArray(safe.documentTestTypes),
     documentAnalysisId: typeof safe.documentAnalysisId === 'string' ? safe.documentAnalysisId : undefined,
     documentGenerationSources: safe.documentGenerationSources ? readGenerationSources(safe.documentGenerationSources) : undefined,
+    documentRequirementTypes: parseDocumentRequirementTypes(safe.documentRequirementTypes),
   };
 }
 
@@ -189,27 +193,30 @@ async function runGenerationPhase(
     requirements,
     documentTestTypesConfirmed: inputs.documentTestTypesConfirmed,
     documentGenerationSources: inputs.documentGenerationSources,
+    documentRequirementTypes: inputs.documentRequirementTypes,
   }, { prisma, router });
 
   await mergeStep(prisma, claim.id, 'generating', {
     outcomes: outcomes.map(o => ({ type: o.type, created: o.created, usedFallback: o.usedFallback, model: o.model, errors: o.errors.slice(0, 5) })),
   });
 
+  const generation = summarizeGeneration(outcomes);
+  const hasCases = generation.totalCreated > 0;
   await prisma.automationJob.update({
     where: { id: claim.id },
     data: {
-      status: 'COMPLETED', stage: 'generated', completedAt: new Date(),
+      status: hasCases ? 'COMPLETED' : 'FAILED',
+      stage: hasCases ? 'generated' : 'generating',
+      errorCode: hasCases ? null : 'generation-empty',
+      completedAt: new Date(),
       result: {
         ...(previous?.result as Record<string, unknown> ?? {}),
-        generation: {
-          selection,
-          outcomes: outcomes.map(o => ({ type: o.type, created: o.created, usedFallback: o.usedFallback, model: o.model, errorCount: o.errors.length })),
-          totalCreated: outcomes.reduce((n, o) => n + o.created, 0),
-        },
+        generation: { selection, ...generation },
       } as never,
     },
   });
-  log('INFO', 'generated · ' + outcomes.map(o => o.type + '=' + o.created).join(' '));
+  log(hasCases ? 'INFO' : 'WARN', (hasCases ? 'generated' : 'generation-empty')
+    + ' · ' + outcomes.map(o => o.type + '=' + o.created).join(' '));
 }
 
 async function setStage(prisma: PrismaClient, jobId: string, stage: string): Promise<void> {

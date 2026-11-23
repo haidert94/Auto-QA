@@ -7,6 +7,7 @@ import { currentReadiness } from '../documents/readiness';
 import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { PrismaService } from '../prisma.service';
 import { documentGenerationScope, readGenerationSources, type DocumentGenerationSources } from './document-generation';
+import { readDocumentRequirementTypes, type DocumentRequirementTypes } from './document-requirement-types';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
 import { ALL_TEST_TYPES, TEST_TYPE_META, type AutomationTestType } from './test-types';
@@ -31,6 +32,7 @@ export class AutomationService {
 
     let analysisId: string | undefined;
     let documentGenerationSources: DocumentGenerationSources | undefined;
+    let documentRequirementTypes: DocumentRequirementTypes | undefined;
     if (dto.documentTestTypes) {
       if (dto.documents?.length) throw new BadRequestException('Usa los documentos guardados en Datos para esta selección.');
       await this.ensureGenerationReady(this.prisma, projectId);
@@ -42,6 +44,7 @@ export class AutomationService {
       await this.checkPlanTypes(dto.documentTestTypes, workspace.organizationId);
       analysisId = scope.analysisId ?? undefined;
       documentGenerationSources = scope.sources;
+      documentRequirementTypes = await readDocumentRequirementTypes(this.prisma, this.storage, scope.sources);
     }
 
     let docs: Array<{ filename: string; base64: string }>;
@@ -69,7 +72,7 @@ export class AutomationService {
       ownerLabel: dto.ownerLabel?.trim() || null,
       hasCredentials: !!dto.credentialsHint?.trim(),
       documents: docs,
-      ...(analysisId ? { documentAnalysisId: analysisId, documentGenerationSources } : {}),
+      ...(analysisId ? { documentAnalysisId: analysisId, documentGenerationSources, documentRequirementTypes } : {}),
       ...(dto.documentTestTypes ? { documentTestTypes: dto.documentTestTypes } : {}),
     };
 

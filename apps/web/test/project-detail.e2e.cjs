@@ -55,6 +55,7 @@ const qualityFileRequests = [];
 let qualityWaitForPeers = null;
 let qualityReviewKind = null;
 let generationErrorCode = null;
+let generationTotal = 1;
 const completedDocumentTypes = new Set();
 const pendingFinding = {
   id: 'aadd4574-f8ec-4fa7-aaaa-abc28d39b319', kind: 'USER_STORY', text: 'Como comprador quiero descargar el comprobante.',
@@ -210,8 +211,14 @@ const api = createServer(async (request, response) => {
     if (generationErrorCode) return send({
       id: generationJobId, status: 'FAILED', stage: 'generating', errorCode: generationErrorCode,
     });
-    const stage = generationRequests.at(-1)?.types ? 'generated' : 'review-ready';
-    return send({ id: generationJobId, status: 'COMPLETED', stage });
+    const types = generationRequests.at(-1)?.types;
+    if (!types) return send({ id: generationJobId, status: 'COMPLETED', stage: 'review-ready' });
+    return send({ id: generationJobId, status: 'COMPLETED', stage: 'generated', result: {
+      generation: { totalCreated: generationTotal * types.length, outcomes: types.map(type => ({
+        type, created: generationTotal, usedFallback: generationTotal === 0,
+        issue: generationTotal === 0 ? 'ai-unavailable' : undefined,
+      })) },
+    } });
   }
   if (request.method === 'POST' && (path === base + '/automation' || path === base + '/automation/' + generationJobId + '/select')) {
     const chunks = [];
@@ -536,6 +543,7 @@ async function verifyPostmanLoadImport(page, website) {
 async function verifyDocumentGenerationConfirmation(page) {
   const original = structuredClone(documents);
   const initialRequests = generationRequests.length;
+  const originalScenarios = [...scenarios];
   const scenariosTab = page.getByRole('tab', { name: /^Escenarios/ });
   const generate = page.getByRole('button', { name: 'Generar casos de prueba', exact: true });
   const modal = page.getByRole('dialog', { name: 'Confirmar generación de casos' });
@@ -590,8 +598,15 @@ async function verifyDocumentGenerationConfirmation(page) {
     await expect(modal.getByRole('listitem')).toHaveText(['Funcional web', 'Casos manuales']);
     await expect(modal.getByText(/4 requisitos verificables · 1 pendiente/)).toBeVisible();
     assert.equal(generationRequests.length, initialRequests, 'Abrir o cancelar no genera casos.');
+    const addedScenarios = ['Escenario web generado', 'Escenario manual generado'].map((title, index) => ({
+      ...scenarios[0], id: randomUUID(), title, tags: index === 1 ? ['@manual'] : ['@funcional'],
+    }));
+    scenarios.push(...addedScenarios);
     await confirm.click();
-    await expect(page.getByText('Generación completada. Revisa los escenarios abajo.')).toBeVisible();
+    await expect(page.getByText('Se guardaron 2 escenarios.', { exact: true })).toBeVisible();
+    for (const addedScenario of addedScenarios) {
+      await expect(page.getByRole('button', { name: addedScenario.title, exact: true })).toBeVisible();
+    }
     const expected = ['functional_web', 'manual'];
     assert.deepEqual(generationRequests.slice(initialRequests), [
       { url: project.environments[0].baseUrl, documentTestTypes: expected }, { types: expected },
@@ -605,8 +620,12 @@ async function verifyDocumentGenerationConfirmation(page) {
     await generate.click();
     await expect(modal.getByRole('listitem')).toHaveText(['Performance']);
     await expect(modal.getByText('1 requisito verificable · 0 pendientes')).toBeVisible();
+    generationTotal = 0;
     await confirm.click();
-    await expect(page.getByText('Generación de Performance completada. Consulta el estado en Calidad.')).toBeVisible();
+    const emptyResult = page.getByRole('alert').filter({ hasText: 'No se guardó ningún escenario.' });
+    await expect(emptyResult).toContainText('Performance · La IA no estuvo disponible para generar casos.');
+    await expect(emptyResult).toContainText('Referencia de generación ' + generationJobId.slice(0, 8));
+    await expect(page.getByText('Se guardaron 2 escenarios.', { exact: true })).toBeHidden();
     assert.deepEqual(generationRequests.slice(initialRequests + 2), [
       { url: project.environments[0].baseUrl, documentTestTypes: ['performance'] }, { types: ['performance'] },
     ]);
@@ -626,6 +645,8 @@ async function verifyDocumentGenerationConfirmation(page) {
     generationSelectionBlocked = false;
     completedDocumentTypes.clear();
     generationErrorCode = null;
+    generationTotal = 1;
+    scenarios = originalScenarios;
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
 }

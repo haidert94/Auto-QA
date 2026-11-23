@@ -4,7 +4,7 @@
 
 import type { Prisma } from '@prisma/client';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -16,7 +16,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     scenarioAnalysisContext(ctx),
     LINKED_REQUIREMENT_INSTRUCTION,
     '',
-    'Enfócate en: menús hamburguesa, formularios, scroll, botones grandes, gestos táctiles.',
+    'Traslada las historias seleccionadas a un navegador móvil emulado. Prioriza los tamaños, orientación, controles y flujos declarados en los requisitos. No inventes gestos, controles ni endpoints.',
     'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
     '',
     'Para cada escenario marca el flujo:',
@@ -27,7 +27,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ (ej: @menu, @formulario).',
     '',
-    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] Abrir menú", "expectedResult": "Se muestra la opción Productos", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@menu"], "steps": [{ "action": "click: #menu" }, { "action": "expect-text: Productos" }] }] }.',
+    'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] Abrir menú", "expectedResult": "Se muestra la opción Productos", "flow": "basico", "mode": "playwright", "requirementId": "id del requisito", "regression": true, "tags": ["@menu"], "steps": [{ "action": "click: #menu" }, { "action": "expect-text: Productos" }] }] }.',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -39,7 +39,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
 
   const parsed = extractJson<ScenarioPayload>(response.text) ?? {};
   const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.slice(0, 8) : [];
-  const errors: string[] = [];
+  const errors = generationResponseErrors(response, Array.isArray(parsed.scenarios));
   let created = 0;
 
   for (const [index, s] of scenarios.entries()) {

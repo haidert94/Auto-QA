@@ -106,10 +106,9 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
     const analysisVersions = typeof inputs.documentAnalysisId === 'string' ? versionsByAnalysis.get(inputs.documentAnalysisId) : undefined;
     const filenames = new Set(Array.isArray(inputs.documents) ? inputs.documents.map(doc => object(doc).filename) : []);
     for (const value of generation.outcomes) {
-      const { type, created, errorCount } = object(value);
-      if (typeof type !== 'string' || !isTestType(type) || typeof created !== 'number'
-        || (created === 0 && errorCount !== 0)) continue;
-      if (created > 0 && caseTypes.has(type) && !activeTypes.has(type)) continue;
+      const { type, created } = object(value);
+      if (typeof type !== 'string' || !isTestType(type) || typeof created !== 'number' || created <= 0) continue;
+      if (caseTypes.has(type) && !activeTypes.has(type)) continue;
       if (inputs.documentGenerationSources) {
         for (const source of saved[type] ?? []) remember(type, source.versionId, source.clarifiedAt ?? '');
         continue;

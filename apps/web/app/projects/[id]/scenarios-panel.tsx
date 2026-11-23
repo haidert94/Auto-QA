@@ -2,6 +2,7 @@
 
 import { createPortal } from 'react-dom';
 import { ArrowRight, Plus } from 'lucide-react';
+import type { GenerationIssue, GenerationSummary } from '../../../../api/src/automation/generation-result';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { RequirementOption, ScenarioListItem } from './scenario-card';
@@ -15,12 +16,34 @@ import { ProjectHeading } from './project-heading';
 import { useScenarioHeader, useScenarioQuality, useScenarioSuite } from './project-tabs';
 import { ScenarioExport } from './scenario-export';
 import { ScenarioGenerationConfirmation } from './scenario-generation-confirmation';
-import type { TestTypeCode } from '../document-client';
+import { TEST_TYPE_LABELS, type TestTypeCode } from '../document-client';
 import { normalizeStepText } from './scenario-insights';
 import { isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioWorkspace } from './scenario-workspace';
 
-type AutomationSummary = { id: string; status: string; stage: string | null; errorCode?: string | null; createdAt: string };
+type AutomationSummary = {
+  id: string; status: string; stage: string | null; errorCode?: string | null; createdAt: string;
+  result?: { generation?: GenerationSummary } | null;
+};
+
+const generationIssues: Record<GenerationIssue, string> = {
+  'ai-unavailable': 'La IA no estuvo disponible para generar casos.',
+  'invalid-agent-response': 'La respuesta del agente no tenía el formato esperado.',
+  'no-base-scenarios': 'Falta un escenario base vinculado y con una aserción.',
+  'no-environment': 'Falta un entorno configurado para esta prueba.',
+  'missing-traceability': 'Las propuestas no tenían un vínculo válido a una historia o requisito.',
+  'missing-assertion': 'Las propuestas no tenían una comprobación observable.',
+  'no-cases': 'El agente no devolvió casos para estos requisitos.',
+  'agent-error': 'El agente no pudo guardar casos válidos.',
+};
+
+function generationOutcomeDetails(generation: GenerationSummary | undefined) {
+  return (generation?.outcomes ?? []).filter(outcome => outcome.created === 0).map(outcome => {
+    const label = Object.hasOwn(TEST_TYPE_LABELS, outcome.type) ? TEST_TYPE_LABELS[outcome.type as TestTypeCode] : 'Tipo de prueba';
+    const issue = outcome.issue ?? (outcome.usedFallback && outcome.type !== 'compatibility' ? 'ai-unavailable' : 'no-cases');
+    return label + ' · ' + generationIssues[issue];
+  }).join(' ');
+}
 const generationErrors: Record<string, string> = {
   'ipa-traceability-blocked': 'La generación está bloqueada por el IPA. Revisa la trazabilidad y los pendientes en Datos.',
   'document-analysis-changed': 'El análisis documental cambió. Vuelve a confirmar la generación.',
@@ -217,19 +240,30 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
 
       setGenerateNotice('Procesando: los agentes están generando los casos…');
       const done = await waitForGeneration(newJob.id);
+      await Promise.all([load(), loadQuality()]);
       if (!done) {
         setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios irán apareciendo según termine cada agente.');
+        return;
+      }
+
+      const reference = 'Referencia de generación ' + done.id.slice(0, 8) + '.';
+      const generation = done.result?.generation;
+      const details = generationOutcomeDetails(generation);
+      if (done.errorCode === 'generation-empty' || (done.status === 'COMPLETED' && generation?.totalCreated === 0)) {
+        setGenerateNotice('');
+        setError(['No se guardó ningún escenario.', details, reference].filter(Boolean).join(' '));
       } else if (done.status === 'FAILED' || done.status === 'CANCELED') {
         setGenerateNotice('');
         const reason = done.status === 'CANCELED' ? 'La generación fue cancelada.'
           : generationErrors[done.errorCode ?? ''] ?? 'El servicio no pudo completar la generación. Consulta su registro.';
-        setError(reason + ' Referencia de generación ' + done.id.slice(0, 8) + '.');
+        setError(reason + ' ' + reference);
+      } else if (generation && generation.totalCreated > 0) {
+        const count = generation.totalCreated;
+        const saved = count === 1 ? 'Se guardó 1 escenario.' : 'Se guardaron ' + count + ' escenarios.';
+        setGenerateNotice(details ? [saved, details, reference].join(' ') : saved);
       } else {
-        setGenerateNotice(documentTestTypes.length === 1 && documentTestTypes[0] === 'performance'
-          ? 'Generación de Performance completada. Consulta el estado en Calidad.'
-          : 'Generación completada. Revisa los escenarios abajo.');
+        setGenerateNotice('El proceso terminó sin informar cuántos escenarios se guardaron. ' + reference);
       }
-      await Promise.all([load(), loadQuality()]);
     } catch (err) {
       setGenerateNotice('');
       setError(err instanceof Error ? err.message : 'No se pudo comunicar con la API.');
