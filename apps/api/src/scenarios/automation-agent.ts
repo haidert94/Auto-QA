@@ -1,12 +1,8 @@
 import { createHash } from 'node:crypto';
 import { extractJson } from '../automation/agents/agent-types';
 import type { AiRouter } from '../ai/ai-router';
-import { readGeneratorSteps, type GeneratorStep } from './playwright-generator';
+import { PLAYWRIGHT_OPERATIONS, readAutomationSteps, readGeneratorSteps, type GeneratorStep } from './playwright-generator';
 
-const OPERATIONS = [
-  'navigate', 'click', 'click-text', 'fill', 'fill-label', 'press', 'check', 'uncheck',
-  'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
-] as const;
 const MAX_SOURCE_STEPS = 50;
 const MAX_ACTIONS = 100;
 const UNSAFE_TARGET = /[\u0000-\u001f\u007f\u2028\u2029]/u;
@@ -68,7 +64,7 @@ function buildAgentPrompt(scenario: ScenarioSource, source: GeneratorStep[]): st
     'Prefiere click-text para texto exacto visible y fill-label para etiquetas de campos. Usa fill o fill-label solo con hasInput en el mismo paso. El sistema insertará el dato original.',
     'Usa rutas relativas a la raíz en navigate, expect-url y expect-http-ok. Conserva expect-http-ok como verificación de respuesta HTTP exitosa. Evita tráfico externo, acciones destructivas, credenciales y valores nuevos.',
     'Si falta información para cubrir el caso completo, devuelve {"actions":[]}.',
-    'Operaciones permitidas: ' + OPERATIONS.join(', ') + '. Los targets de click/fill/check/uncheck/expect-visible/expect-hidden/expect-checked son selectores CSS. El target de press es una sola tecla.',
+    'Operaciones permitidas: ' + PLAYWRIGHT_OPERATIONS.join(', ') + '. Los targets de click/fill/check/uncheck/expect-visible/expect-hidden/expect-checked son selectores CSS. El target de press es una sola tecla.',
     'Devuelve únicamente JSON. Ejemplo de formato: {"actions":[{"step":1,"kind":"click-text","target":"Continuar"},{"step":2,"kind":"expect-text","target":"Resumen"}]}.',
     JSON.stringify({ title: projected(scenario.title), expectedResult: projected(scenario.expectedResult ?? ''), steps }),
   ].join('\n');
@@ -79,7 +75,7 @@ function isFill(kind: string) {
 }
 
 function isValidTarget(kind: string, target: string): boolean {
-  if (!(OPERATIONS as readonly string[]).includes(kind) || !target.trim() || target.length > 1000
+  if (!(PLAYWRIGHT_OPERATIONS as readonly string[]).includes(kind) || !target.trim() || target.length > 1000
     || UNSAFE_TARGET.test(target) || /\[(?:dato del escenario|correo)\]/i.test(target)) return false;
   if (kind === 'navigate' || kind === 'expect-url' || kind === 'expect-http-ok') return RELATIVE_PATH.test(target.trim());
   if (kind === 'press') return /^(Enter|Escape|Tab|Space|Arrow(?:Up|Down|Left|Right)|Home|End|PageUp|PageDown)$/u.test(target.trim());
@@ -110,10 +106,21 @@ export function translateAgentActions(raw: unknown, source: GeneratorStep[]): Ge
   return covered === source.length && hasAssertion && !pendingHttpChecks.size ? compiled : null;
 }
 
+export function prepareStoredSteps(source: GeneratorStep[]) {
+  if (source.length > MAX_SOURCE_STEPS) return null;
+  const actions = source.map(({ action }, index) => {
+    const separator = action.indexOf(':');
+    return separator < 0 ? null : {
+      step: index + 1, kind: action.slice(0, separator).trim().toLowerCase(), target: action.slice(separator + 1).trim(),
+    };
+  });
+  return translateAgentActions(actions, source);
+}
+
 export async function prepareWithAgent(
   scenario: ScenarioSource, router: AiRouter, context: { projectId: string; organizationId: string | null },
 ): Promise<GeneratorStep[] | null> {
-  const steps = readGeneratorSteps(scenario.steps);
+  const steps = readAutomationSteps(scenario.steps);
   if (!steps.length || steps.length > MAX_SOURCE_STEPS) return null;
   const response = await router.dispatch({
     ...context,

@@ -3,11 +3,7 @@ import { notFound } from 'next/navigation';
 import { accountFetch } from '../../../autoqa-server';
 import { AppPageHeading } from '../../../app-page-heading';
 
-type StepOccurrence = { scenarioId: string; scenarioTitle: string; ordinal: number; text: string };
-type DuplicateGroup = { normalized: string; canonicalText: string; occurrences: StepOccurrence[]; scenarioCount: number };
-type ScenarioInsights = {
-  scenarios: number; steps: number; duplicateGroups: number; duplicatedSteps: number; groups: DuplicateGroup[];
-};
+import type { ScenarioInsights } from '../scenario-insights';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,25 +24,26 @@ export default async function PageObjectsPage({ params }: { params: Promise<{ id
     </>;
   }
   const data: ScenarioInsights = await response.json();
-  const candidates = data.groups.filter(g => g.occurrences.length >= 3);
-  const borderline = data.groups.filter(g => g.occurrences.length < 3);
+  const candidates = data.groups.filter(g => g.scenarioCount >= 3);
+  const deviations = data.deviationGroups ?? candidates.length;
+  const borderline = data.groups.filter(g => g.scenarioCount < 3);
 
   return <>
     <AppPageHeading
       back={{ href: `/projects/${id}#calidad` }}
       crumbs={[{ href: `/projects/${id}#calidad`, label: 'Calidad' }, { label: 'Patrón de diseño' }]}
       title="Patrón de diseño del código"
-      badge={{ label: `${candidates.length} desviación${candidates.length === 1 ? '' : 'es'}`, tone: candidates.length > 6 ? 'draft' : 'ready' }}
-      summary={`${data.steps} pasos registrados en ${data.scenarios} escenarios · ${data.duplicatedSteps} ocurrencias que se desvían del patrón. El patrón exige que cada paso viva en un único lugar: las desviaciones son candidatas a extraer como helper compartido para que un cambio en la aplicación se aplique a todos los escenarios de golpe.`}
+      badge={{ label: `${deviations} desviación${deviations === 1 ? '' : 'es'}`, tone: deviations > 6 ? 'draft' : 'ready' }}
+      summary={`${data.steps} pasos registrados en ${data.scenarios} escenarios · ${data.duplicatedSteps} pasos repetidos pendientes de compartir.`}
     />
 
     <section className="app-section">
-      <header><h2><span>01 //</span> DESVIACIONES PRIORITARIAS ({candidates.length})</h2></header>
+      <header><h2><span>01 //</span> DESVIACIONES PRIORITARIAS ({deviations})</h2></header>
       {candidates.length === 0
-        ? <p className="muted">No hay pasos repetidos en 3 o más escenarios. El patrón se cumple.</p>
+        ? <p className="muted">No hay grupos pendientes con pasos en tres o más escenarios.</p>
         : <ol className="quality-duplicates">{candidates.map(group => <li key={group.normalized}>
           <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
-            <span>{group.occurrences.length}× · {group.scenarioCount} escenarios</span></div>
+            <span>{group.occurrences.length} pendientes · {group.scenarioCount} escenarios en total</span></div>
           <ul>{group.occurrences.map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
             <Link href={`/projects/${id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
             <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}</ul>
@@ -55,10 +52,10 @@ export default async function PageObjectsPage({ params }: { params: Promise<{ id
 
     {borderline.length > 0 && <section className="app-section">
       <header><h2><span>02 //</span> BAJO EL UMBRAL ({borderline.length})</h2></header>
-      <p className="muted">Grupos con 2 repeticiones. Hoy no cuentan como candidato, pero conviene revisarlos si el escenario crece.</p>
+      <p className="muted">Grupos de pasos repetidos que aparecen en menos de tres escenarios.</p>
       <ol className="quality-duplicates">{borderline.map(group => <li key={group.normalized}>
         <div className="quality-duplicate-head"><strong>«{group.canonicalText}»</strong>
-          <span>{group.occurrences.length}× · {group.scenarioCount} escenarios</span></div>
+          <span>{group.occurrences.length} pendientes · {group.scenarioCount} escenarios en total</span></div>
         <ul>{group.occurrences.map(occurrence => <li key={`${occurrence.scenarioId}-${occurrence.ordinal}`}>
           <Link href={`/projects/${id}/scenarios/${occurrence.scenarioId}`}>{occurrence.scenarioTitle}</Link>
           <small>paso {occurrence.ordinal}: {occurrence.text}</small></li>)}</ul>

@@ -12,7 +12,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, readGeneratorSteps, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, generateSharedSteps, readAutomationSteps, SHARED_STEPS_FILENAME, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
 import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
 import { RUN_CANCELED_BY_USER, RUN_STOP_REQUESTED } from '../../api/src/runs/run-cancellation';
 import { readPreparedAutomation } from '../../api/src/scenarios/automation-agent';
@@ -134,7 +134,7 @@ export async function runTestRun(
       await fail('invalid-automation', 'No se pudo recuperar la automatización de esta ejecución.');
       return;
     }
-    const steps = prepared?.steps ?? readGeneratorSteps(scenario.steps);
+    const steps = prepared?.steps ?? readAutomationSteps(scenario.steps);
 
     const harness: HarnessEnvironment = {
       baseUrl: environment.baseUrl,
@@ -146,7 +146,7 @@ export async function runTestRun(
     const targetBrowser = claim.targetBrowser ?? 'CHROMIUM';
     const spec = generateHarnessedSpec({
       id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
-    }, harness, { browser: targetBrowser, device: claim.targetDevice });
+    }, harness, { browser: targetBrowser, device: claim.targetDevice, sharedSteps: !!prepared });
 
     // Directorio de trabajo aislado; limpiamos al final (éxito o error).
     workdir = await mkdtemp(join(tmpdir(), 'autoqa-run-'));
@@ -155,6 +155,7 @@ export async function runTestRun(
     const configPath = join(workdir, 'playwright.config.ts');
     await mkdir(outputDir, { recursive: true });
     await writeFile(specPath, spec, { encoding: 'utf8' });
+    if (prepared) await writeFile(join(workdir, SHARED_STEPS_FILENAME), generateSharedSteps(steps), 'utf8');
     const { wsEndpoint, error: providerError } = resolveWsEndpoint({ ...claim, targetBrowser });
     if (providerError) {
       await fail(providerError, 'El proveedor ' + (claim.targetProvider ?? '') + ' no está disponible.');

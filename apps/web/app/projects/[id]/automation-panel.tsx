@@ -55,12 +55,12 @@ function visibleScenarioTags(tags: string[] = []) {
   return (type ? [type, ...tags.filter(tag => tag !== type)] : tags).slice(0, 2);
 }
 
-function reviewCode(scenario: ScenarioListItem, code: string) {
+function reviewCode(scenario: ScenarioListItem, code: string, hasAssertions?: boolean) {
   const reasons = [];
   if (!scenario.steps?.length) reasons.push('Sin pasos definidos');
   if (/^\s*\/\/ TODO\b/m.test(code)) reasons.push('Contiene pasos por completar');
   const executable = code.split('\n').filter(line => !line.trim().startsWith('//')).join('\n');
-  if (!/\bexpect\s*\(/.test(executable)) reasons.push('No se detectan aserciones activas');
+  if (!(hasAssertions ?? /\bexpect\s*\(/.test(executable))) reasons.push('No se detectan aserciones activas');
   return reasons;
 }
 
@@ -141,7 +141,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         if (!response.ok) throw new Error(Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message ?? 'No se pudo generar este archivo.');
         if (typeof payload.code !== 'string' || !payload.code.trim() || typeof payload.filename !== 'string') throw new Error('La API no devolvió un archivo de código válido.');
         const automationId = typeof payload.automationId === 'string' ? payload.automationId : null;
-        const review = reviewCode(scenario, payload.code);
+        const review = reviewCode(scenario, payload.code, typeof payload.hasAssertions === 'boolean' ? payload.hasAssertions : undefined);
         if (useAgent && !automationId && !review.length) review.push('La automatización no se guardó');
         result = {
           ...result,

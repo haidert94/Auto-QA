@@ -26,8 +26,11 @@ export class ScenariosController {
     return this.service.listRequirements(projectId, workspace);
   }
 
-  // Indicadores sobre los escenarios del proyecto: pasos duplicados o muy
-  // parecidos agrupados por normalización (con fuzzy match de Jaccard).
+  @Get('playwright-steps')
+  sharedPlaywrightSteps(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.sharedPlaywrightSteps(projectId, workspace);
+  }
+
   @Get('insights')
   insights(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
     return this.service.insights(projectId, workspace);

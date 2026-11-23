@@ -47,9 +47,9 @@ export function lintPreparedSteps(steps: GeneratorStep[]): LintIssue[] {
   return issues;
 }
 
-export function lintGeneratedCode(code: string): LintIssue[] {
+export function lintGeneratedCode(code: string, hasAssertions = code.includes('expect(')): LintIssue[] {
   const issues: LintIssue[] = [];
-  if (!code.includes('expect(')) {
+  if (!hasAssertions) {
     issues.push({ code: 'no-expect', severity: 'error', message: 'El código generado no contiene aserciones expect(.' });
   }
   if (DEBUG_API.test(code)) {

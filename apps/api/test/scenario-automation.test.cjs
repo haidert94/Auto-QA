@@ -10,7 +10,7 @@ const { IcspService } = require('../dist/icsp/icsp.service');
 const { ReportsService } = require('../dist/reports/reports.service');
 const { REPORT_SCENARIO_SCOPE } = require('../dist/runs/run-report-policy');
 const { translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
-const { generateHarnessedSpec, generateSpec } = require('../dist/scenarios/playwright-generator');
+const { generateHarnessedSpec, generateSpec, readAutomationSteps } = require('../dist/scenarios/playwright-generator');
 
 const workspace = { organizationId: 'test-org' };
 const sample = {
@@ -79,8 +79,14 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   const listed = await list();
   assert.deepEqual(listed.playwright, { automationId: prepared.automationId, filename: prepared.filename });
   assert.ok(!Object.hasOwn(listed, 'automation'));
-  assert.match(prepared.code, /page\.getByLabel\('Buscar', \{ exact: true \}\)\.fill\('fixture-input'\)/);
-  assert.match(prepared.code, /expect\(page\.getByText\('Resultados'\)\)\.toBeVisible/);
+  assert.match(prepared.code, /import \* as steps from '\.\/autoqa-steps'/);
+  assert.match(prepared.code, /await steps\.step_fill_label_[a-f0-9]+\(page, 'fixture-input'\)/);
+  assert.equal(prepared.hasAssertions, true);
+  const shared = await service.sharedPlaywrightSteps('project', workspace);
+  assert.equal(shared.filename, prepared.sharedStepsFilename);
+  assert.match(shared.code, /page\.getByLabel\('Buscar', \{ exact: true \}\)\.fill\(data\)/);
+  assert.match(shared.code, /expect\(page\.getByText\('Resultados'\)\)\.toBeVisible/);
+  assert.ok(!shared.code.includes('fixture-input'));
   assert.equal((await service.generatePlaywright('project', 'scenario', workspace)).code, prepared.code);
   assert.equal((await service.preparePlaywright('project', 'scenario', workspace)).automationId, prepared.automationId);
   assert.equal(calls, 1);
@@ -90,11 +96,11 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.deepEqual(snapshot.steps.map(step => step.action), ['navigate: /', 'fill-label: Buscar', 'click-text: Buscar', 'expect-text: Resultados']);
   const workerSpec = generateHarnessedSpec({ id: 'scenario', title: snapshot.title, steps: snapshot.steps }, {
     baseUrl: 'https://example.test', allowedHosts: ['example.test'], allowedPaths: [], excludedPaths: [],
-  });
+  }, { sharedSteps: true });
   for (const line of prepared.code.split('\n').filter(line => line.trim().startsWith('await '))) {
     assert.ok(workerSpec.includes(line), 'El worker usa las acciones del archivo revisado');
   }
-  for (const spec of [prepared.code, workerSpec]) {
+  for (const spec of [prepared.code, workerSpec, shared.code]) {
     const compiled = ts.transpileModule(spec, { reportDiagnostics: true });
     assert.deepEqual(compiled.diagnostics, []);
   }
@@ -109,6 +115,65 @@ test('prepara un escenario en lenguaje natural, guarda la versión y reutiliza s
   assert.equal(snapshot.title, sample.title);
   assert.notEqual((await service.preparePlaywright('project', 'scenario', workspace)).automationId, prepared.automationId);
   assert.equal(calls, 2);
+});
+
+test('separa datos en pasos de formulario y comparte acciones y aserciones entre escenarios', async () => {
+  const rows = ['fixture-alpha', 'fixture-beta', 'fixture-gamma'].map((input, index) => ({
+    ...sample,
+    id: 'mobile-' + index,
+    title: '[COMPAT:CHROMIUM] [MOBILE] Completar compra ' + index,
+    steps: [
+      { ordinal: 1, action: 'navigate: /' },
+      { ordinal: 2, action: 'fill: input[lang|=en] | ' + input },
+      { ordinal: 3, action: 'fill-label: Código postal | 10000' },
+      { ordinal: 4, action: 'expect-text: Payment Information' },
+    ],
+  }));
+  const service = new ScenariosService({
+    project: { async findFirst() { return { id: 'project' }; } },
+    testScenario: {
+      async findFirst({ where }) { return rows.find(row => row.id === where.id); },
+      async findMany() { return rows; },
+      async updateMany({ where, data }) {
+        const row = rows.find(row => row.id === where.id);
+        row.automation = JSON.parse(JSON.stringify(data.automation));
+        return { count: 1 };
+      },
+    },
+  }, { async dispatch() { assert.fail('Los pasos estructurados ya contienen las acciones y aserciones'); } });
+  const before = await service.insights('project', workspace);
+  assert.equal(before.preparedScenarios, 0);
+  assert.equal(before.deviationGroups, 4);
+  for (const row of rows) {
+    const prepared = await service.preparePlaywright('project', row.id, workspace);
+    assert.ok(prepared.automationId);
+    assert.equal(prepared.hasAssertions, true);
+    assert.equal(row.automation.steps[1].action, 'fill: input[lang|=en]');
+    assert.equal(row.automation.steps[1].data, row.steps[1].action.split(' | ')[1]);
+    assert.match(prepared.code, /await steps\.step_fill_[a-f0-9]+\(page, 'fixture-\w+'\)/);
+    assert.match(prepared.code, /await steps\.step_expect_text_[a-f0-9]+\(page\)/);
+  }
+  const artifact = await service.sharedPlaywrightSteps('project', workspace);
+  assert.equal(artifact.code.split("locator('input[lang|=en]')").length - 1, 1);
+  assert.equal(artifact.code.split("'Payment Information'").length - 1, 1);
+  assert.ok(!artifact.code.includes('10000'));
+  assert.ok(!artifact.code.includes('fixture-'));
+  const after = await service.insights('project', workspace);
+  assert.equal(after.preparedScenarios, 3);
+  assert.equal(after.sharedSteps, 4);
+  assert.equal(after.deviationGroups, 0);
+  assert.deepEqual(after.groups, []);
+  assert.deepEqual(readAutomationSteps([{ ordinal: 1, action: 'fill: input[lang|=en]', data: 'x' }])[0],
+    { ordinal: 1, action: 'fill: input[lang|=en]', data: 'x', expected: undefined });
+});
+
+test('indica qué paso de formulario carece de datos', async () => {
+  const row = { ...sample, steps: [{ ordinal: 1, action: 'fill: #postal-code' }] };
+  const { service } = fixture(async () => assert.fail('La IA no debe inventar un dato'), row);
+  const result = await service.preparePlaywright('project', row.id, workspace);
+  assert.equal(result.automationId, null);
+  assert.match(result.notice, /Faltan datos de formulario en los pasos 1\./);
+  assert.equal(row.automation, null);
 });
 
 test('el reporte consolidado espera la primera ejecución finalizada e ignora las canceladas', async () => {

@@ -8,7 +8,7 @@
 // usando normalizeStepText + Jaccard de step-similarity.ts.
 
 import { stepSimilarity } from './step-similarity';
-import { readGeneratorSteps, type GeneratorStep } from './playwright-generator';
+import { readAutomationSteps, type GeneratorStep } from './playwright-generator';
 import { currentAutomation, type PreparedAutomation } from './automation-agent';
 
 const REUSE_THRESHOLD = 0.9;
@@ -35,6 +35,7 @@ function sequenceScore(a: GeneratorStep[], b: GeneratorStep[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
   let total = 0;
   for (let i = 0; i < a.length; i++) {
+    if (a[i].data !== b[i].data) return 0;
     total += stepSimilarity(a[i].action, b[i].action);
   }
   return total / a.length;
@@ -44,14 +45,14 @@ export function findReusableAutomation(
   target: ScenarioForReuse,
   candidates: ScenarioForReuse[],
 ): ReuseMatch | null {
-  const targetSteps = readGeneratorSteps(target.steps);
+  const targetSteps = readAutomationSteps(target.steps);
   if (!targetSteps.length) return null;
   let best: ReuseMatch | null = null;
   for (const candidate of candidates) {
-    if (candidate.id === target.id) continue;
+    if (candidate.id === target.id || candidate.expectedResult !== target.expectedResult) continue;
     const prepared = currentAutomation(candidate);
     if (!prepared || prepared.steps.length !== targetSteps.length) continue;
-    const candidateSteps = readGeneratorSteps(candidate.steps);
+    const candidateSteps = readAutomationSteps(candidate.steps);
     if (candidateSteps.length !== targetSteps.length) continue;
     const score = sequenceScore(targetSteps, candidateSteps);
     if (score >= REUSE_THRESHOLD && (!best || score > best.score)) {

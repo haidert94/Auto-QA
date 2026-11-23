@@ -207,41 +207,28 @@ export function QualityPanel({ project }: { project: Project }) {
     </div>
     <div className="quality-grid">
     {(() => {
-      // Tarjeta 03: patrones de pasos que aparecen ≥ 3 veces son candidatos
-      // reales a extraer como page object compartido. El score mide cuántos
-      // candidatos quedan pendientes: menos = mejor (ya consolidados o pocos
-      // flujos). Más = oportunidad fuerte de refactor para evitar tener que
-      // tocar múltiples specs cuando cambia un selector.
       const data = insights.data;
-      const candidates = data ? data.groups.filter(group => group.occurrences.length >= 3) : [];
-      // Un proyecto sin pasos registrados aún no se puede evaluar: no es
-      // 'cumple', es 'sin datos'. Solo calificamos cuando ya hay código de
-      // pruebas registrado en el proyecto.
-      const hasPasos = !!data && data.steps > 0;
-      const score = !data ? null
-        : !hasPasos ? null
-        : candidates.length === 0 ? 100
-        : candidates.length <= 2 ? 85
-        : candidates.length <= 6 ? 65
-        : Math.max(30, 65 - (candidates.length - 6) * 3);
-      const level = !data ? null
-        : !hasPasos ? 'SIN DATOS'
-        : candidates.length === 0 ? 'CUMPLE'
-        : candidates.length <= 2 ? 'CUMPLE EN SU MAYORÍA'
-        : candidates.length <= 6 ? 'CUMPLIMIENTO PARCIAL'
+      const deviations = data?.deviationGroups ?? data?.groups.filter(group => group.scenarioCount >= 3).length ?? 0;
+      const hasSteps = !!data && data.steps > 0;
+      const awaitingCode = data?.preparedScenarios === 0;
+      const score = !hasSteps || awaitingCode ? null
+        : deviations === 0 ? 100
+        : deviations <= 2 ? 85
+        : deviations <= 6 ? 65
+        : Math.max(30, 65 - (deviations - 6) * 3);
+      const level = deviations === 0 ? 'CUMPLE'
+        : deviations <= 2 ? 'CUMPLE EN SU MAYORÍA'
+        : deviations <= 6 ? 'CUMPLIMIENTO PARCIAL'
         : 'NO CUMPLE';
       const badge = insights.loading ? 'Consultando'
-        : !hasPasos ? 'SIN DATOS · 0 pasos'
-        : level ? `${level} · ${candidates.length} desviación${candidates.length === 1 ? '' : 'es'}`
-        : 'Sin evaluación';
-      // Headline cliente-friendly por nivel. 'Sin datos' es un estado
-      // aparte: todavía no hay código que evaluar.
-      const headline = !data ? 'Sin pasos registrados aún.'
-        : !hasPasos ? 'Este proyecto aún no tiene pasos registrados. Crea escenarios y defínelos para poder evaluar el patrón de diseño del código.'
-        : candidates.length === 0 ? 'El código de pruebas cumple el patrón de diseño: cada paso vive en un solo lugar y es fácil de mantener.'
-        : candidates.length <= 2 ? 'El código cumple el patrón en su mayoría. Un cambio en la aplicación afectaría a pocos escenarios — no requiere acción inmediata.'
-        : candidates.length <= 6 ? 'El código cumple parcialmente el patrón: hay pasos que se repiten entre escenarios. Agenda un refactor para consolidarlos antes de que la aplicación crezca y se vuelva costoso mantener.'
-        : 'El código no cumple el patrón de diseño: hay alta repetición de pasos. Asigna un analista para extraer los pasos repetidos a helpers compartidos — hoy un cambio de selector obliga a editar varios escenarios y es la principal fuente de bugs de mantenimiento.';
+        : insights.error ? 'Sin evaluación'
+        : !hasSteps ? 'SIN DATOS'
+        : awaitingCode ? 'AUTOMATIZACIÓN PENDIENTE'
+        : `${level} · ${deviations} desviación${deviations === 1 ? '' : 'es'}`;
+      const headline = !hasSteps ? 'Aún no hay pasos de automatización para revisar.'
+        : awaitingCode ? 'La generación de código consolida los pasos repetidos.'
+        : deviations > 0 ? 'Quedan escenarios pendientes de generar con pasos repetidos.'
+        : 'El código generado comparte la implementación de los pasos repetidos.';
       return <EvaluationCard index="03" title="Patrón de diseño del código" badge={badge}>
         {insights.loading ? <p className="quality-message" role="status">Analizando pasos…</p>
           : insights.error ? <p className="quality-message muted">{insights.error}</p>
@@ -249,12 +236,10 @@ export function QualityPanel({ project }: { project: Project }) {
           : <div className="quality-evaluation__body">
             <div className="quality-score-summary"><Score label="Cumplimiento del patrón" value={score} /><div>
               <h3>{headline}</h3>
-              {hasPasos && <p>{data.steps} pasos revisados · {candidates.length} desviación{candidates.length === 1 ? '' : 'es'} del patrón (pasos que se repiten en 3 o más escenarios).</p>}
-              {hasPasos && candidates.length > 0 && <small>El patrón exige que cada paso viva en un único lugar. Las desviaciones obligan a mantener el mismo código en varios archivos — un cambio en la aplicación debe replicarse manualmente en cada escenario.</small>}
+              {hasSteps && <p>{data.steps} pasos revisados · {deviations} grupos pendientes con pasos en 3 o más escenarios.</p>}
+              {!!data.sharedSteps && <p>{data.sharedSteps} pasos compartidos por varios escenarios.</p>}
             </div></div>
-            {candidates.length === 0 && hasPasos && data.groups.length > 0 && <p className="muted">Hay {data.groups.length} grupo{data.groups.length === 1 ? '' : 's'} con 2 repeticiones — bajo el umbral de 3, no cuentan como desviación.</p>}
-            {candidates.length === 0 && hasPasos && data.groups.length === 0 && <p className="muted">Sin grupos duplicados. Buen trabajo.</p>}
-            {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver todas las desviaciones del patrón →</Link>}
+            {data.groups.length > 0 && <Link className="quality-detail-link" href={`/projects/${project.id}/page-objects`}>Ver pasos repetidos pendientes →</Link>}
           </div>}
       </EvaluationCard>;
     })()}

@@ -25,6 +25,7 @@ export function normalizeStepText(input: string): string {
 export type StepOccurrence = { scenarioId: string; scenarioTitle: string; ordinal: number; text: string };
 export type DuplicateGroup = { normalized: string; canonicalText: string; occurrences: StepOccurrence[]; scenarioCount: number };
 export type ScenarioInsights = {
+  preparedScenarios?: number; sharedSteps?: number; deviationGroups?: number;
   scenarios: number; steps: number; duplicateGroups: number; duplicatedSteps: number; groups: DuplicateGroup[];
 };
 

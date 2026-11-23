@@ -19,6 +19,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     '',
     'Traslada las historias seleccionadas a un navegador móvil emulado. Prioriza los tamaños, orientación, controles y flujos declarados en los requisitos. No inventes gestos, controles ni endpoints.',
     'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
+    'En cada fill, usa el selector en action y el valor de prueba en el campo data del mismo paso. Ejemplo: {"action":"fill: #codigo-postal","data":"110111"}.',
     '',
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" para el camino feliz de la historia en móvil.',

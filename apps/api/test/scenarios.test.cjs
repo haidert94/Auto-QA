@@ -90,6 +90,35 @@ test('POST crea un escenario con pasos normalizados', async () => {
   assert.equal(detail.steps[2].action, 'Hacer clic en Entrar');
 });
 
+test('la ruta de pasos compartidos sirve el código preparado de su propio proyecto', async () => {
+  const projectId = await makeProject();
+  const otherProject = await makeProject();
+  const create = await post(projectId, {
+    title: 'Formulario móvil',
+    steps: [
+      { ordinal: 1, action: 'fill: #postal-code | 110111' },
+      { ordinal: 2, action: 'expect-visible: #summary' },
+    ],
+  });
+  assert.equal(create.status, 201);
+  const scenario = await create.json();
+  const prefix = baseUrl + '/projects/';
+  const prepared = await request(prefix + projectId + '/scenarios/' + scenario.id + '/playwright', { method: 'POST' });
+  assert.equal(prepared.status, 201);
+  const spec = await prepared.json();
+  assert.ok(spec.automationId);
+  assert.match(spec.code, /from '\.\/autoqa-steps'/);
+  const shared = await request(prefix + projectId + '/scenarios/playwright-steps');
+  assert.equal(shared.status, 200);
+  const artifact = await shared.json();
+  assert.equal(artifact.filename, 'autoqa-steps.ts');
+  assert.ok(artifact.code.includes('#postal-code'));
+  assert.ok(artifact.code.includes('#summary'));
+  assert.ok(!artifact.code.includes('110111'));
+  const other = await request(prefix + otherProject + '/scenarios/playwright-steps').then(response => response.json());
+  assert.ok(!other.code.includes('#postal-code'));
+});
+
 test('POST rechaza un escenario sin historia o requisito asociado', async () => {
   const projectId = await makeProject();
   const result = await post(projectId, { title: 'Sin vínculo', requirementId: null, steps: [{ ordinal: 1, action: 'x' }] });

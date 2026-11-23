@@ -7,11 +7,11 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { ACTIVE_RUN_STATUSES } from '../runs/run-report-policy';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { COMPATIBILITY_SCENARIO_TAG, COMPATIBILITY_SCENARIO_TAGS, isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
-import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
+import { automationSignature, currentAutomation, prepareStoredSteps, prepareWithAgent, type PreparedAutomation } from './automation-agent';
 import { findReusableAutomation } from './scenario-prelude';
 import { hasBlockingIssue, lintGeneratedCode, lintPreparedSteps, summarizeIssues } from './spec-linter';
 import { ASSERTION_INSTRUCTION } from '../automation/agents/agent-types';
-import { generateSpec, hasPlaywrightAssertion, readGeneratorSteps, suggestedFilename } from './playwright-generator';
+import { generateSharedSteps, generateSpec, hasPlaywrightAssertion, readAutomationSteps, readGeneratorSteps, SHARED_STEPS_FILENAME, suggestedFilename } from './playwright-generator';
 import { buildTestSetPdf, buildTestSetXlsx, type ExportScenario } from './scenario-export';
 import { groupSimilarSteps, type StepOccurrence } from './step-similarity';
 import { readQualityScenarios } from './quality-scenarios';
@@ -20,15 +20,18 @@ import { qualityAutomationFile } from './quality-automation';
 type ScenarioForAutomation = Parameters<typeof currentAutomation>[0] & { id: string };
 
 function renderPlaywright(scenario: ScenarioForAutomation, prepared: PreparedAutomation | null, notice?: string) {
+  const steps = prepared?.steps ?? readAutomationSteps(scenario.steps);
   return {
     filename: suggestedFilename(scenario),
     code: generateSpec({
       id: scenario.id,
       title: scenario.title,
       expectedResult: scenario.expectedResult,
-      steps: prepared?.steps ?? readGeneratorSteps(scenario.steps),
-    }),
+      steps,
+    }, !!prepared),
     automationId: prepared?.id ?? null,
+    sharedStepsFilename: prepared ? SHARED_STEPS_FILENAME : null,
+    hasAssertions: hasPlaywrightAssertion(steps),
     notice: notice ?? (prepared ? undefined : 'Vista previa por reglas. Usa Generar seleccionados para preparar el código con IA.'),
   };
 }
@@ -322,22 +325,27 @@ export class ScenariosService {
     const existing = currentAutomation(scenario);
     if (existing) return renderPlaywright(scenario, existing);
 
-    // Capa 1: busca si otro escenario del proyecto ya tiene automatización
-    // preparada con el mismo flujo (similitud paso-a-paso ≥ 0.9). Si sí,
-    // reutiliza esos steps y no gasta tokens con el LLM.
-    const siblings = await this.prisma.testScenario.findMany({
-      where: { projectId, archivedAt: null, NOT: { id: scenarioId } },
-      select: { id: true, title: true, expectedResult: true, steps: true, tags: true, automation: true },
-    });
-    const reuse = findReusableAutomation(scenario, siblings);
-    let steps: Awaited<ReturnType<typeof prepareWithAgent>> = null;
-    let issues: ReturnType<typeof lintPreparedSteps> = [];
+    const source = readAutomationSteps(scenario.steps);
+    const missingData = source.filter(step => /^\s*fill(?:-label)?\s*:/i.test(step.action) && typeof step.data !== 'string');
+    if (missingData.length) {
+      const numbers = missingData.map(step => step.ordinal).join(', ');
+      return renderPlaywright(scenario, null, 'Faltan datos de formulario en los pasos ' + numbers + '.');
+    }
+
+    let steps = prepareStoredSteps(source);
     let reusedFrom: string | null = null;
-    if (reuse) {
-      steps = reuse.prepared.steps;
-      reusedFrom = reuse.sourceScenarioTitle;
-    } else {
-      steps = await prepareWithAgent(scenario, this.ai, { projectId, organizationId: workspace.organizationId });
+    if (!steps) {
+      const siblings = await this.prisma.testScenario.findMany({
+        where: { projectId, archivedAt: null, NOT: { id: scenarioId } },
+        select: { id: true, title: true, expectedResult: true, steps: true, tags: true, automation: true },
+      });
+      const reuse = findReusableAutomation(scenario, siblings);
+      if (reuse) {
+        steps = reuse.prepared.steps;
+        reusedFrom = reuse.sourceScenarioTitle;
+      } else {
+        steps = await prepareWithAgent(scenario, this.ai, { projectId, organizationId: workspace.organizationId });
+      }
     }
     if (!steps) {
       return renderPlaywright(scenario, null, 'El agente no pudo completar la automatización. Revisa el código base.');
@@ -346,7 +354,7 @@ export class ScenariosService {
     // Capa 3a: linter determinista sobre los steps preparados antes de
     // guardarlos. Si hay un issue bloqueante, no persiste la automatización
     // y usa fallback por reglas con el motivo en el notice.
-    issues = lintPreparedSteps(steps);
+    const issues = lintPreparedSteps(steps);
     if (hasBlockingIssue(issues)) {
       return renderPlaywright(scenario, null, summarizeIssues(issues));
     }
@@ -369,7 +377,7 @@ export class ScenariosService {
     // steps + warnings del linter sobre el código final renderizado.
     const render = (target: typeof scenario, automation: PreparedAutomation | null) => {
       const rendered = renderPlaywright(target, automation);
-      const codeIssues = lintGeneratedCode(rendered.code);
+      const codeIssues = lintGeneratedCode(rendered.code, rendered.hasAssertions);
       // Los errores de código final no deben descartar un spec que ya
       // guardamos (sería inconsistente): solo se propagan como warning.
       const notes = [
@@ -447,36 +455,53 @@ export class ScenariosService {
     return { bytes, filename: `set-pruebas-${stamp}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
   }
 
-  // Indicadores de duplicación de pasos: agrupa pasos iguales o muy
-  // parecidos (umbral 0.85 de Jaccard sobre tokens normalizados) entre
-  // escenarios activos. La pestaña Calidad y el formulario de escenarios
-  // usan este resultado para evitar que el usuario registre dos veces el
-  // mismo paso. Se limita a los primeros 40 grupos para que la respuesta
-  // quepa en el payload sin paginar.
-  async insights(projectId: string, workspace: Workspace) {
+  private async automationSources(projectId: string, workspace: Workspace) {
     await this.ensureProject(projectId, workspace);
     const scenarios = await this.prisma.testScenario.findMany({
       where: { projectId, archivedAt: null },
       orderBy: { title: 'asc' },
-      select: { id: true, title: true, steps: true },
+      select: { id: true, title: true, steps: true, tags: true, expectedResult: true, automation: true },
     });
+    return scenarios.filter(scenario => !isManualScenario(scenario));
+  }
+
+  async sharedPlaywrightSteps(projectId: string, workspace: Workspace) {
+    const scenarios = await this.automationSources(projectId, workspace);
+    const steps = scenarios.flatMap(scenario => currentAutomation(scenario)?.steps ?? []);
+    return { filename: SHARED_STEPS_FILENAME, code: generateSharedSteps(steps) };
+  }
+
+  async insights(projectId: string, workspace: Workspace) {
+    const scenarios = await this.automationSources(projectId, workspace);
     const occurrences: StepOccurrence[] = [];
-    let totalSteps = 0;
+    const prepared = new Set<string>();
+    const shared = new Map<string, Set<string>>();
     for (const scenario of scenarios) {
-      const steps = readGeneratorSteps(scenario.steps);
-      for (const step of steps) {
-        totalSteps++;
+      const automation = currentAutomation(scenario);
+      if (automation) {
+        prepared.add(scenario.id);
+        for (const step of automation.steps) {
+          const users = shared.get(step.action) ?? new Set<string>();
+          users.add(scenario.id);
+          shared.set(step.action, users);
+        }
+      }
+      for (const step of readAutomationSteps(scenario.steps)) {
         occurrences.push({ scenarioId: scenario.id, scenarioTitle: scenario.title, ordinal: step.ordinal, text: step.action });
       }
     }
-    const groups = groupSimilarSteps(occurrences, 0.85).slice(0, 40);
-    const duplicatedSteps = groups.reduce((sum, group) => sum + group.occurrences.length, 0);
+    const groups = groupSimilarSteps(occurrences, 0.85)
+      .map(group => ({ ...group, occurrences: group.occurrences.filter(step => !prepared.has(step.scenarioId)) }))
+      .filter(group => group.occurrences.length > 0);
     return {
       scenarios: scenarios.length,
-      steps: totalSteps,
+      preparedScenarios: prepared.size,
+      sharedSteps: [...shared.values()].filter(users => users.size > 1).length,
+      steps: occurrences.length,
       duplicateGroups: groups.length,
-      duplicatedSteps,
-      groups,
+      deviationGroups: groups.filter(group => group.scenarioCount >= 3).length,
+      duplicatedSteps: groups.reduce((sum, group) => sum + group.occurrences.length, 0),
+      groups: groups.slice(0, 40),
     };
   }
 

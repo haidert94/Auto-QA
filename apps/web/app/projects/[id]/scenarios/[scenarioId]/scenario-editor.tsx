@@ -40,7 +40,10 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
   const [error, setError] = useState('');
   const [reviewedAt, setReviewedAt] = useState<string>();
   const [notice, setNotice] = useState('');
-  const [playwrightCode, setPlaywrightCode] = useState<{ filename: string; code: string } | null>(null);
+  const [playwrightCode, setPlaywrightCode] = useState<{ filename: string; code: string; sharedStepsFilename?: string | null } | null>(null);
+  const [sharedCode, setSharedCode] = useState<{ filename: string; code: string } | null>(null);
+  const [showShared, setShowShared] = useState(false);
+  const activeCode = showShared ? sharedCode : playwrightCode;
   const [copied, setCopied] = useState(false);
 
   async function loadPlaywright() {
@@ -50,15 +53,33 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) { setError(payload.message ?? 'No se pudo generar el código.'); return; }
       setPlaywrightCode(payload);
+      setSharedCode(null);
+      setShowShared(false);
       setCopied(false);
     } catch { setError('No se pudo generar el código.'); }
     finally { setBusy(false); }
   }
 
-  async function copyCode() {
-    if (!playwrightCode) return;
+  async function toggleSharedCode() {
+    setCopied(false);
+    if (showShared || sharedCode) { setShowShared(!showShared); return; }
+    setError('');
+    setBusy(true);
     try {
-      await navigator.clipboard.writeText(playwrightCode.code);
+      const response = await fetch(`/api/projects/${initial.projectId}/scenarios/playwright-steps`, { cache: 'no-store' });
+      if (!response.ok) throw new Error();
+      const payload = await response.json();
+      if (typeof payload.filename !== 'string' || typeof payload.code !== 'string') throw new Error();
+      setSharedCode(payload);
+      setShowShared(true);
+    } catch { setError('No se pudieron cargar los pasos compartidos.'); }
+    finally { setBusy(false); }
+  }
+
+  async function copyCode() {
+    if (!activeCode) return;
+    try {
+      await navigator.clipboard.writeText(activeCode.code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { setError('No se pudo copiar al portapapeles.'); }
@@ -153,21 +174,23 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
     {notice && <p className="success" role="status">{notice}</p>}
     {error && <p className="error" role="alert">{error}</p>}
 
-    {playwrightCode && <section className="playwright-preview">
+    {playwrightCode && activeCode && <section className="playwright-preview">
       <header>
-        <strong>{playwrightCode.filename}</strong>
+        <strong>{activeCode.filename}</strong>
         <div className="actions">
+          {playwrightCode.sharedStepsFilename && <button type="button" className="secondary" disabled={busy} onClick={toggleSharedCode}>
+            {showShared ? 'Ver escenario' : 'Ver pasos compartidos'}
+          </button>}
           <button type="button" className="secondary" onClick={copyCode}>
             {copied ? 'Copiado' : 'Copiar al portapapeles'}
           </button>
           <button type="button" className="secondary" onClick={() => setPlaywrightCode(null)}>Cerrar</button>
         </div>
       </header>
-      <p className="muted">
-        Vocabulario reconocido: <code>navigate:</code>, <code>click:</code>, <code>fill:</code>, <code>press:</code>,
-        <code> expect-text:</code>, <code>expect-url:</code>. Los pasos fuera del vocabulario salen como <code>// TODO</code>.
-      </p>
-      <pre><code>{playwrightCode.code}</code></pre>
+      {playwrightCode.sharedStepsFilename && <p className="muted">
+        Guarda <code>{playwrightCode.sharedStepsFilename}</code> una sola vez en la carpeta de los archivos Playwright del proyecto.
+      </p>}
+      <pre><code>{activeCode.code}</code></pre>
     </section>}
   </form>;
 }

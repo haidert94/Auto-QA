@@ -7,6 +7,7 @@
 // Seguridad: todo string interpolado se escapa como literal JS para evitar
 // inyeccion de codigo. Nunca pegamos texto crudo del usuario en el spec.
 
+import { createHash } from 'node:crypto';
 import { COMPATIBILITY_SCENARIO_TAGS } from './scenario-tags';
 
 export type GeneratorStep = {
@@ -75,7 +76,55 @@ export function readGeneratorSteps(raw: unknown): GeneratorStep[] {
     }));
 }
 
-export function generateStepLines(step: GeneratorStep, indent: string): string[] {
+export function readAutomationSteps(raw: unknown): GeneratorStep[] {
+  return readGeneratorSteps(raw).map(step => {
+    if (typeof step.data === 'string') return step;
+    const match = step.action.match(/^\s*(fill|fill-label):\s*(.+?)\s+\|\s+(.*)$/i);
+    if (!match || !match[2].trim()) return step;
+    return { ...step, action: match[1].toLowerCase() + ': ' + match[2].trim(), data: match[3].trim() };
+  });
+}
+
+const SHARED_STEPS_MODULE = 'autoqa-steps';
+export const SHARED_STEPS_FILENAME = SHARED_STEPS_MODULE + '.ts';
+const SHARED_STEPS_IMPORT = `import * as steps from './${SHARED_STEPS_MODULE}';`;
+
+export const PLAYWRIGHT_OPERATIONS = [
+  'navigate', 'click', 'click-text', 'fill', 'fill-label', 'press', 'check', 'uncheck',
+  'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
+] as const;
+
+const SHARED_VERBS: ReadonlySet<string> = new Set(PLAYWRIGHT_OPERATIONS);
+
+function sharedAction(step: GeneratorStep) {
+  const parsed = splitAction(step.action);
+  if (!parsed || !SHARED_VERBS.has(parsed.verb)) return null;
+  const { verb, rest } = parsed;
+  const key = createHash('sha256').update(JSON.stringify([verb, rest])).digest('hex').slice(0, 16);
+  return { verb, rest, name: 'step_' + verb.replace(/-/g, '_') + '_' + key };
+}
+
+function requiresData(verb: string) {
+  return verb === 'fill' || verb === 'fill-label';
+}
+
+export function generateSharedSteps(steps: readonly GeneratorStep[]): string {
+  const actions = new Map<string, NonNullable<ReturnType<typeof sharedAction>>>();
+  for (const step of steps) {
+    const action = sharedAction(step);
+    if (action) actions.set(action.name, action);
+  }
+  const lines = ["import { expect, type Page } from '@playwright/test';", ''];
+  for (const { name, verb, rest } of [...actions.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+    const hasData = requiresData(verb);
+    lines.push('export async function ' + name + '(page: Page' + (hasData ? ', data: string' : '') + ') {');
+    lines.push(...renderAction(verb, rest, '  ', 'data'));
+    lines.push('}', '');
+  }
+  return lines.join('\n');
+}
+
+export function generateStepLines(step: GeneratorStep, indent: string, shared = false): string[] {
   const lines: string[] = [];
   lines.push(`${indent}// Paso ${step.ordinal}: ${step.action.split(/[\r\n\u2028\u2029]/)[0]}`);
   if (step.expected && step.expected.trim()) {
@@ -94,6 +143,22 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
   // .catch(() => {}) evita que un screenshot fallido (p.ej. p\u00e1gina en about:blank)
   // tire el test; la assert del paso ya decide pass/fail.
   const screenshotAfter = `${indent}await page.screenshot({ path: 'screenshots/step-${step.ordinal}-${verb.replace(/[^a-z0-9]+/gi, '_')}.png', fullPage: false }).catch(() => {});`;
+  const implementation = shared ? sharedAction(step) : null;
+  const data = "'" + escapeJsString(step.data ?? '') + "'";
+  if (implementation) {
+    const argument = requiresData(verb) ? ', ' + data : '';
+    lines.push(indent + 'await steps.' + implementation.name + '(page' + argument + ');');
+  } else {
+    const action = renderAction(verb, rest, indent, data);
+    if (action.length) lines.push(...action);
+    else lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
+  }
+  lines.push(screenshotAfter);
+  return lines;
+}
+
+function renderAction(verb: string, rest: string, indent: string, data: string): string[] {
+  const lines: string[] = [];
   const locator = "page.locator('" + escapeJsString(rest) + "')";
   switch (verb) {
     case 'navigate':
@@ -108,7 +173,7 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
       lines.push(`${indent}await page.getByText('${escapeJsString(rest)}', { exact: true }).click();`);
       break;
     case 'fill-label':
-      lines.push(`${indent}await page.getByLabel('${escapeJsString(rest)}', { exact: true }).fill('${escapeJsString(step.data ?? '')}');`);
+      lines.push(`${indent}await page.getByLabel('${escapeJsString(rest)}', { exact: true }).fill(${data});`);
       break;
     case 'check':
     case 'uncheck':
@@ -122,7 +187,7 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
       lines.push(`${indent}await expect(${locator}).toBeChecked();`);
       break;
     case 'fill':
-      lines.push(`${indent}await page.locator('${escapeJsString(rest)}').fill('${escapeJsString(step.data ?? '')}');`);
+      lines.push(`${indent}await page.locator('${escapeJsString(rest)}').fill(${data});`);
       break;
     case 'press':
     case 'key':
@@ -139,17 +204,15 @@ export function generateStepLines(step: GeneratorStep, indent: string): string[]
     case 'expect url':
       lines.push(`${indent}await expect(page).toHaveURL('${escapeJsString(rest)}');`);
       break;
-    default:
-      lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
   }
-  lines.push(screenshotAfter);
   return lines;
 }
 
-export function generateSpec(scenario: GeneratorScenario): string {
+export function generateSpec(scenario: GeneratorScenario, shared = false): string {
   const title = escapeJsString(scenario.title);
   const lines: string[] = [];
-  lines.push("import { expect, test } from '@playwright/test';");
+  lines.push(shared ? "import { test } from '@playwright/test';" : "import { expect, test } from '@playwright/test';");
+  if (shared) lines.push(SHARED_STEPS_IMPORT);
   lines.push('');
   lines.push(`// Escenario AutoQA ${scenario.id}`);
   if (scenario.expectedResult && scenario.expectedResult.trim()) {
@@ -161,10 +224,10 @@ export function generateSpec(scenario: GeneratorScenario): string {
     lines.push('  // TODO: define los pasos del escenario en AutoQA.');
   } else {
     for (const step of scenario.steps) {
-      lines.push(...generateStepLines(step, '  '));
+      lines.push(...generateStepLines(step, '  ', shared));
       lines.push('');
     }
-    if (scenario.expectedResult && scenario.expectedResult.trim()) {
+    if (!shared && scenario.expectedResult && scenario.expectedResult.trim()) {
       lines.push('  // Validacion final sugerida (completar si aplica):');
       lines.push(`  // await expect(page.getByText('${escapeJsString(scenario.expectedResult.trim())}')).toBeVisible();`);
     }
@@ -194,6 +257,7 @@ export type HarnessTarget = {
   browser?: string | null;
   // Nombre de un preset de Playwright: 'iPhone 13', 'Pixel 7', etc. Null = desktop.
   device?: string | null;
+  sharedSteps?: boolean;
 };
 
 // Lista blanca de dispositivos soportados; coincide con los presets estables
@@ -283,11 +347,9 @@ export function generateHarnessedSpec(
   const device = isSupportedDevice(target.device) ? (target.device ?? null) : null;
 
   const lines: string[] = [];
-  if (device) {
-    lines.push("import { devices, expect, test } from '@playwright/test';");
-  } else {
-    lines.push("import { expect, test } from '@playwright/test';");
-  }
+  const members = [device && 'devices', !target.sharedSteps && 'expect', 'test'].filter(Boolean);
+  lines.push("import { " + members.join(', ') + " } from '@playwright/test';");
+  if (target.sharedSteps) lines.push(SHARED_STEPS_IMPORT);
   lines.push('');
   if (device) {
     lines.push(`test.use({ ...devices['${escapeJsString(device)}'], baseURL: '${baseURL}' });`);
@@ -353,7 +415,7 @@ export function generateHarnessedSpec(
     lines.push('  // Escenario sin pasos: nada que ejecutar.');
   } else {
     for (const step of scenario.steps) {
-      lines.push(...generateStepLines(step, '  '));
+      lines.push(...generateStepLines(step, '  ', target.sharedSteps));
       lines.push('');
     }
   }

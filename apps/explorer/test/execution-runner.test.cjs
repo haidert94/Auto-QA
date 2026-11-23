@@ -12,6 +12,10 @@ for (const [targetBrowser, engine] of Object.entries({ CHROMIUM: chromium, FIREF
     const claim = {
       id: 'ejecucion', projectId: 'proyecto', scenarioId: 'caso', environmentId: 'qa',
       runKey: null, targetBrowser, targetDevice: null, targetProvider: 'LOCAL',
+      automation: targetBrowser === 'CHROMIUM' ? {
+        id: 'automatizacion', signature: 'version', title: 'Página vacía',
+        steps: [{ ordinal: 1, action: 'expect-hidden: #elemento-ausente' }],
+      } : undefined,
     };
     const run = { status: 'RUNNING', errorCode: null };
     let result;
