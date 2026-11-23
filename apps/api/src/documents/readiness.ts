@@ -1,7 +1,8 @@
-import type { Environment, FindingKind, Project, TestRole } from '@prisma/client';
+import type { Environment, FindingKind, Prisma, Project, TestRole } from '@prisma/client';
 import { matchesScope, parseBaseUrl, type ScopePath } from '../projects/scope';
 import { isRequirement } from './document-analysis';
-import { metadata, type DocumentRecord } from './document-records';
+import { analysisSelect, documentAnalysisSignature, metadata, readDocumentSnapshot, type DocumentRecord } from './document-records';
+import { IPA_AUTOMATION_THRESHOLD, MISSING_TRACEABLE_REQUIREMENT, UNLINKED_CRITERIA, UNLINKED_SCENARIOS } from './readiness-policy';
 
 type ReadinessProject = Project & { environments: Environment[]; roles: TestRole[] };
 
@@ -20,7 +21,36 @@ export type ReadinessFinding = {
   versionId: string;
   versionNumber: number;
   requirementId: string | null;
+  hasCriteria?: boolean;
 };
+
+type AnalysisFindingRow = Prisma.DocumentAnalysisGetPayload<{ select: typeof analysisSelect }>['findings'][number];
+
+export function toReadinessFinding(row: AnalysisFindingRow): ReadinessFinding {
+  return {
+    id: row.id, kind: row.kind, pendingConfirmation: row.pendingConfirmation,
+    text: row.text, locator: row.locator, documentId: row.version.document.id,
+    documentFilename: row.version.document.filename, versionId: row.version.id,
+    versionNumber: row.version.number, requirementId: row.requirementId,
+    hasCriteria: (row.requirement?._count.criteria ?? 0) > 0,
+  };
+}
+
+export function unlinkedScenarioCount(tx: Prisma.TransactionClient, projectId: string) {
+  return tx.testScenario.count({ where: { projectId, archivedAt: null, requirementId: null } });
+}
+
+export async function currentReadiness(tx: Prisma.TransactionClient, projectId: string) {
+  const [project, documents, unlinked] = await Promise.all([
+    tx.project.findUniqueOrThrow({ where: { id: projectId }, include: { environments: true, roles: true } }),
+    readDocumentSnapshot(tx, projectId),
+    unlinkedScenarioCount(tx, projectId),
+  ]);
+  const analysis = await tx.documentAnalysis.findUnique({
+    where: { projectId_signature: { projectId, signature: documentAnalysisSignature(documents) } }, select: analysisSelect,
+  });
+  return { analysis, ipa: readiness(project, documents, (analysis?.findings ?? []).map(toReadinessFinding), unlinked) };
+}
 
 export type Anchor = {
   kind: 'environment' | 'document' | 'version' | 'finding' | 'requirement';
@@ -66,7 +96,7 @@ function envAnchor(env: Environment): Anchor {
   return { kind: 'environment', id: env.id, label: envLabel(env) };
 }
 
-export function readiness(project: ReadinessProject, documents: DocumentRecord[], findings: ReadinessFinding[]) {
+export function readiness(project: ReadinessProject, documents: DocumentRecord[], findings: ReadinessFinding[], unlinkedScenarios = 0) {
   const environments = project.environments;
   const hasEnvironments = environments.length > 0;
   const registered = hasEnvironments && environments.every(env => env.type && env.baseUrl) && !!(project.ownerId || project.ownerLabel);
@@ -88,6 +118,18 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
   const declared = docStates.filter(doc => doc.state === 'DECLARED').length;
   const verifiable = findings.filter(finding => isRequirement(finding.kind) && !finding.pendingConfirmation).length;
   const ambiguous = findings.filter(finding => isRequirement(finding.kind) && finding.pendingConfirmation).length;
+  const parents = new Set(findings.filter(finding => isRequirement(finding.kind)).map(finding => finding.requirementId));
+  const orphanCriteria = findings.filter(finding => finding.kind === 'ACCEPTANCE_CRITERION'
+    && (!finding.requirementId || !parents.has(finding.requirementId)));
+  const linkedCriteria = new Set(findings.filter(finding => finding.kind === 'ACCEPTANCE_CRITERION'
+    && !finding.pendingConfirmation && finding.requirementId).map(finding => finding.requirementId));
+  const traceable = findings.some(finding => isRequirement(finding.kind) && !finding.pendingConfirmation
+    && finding.requirementId && (finding.hasCriteria || linkedCriteria.has(finding.requirementId)));
+  const traceabilityBlockers = [
+    ...(orphanCriteria.length ? [UNLINKED_CRITERIA] : []),
+    ...(!traceable && !orphanCriteria.length ? [MISSING_TRACEABLE_REQUIREMENT] : []),
+    ...(unlinkedScenarios ? [UNLINKED_SCENARIOS] : []),
+  ];
 
   // Anclas para trazabilidad: documentos con problemas, requisitos ambiguos,
   // entornos sin alcance definido. No reemplazan los textos available/missing
@@ -146,11 +188,14 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
       ],
       missing: [...(uploaded ? [] : ['Adjunta documentación funcional.']),
         ...(readable ? [] : ['Analiza los archivos y aporta versiones con texto legible.']),
-        ...(verifiable ? [] : ['Vincula criterios de aceptación explícitos con sus requisitos.']),
+        ...traceabilityBlockers,
         ...(validated ? [] : ['Revisa las fuentes y valida al menos un documento procesado.']),
         ...(ambiguous ? ['Aclara los requisitos marcados como pendientes.'] : [])],
-      anchors: [...docAnchors, ...ambiguousAnchors],
-      blocking: false,
+      anchors: [...docAnchors, ...ambiguousAnchors, ...orphanCriteria.slice(0, 50).map((finding): Anchor => ({
+        kind: 'finding', id: finding.id, label: finding.text.slice(0, 140), locator: finding.locator,
+        documentId: finding.documentId, versionNumber: finding.versionNumber,
+      }))],
+      blocking: traceabilityBlockers.length > 0,
     },
     {
       criterion: 'Accesos y permisos',
@@ -177,15 +222,16 @@ export function readiness(project: ReadinessProject, documents: DocumentRecord[]
 
   // Separar bloqueos (fuerzan BLOCKED) de recomendaciones (bajan puntaje).
   const archived = project.status === 'ARCHIVED';
-  const blockers: string[] = [];
+  const blockers: string[] = [...traceabilityBlockers];
   if (archived) blockers.push('El proyecto está archivado.');
   if (!authorized) blockers.push('Faltan autorizaciones de entornos.');
   if (!scopeReady) blockers.push('El alcance de los entornos no está completo.');
   const hints = signals.flatMap(signal => signal.blocking ? [] : signal.missing);
 
   const denominator = signals.reduce((total, signal) => total + signal.weight, 0);
-  const score = Math.round(100 * signals.reduce((total, signal) => total + signal.points, 0) / denominator);
-  const status = !authorized || !scopeReady || archived ? 'BLOCKED' : 'ASSESSED';
+  const structuralScore = Math.round(100 * signals.reduce((total, signal) => total + signal.points, 0) / denominator);
+  const score = traceabilityBlockers.length ? Math.min(structuralScore, IPA_AUTOMATION_THRESHOLD - 1) : structuralScore;
+  const status = blockers.length ? 'BLOCKED' : 'ASSESSED';
 
   return {
     score, status, denominator, signals, verifiable, ambiguous,

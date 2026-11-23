@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { ArrowRight, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
-import type { ScenarioListItem } from './scenario-card';
+import type { RequirementOption, ScenarioListItem } from './scenario-card';
 import { scenarioRunEnvironmentError, type Project } from '../onboarding';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
@@ -20,10 +20,9 @@ import { normalizeStepText } from './scenario-insights';
 import { isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioWorkspace } from './scenario-workspace';
 
-type RequirementOption = { id: string; title: string; externalKey: string | null };
-
 type AutomationSummary = { id: string; status: string; stage: string | null; errorCode?: string | null; createdAt: string };
 const generationErrors: Record<string, string> = {
+  'ipa-traceability-blocked': 'La generación está bloqueada por el IPA. Revisa la trazabilidad y los pendientes en Datos.',
   'document-analysis-changed': 'El análisis documental cambió. Vuelve a confirmar la generación.',
   'review-missing': 'Explorer no pudo usar el análisis de la solicitud. Verifica que Explorer y la aplicación estén en la misma versión.',
   'project-missing': 'El proyecto ya no está disponible para generar casos.',
@@ -63,6 +62,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [suggestions, setSuggestions] = useState<Array<{ title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }> | null>(null);
   const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
   const [ipaScore, setIpaScore] = useState<number | null>(null);
+  const [ipaBlockers, setIpaBlockers] = useState<string[]>([]);
   const [ipaStatus, setIpaStatus] = useState<'ASSESSED' | 'BLOCKED' | null>(null);
   const [showGenerationConfirmation, setShowGenerationConfirmation] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -140,6 +140,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   // habilitado. No bloqueamos el panel si falla la consulta: en ese caso el
   // CTA queda en gris explicándolo.
   useEffect(() => {
+    if (!header?.active) return;
     let active = true;
     (async () => {
       try {
@@ -150,11 +151,12 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         if (!active) return;
         const ipa = payload?.ipa ?? payload;
         if (typeof ipa?.score === 'number') setIpaScore(ipa.score);
+        setIpaBlockers(Array.isArray(ipa?.blockers) ? ipa.blockers.filter((blocker: unknown) => typeof blocker === 'string') : []);
         if (ipa?.status === 'ASSESSED' || ipa?.status === 'BLOCKED') setIpaStatus(ipa.status);
       } catch {/* CTA queda deshabilitado con mensaje explicando */}
     })();
     return () => { active = false; };
-  }, [projectId]);
+  }, [projectId, project.revision, header?.active, items]);
 
   async function selectTypesOnJob(jobId: string, types: TestTypeCode[]) {
     const response = await fetch(`/api/projects/${projectId}/automation/${jobId}/select`, {
@@ -316,6 +318,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     <GenerateCta
       score={ipaScore}
       status={ipaStatus}
+      blockers={ipaBlockers}
       projectStatus={project.status}
       canGenerate={canGenerate}
       threshold={IPA_AUTOMATION_THRESHOLD}
@@ -329,8 +332,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {showForm && <form onSubmit={create} className="scenario-form scenario-create-form" aria-label="Nuevo escenario manual">
       <header><h2>Nuevo escenario manual</h2><p>Registra únicamente pasos y resultados definidos para tu aplicación.</p></header>
       <label>Título<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={300} autoFocus /></label>
-      <label>Requisito asociado (opcional)<select value={requirementId} onChange={event => setRequirementId(event.target.value)}>
-        <option value="">— Sin requisito —</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>
+      <label>Historia o requisito asociado<select value={requirementId} required onChange={event => setRequirementId(event.target.value)}>
+        <option value="">Selecciona una historia o requisito</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>
           {requirement.externalKey ? `[${requirement.externalKey}] ` : ''}{requirement.title}</option>)}
       </select></label>
       <label>Resultado esperado (opcional)<textarea value={expectedResult} onChange={event => setExpectedResult(event.target.value)} maxLength={2000} rows={2} /></label>
@@ -354,7 +357,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {listError ? <div className="scenario-message" role="alert"><p className="error">{listError}</p>
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
-      : <ScenarioWorkspace key={total ? 'active' : 'empty'} projectId={projectId} items={[...items, ...qualityItems]} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
+      : <ScenarioWorkspace key={total ? 'active' : 'empty'} projectId={projectId} items={[...items, ...qualityItems]} requirements={requirements} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
         hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
         onDelete={canDelete ? deleteScenario : undefined} deletionDisabled={deletionDisabled}
         onChange={updated => setItems(current => current?.map(item => item.id !== updated.id ? item : {
@@ -368,9 +371,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   </section>;
 }
 
-function GenerateCta({ score, status, projectStatus, canGenerate, threshold, generating, onGenerate }: {
+function GenerateCta({ score, status, blockers, projectStatus, canGenerate, threshold, generating, onGenerate }: {
   score: number | null;
   status: 'ASSESSED' | 'BLOCKED' | null;
+  blockers: string[];
   projectStatus: Project['status'];
   canGenerate: boolean;
   threshold: number;
@@ -380,7 +384,7 @@ function GenerateCta({ score, status, projectStatus, canGenerate, threshold, gen
   const reasons: string[] = [];
   if (!canGenerate) reasons.push('Tu rol actual no permite generar escenarios.');
   if (projectStatus !== 'READY') reasons.push('El proyecto debe estar en estado READY (completar el registro en Datos).');
-  if (status === 'BLOCKED') reasons.push('Hay bloqueos de autorización o alcance por resolver.');
+  if (status === 'BLOCKED') reasons.push(...(blockers.length ? blockers : ['Hay bloqueos por resolver en Datos.']));
   if (score === null) reasons.push('Todavía no hay una evaluación IPA consolidada.');
   else if (score < threshold) reasons.push(`Preparación actual: ${score}/100. Hace falta llegar al menos a ${threshold} aclarando los pendientes en Datos.`);
   const disabled = reasons.length > 0 || generating;

@@ -87,11 +87,17 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
   return context.join('\n') || '(sin historias ni requisitos analizados)';
 }
 
+export function linkedRequirementId(ctx: AgentContext, id: unknown) {
+  return ctx.requirements?.find(requirement => requirement.id === id && requirement.criteria.length > 0)?.id;
+}
+
+export const LINKED_REQUIREMENT_INSTRUCTION = 'Cada caso debe incluir requirementId de la lista. Usa solo historias o requisitos que sustenten el caso. Devuelve una lista vacía si no corresponde ninguno.';
+
 export const MANUAL_SCENARIO_INSTRUCTION = [
   'Para cada caso indica "mode": "playwright" si sus verificaciones se pueden expresar con el vocabulario indicado.',
   'Añade hasta 2 casos con "mode": "manual" si el análisis identifica verificaciones que requieren criterio humano, un dispositivo físico o una acción externa al navegador.',
   'Para el modo manual escribe cada "action" en español natural e incluye un "expectedResult" observable. Añade un paso de comprobación manual con su resultado observable en "expected".',
-  'Genera casos manuales solo si el análisis aporta una base concreta. Usa "requirementId" si puedes asociar el escenario a uno de los requisitos analizados con identificador.',
+  'Genera casos manuales sustentados en la historia o requisito indicado por requirementId.',
 ].join('\n');
 
 export const MANUAL_ONLY_INSTRUCTION = [

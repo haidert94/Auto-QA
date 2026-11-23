@@ -10,6 +10,8 @@ import { saveScenarioSteps, scenarioStepDrafts, ScenarioStepsEditor, type Scenar
 
 export type ScenarioStep = { ordinal: number; action: string; data?: string | null; expected?: string | null };
 
+export type RequirementOption = { id: string; title: string; externalKey: string | null };
+
 export type ScenarioListItem = {
   id: string;
   title: string;
@@ -28,10 +30,11 @@ export type ScenarioListItem = {
 // representa flujo básico o alterno, no ambos a la vez.
 const FLOW_TAGS = ['@flujoBasico', '@flujoAlterno'] as const;
 
-export function ScenarioCard({ projectId, scenario, scenarios, onChange, initialEditing = false, onEditComplete, role }: {
+export function ScenarioCard({ projectId, scenario, scenarios, requirements, onChange, initialEditing = false, onEditComplete, role }: {
   projectId: string;
   scenario: ScenarioListItem;
   scenarios: ReadonlyArray<ScenarioStepSource>;
+  requirements: ReadonlyArray<RequirementOption>;
   onChange: (updated: ScenarioListItem) => void;
   initialEditing?: boolean;
   onEditComplete?: () => void;
@@ -40,6 +43,7 @@ export function ScenarioCard({ projectId, scenario, scenarios, onChange, initial
   const canEdit = can(role, 'scenario.update');
   const [editing, setEditing] = useState(initialEditing && canEdit);
   const [title, setTitle] = useState(scenario.title);
+  const [requirementId, setRequirementId] = useState(scenario.requirementId ?? '');
   const [expectedResult, setExpectedResult] = useState(scenario.expectedResult ?? '');
   const [tags, setTags] = useState<string[]>(scenario.tags ?? []);
   const [customTag, setCustomTag] = useState('');
@@ -49,6 +53,7 @@ export function ScenarioCard({ projectId, scenario, scenarios, onChange, initial
 
   function reset() {
     setTitle(scenario.title);
+    setRequirementId(scenario.requirementId ?? '');
     setExpectedResult(scenario.expectedResult ?? '');
     setTags(scenario.tags ?? []);
     setCustomTag('');
@@ -90,6 +95,7 @@ export function ScenarioCard({ projectId, scenario, scenarios, onChange, initial
   async function save() {
     setError('');
     if (!title.trim()) { setError('El título no puede estar vacío.'); return; }
+    if (!requirementId) { setError('Asocia el escenario a una historia de usuario o requisito.'); return; }
     const stepPayload = saveScenarioSteps(steps);
     if (!stepPayload.steps) { setError(stepPayload.error); return; }
     setBusy(true);
@@ -98,6 +104,7 @@ export function ScenarioCard({ projectId, scenario, scenarios, onChange, initial
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
+          requirementId,
           expectedResult: expectedResult.trim() || null,
           tags,
           steps: stepPayload.steps,
@@ -165,6 +172,16 @@ export function ScenarioCard({ projectId, scenario, scenarios, onChange, initial
       <label className="scenario-edit-field">
         <span>Título</span>
         <input value={title} onChange={e => setTitle(e.target.value)} maxLength={300} required/>
+      </label>
+
+      <label className="scenario-edit-field">
+        <span>Historia o requisito asociado</span>
+        <select value={requirementId} onChange={event => setRequirementId(event.target.value)} required>
+          <option value="">Selecciona una historia o requisito</option>
+          {requirements.map(requirement => <option key={requirement.id} value={requirement.id}>
+            {requirement.externalKey ? `[${requirement.externalKey}] ` : ''}{requirement.title}
+          </option>)}
+        </select>
       </label>
 
       <fieldset className="scenario-edit-tags">

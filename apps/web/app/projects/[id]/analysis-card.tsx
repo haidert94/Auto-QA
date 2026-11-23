@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { MISSING_TRACEABLE_REQUIREMENT, UNLINKED_CRITERIA, UNLINKED_SCENARIOS } from '../../../../api/src/documents/readiness-policy';
 import { documentRequest, type Report, type SavedDocument } from '../document-client';
 
 export type AnalysisDialogTarget = 'environments' | 'documents' | 'roles';
@@ -48,9 +49,20 @@ const HELP_GUIDES: Record<string, HelpGuide> = {
     ],
     action: { label: 'Abrir documentos', target: 'documents' },
   },
-  'Vincula criterios de aceptación explícitos con sus requisitos.': {
+  [MISSING_TRACEABLE_REQUIREMENT]: {
+    title: 'Faltan criterios vinculados',
+    description: 'El IPA necesita al menos una historia o requisito confirmado con un criterio de aceptación vinculado.',
+    steps: ['Incluye un resultado observable y vincúlalo al identificador de la historia o requisito.', 'Carga la versión corregida y pulsa Analizar documentación.'],
+    action: { label: 'Abrir documentos', target: 'documents' },
+  },
+  [UNLINKED_SCENARIOS]: {
+    title: 'Escenarios sin historia o requisito',
+    description: 'Los escenarios activos necesitan una historia de usuario o requisito asociado para superar el umbral.',
+    steps: ['Abre Escenarios, edita los casos sin requisito asociado y selecciona la historia o requisito correspondiente.'],
+  },
+  [UNLINKED_CRITERIA]: {
     title: 'Criterios sin requisito padre',
-    description: 'Hay criterios de aceptación detectados pero el agente no pudo vincularlos a su historia o requisito superior. Sin ese vínculo, los escenarios generados no sabrán qué probar.',
+    description: 'Hay criterios de aceptación detectados pero el agente no pudo vincularlos a su historia o requisito superior. El IPA queda bloqueado hasta que todos esos criterios tengan un vínculo.',
     steps: [
       'En el documento fuente, usá una referencia explícita al requisito: "[HU-1]", "Criterio de HU-1", "RF-01 · Criterio 1", etc.',
       'Re-subí el documento desde el modal de documentos para que la IA pueda reconstruir la trazabilidad.',

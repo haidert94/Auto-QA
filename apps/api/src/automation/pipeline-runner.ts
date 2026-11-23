@@ -14,7 +14,9 @@
 import type { PrismaClient } from '@prisma/client';
 import { convertDocument, needsAiFallback, type ConvertedDocument } from './document-converter';
 import { buildReviewPrompt, parseReviewResponse, type ReviewResult } from './review-prompt';
-import { currentScenarioRequirements, documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
+import { currentScenarioRequirements } from '../documents/document-records';
+import { currentReadiness } from '../documents/readiness';
+import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { readGenerationSources, type DocumentGenerationSources } from './document-generation';
 import { runSelectedAgents } from './agents';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
@@ -155,30 +157,25 @@ async function runGenerationPhase(
   const previous = await prisma.automationJob.findUnique({
     where: { id: claim.id }, select: { result: true },
   });
-  const analysis = inputs.documentTestTypesConfirmed
-    ? await currentScenarioRequirements(prisma, claim.projectId, true)
-    : null;
-  if (inputs.documentTestTypesConfirmed && (!analysis?.requirements.length
-    || (inputs.documentAnalysisId && analysis.id !== inputs.documentAnalysisId))) {
+  const { ipa, analysis: current } = await currentReadiness(prisma, claim.projectId);
+  if (!current || ipa.status !== 'ASSESSED' || ipa.score < IPA_AUTOMATION_THRESHOLD) {
+    await fail(prisma, claim, 'ipa-traceability-blocked');
+    return;
+  }
+  const analysis = await currentScenarioRequirements(prisma, claim.projectId, true);
+  if (!analysis?.requirements.length || analysis.id !== current.id
+    || (inputs.documentAnalysisId && analysis.id !== inputs.documentAnalysisId)) {
     await fail(prisma, claim, 'document-analysis-changed');
     return;
   }
 
-  // Review fallback: si hay análisis, usamos un review vacío porque los
-  // requirements ya traen el contexto; si no, usamos el del paso previo; si
-  // tampoco hay, generamos con stories vacías para no abortar por 'review-
-  // missing' cuando el analista pasó por el flujo nuevo sin fase A.
-  const review = analysis ? { stories: [] }
+  const review = inputs.documentTestTypesConfirmed ? { stories: [] }
     : (previous?.result as { review?: ReviewResult } | null)?.review ?? { stories: [] };
-
-  const prioritized = analysis?.requirements.map(requirement => ({
+  const requirements = analysis.requirements.map(requirement => ({
     ...requirement,
     documentVersionIds: requirement.sources.map(source => source.versionId),
     clarified: requirement.sources.some(source => !!source.clarification),
   })).sort((a, b) => Number(b.clarified) - Number(a.clarified));
-  const requirements = prioritized ?? (selection.some(type => ['functional_web', 'mobile_emulated', 'manual'].includes(type))
-    ? await readScenarioRequirements(prisma, claim.projectId)
-    : []);
   const environmentId = project.environments[0]?.id ?? null;
   const outcomes = await runSelectedAgents(selection, {
     projectId: claim.projectId,
@@ -213,19 +210,6 @@ async function runGenerationPhase(
     },
   });
   log('INFO', 'generated · ' + outcomes.map(o => o.type + '=' + o.created).join(' '));
-}
-
-async function readScenarioRequirements(prisma: PrismaClient, projectId: string) {
-  const snapshot = await readDocumentSnapshot(prisma, projectId);
-  if (!snapshot.length) return [];
-  const analysis = await prisma.documentAnalysis.findUnique({
-    where: { projectId_signature: { projectId, signature: documentAnalysisSignature(snapshot) } },
-    select: { requirements: {
-      take: 20, orderBy: { id: 'asc' },
-      select: { id: true, title: true, criteria: { take: 4, orderBy: { id: 'asc' }, select: { text: true } } },
-    } },
-  });
-  return analysis?.requirements ?? [];
 }
 
 async function setStage(prisma: PrismaClient, jobId: string, stage: string): Promise<void> {

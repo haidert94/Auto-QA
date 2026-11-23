@@ -197,9 +197,8 @@ export class ScenariosService {
     await this.ensureProject(projectId, workspace);
     const title = dto.title.trim();
     if (!title) throw new BadRequestException('El título del escenario no puede estar vacío.');
-    if (dto.requirementId) {
-      await this.ensureRequirementInProject(projectId, dto.requirementId);
-    }
+    if (!dto.requirementId) throw new BadRequestException('Asocia el escenario a una historia de usuario o requisito.');
+    await this.ensureRequirementInProject(projectId, dto.requirementId);
     return this.prisma.testScenario.create({
       // tags está en el schema pero el cliente Prisma puede no haberse
       // regenerado en este entorno; forzamos el cast para que compile y la
@@ -207,7 +206,7 @@ export class ScenariosService {
       data: {
         projectId,
         title,
-        requirementId: dto.requirementId ?? null,
+        requirementId: dto.requirementId,
         expectedResult: dto.expectedResult?.trim() || null,
         tags: normalizeTags(dto.tags),
         steps: normalizeSteps(dto.steps),
@@ -227,12 +226,9 @@ export class ScenariosService {
       data.title = title;
     }
     if (dto.requirementId !== undefined) {
-      if (dto.requirementId === null) {
-        data.requirement = { disconnect: true };
-      } else {
-        await this.ensureRequirementInProject(projectId, dto.requirementId);
-        data.requirement = { connect: { id: dto.requirementId } };
-      }
+      if (dto.requirementId === null) throw new BadRequestException('Asocia el escenario a una historia de usuario o requisito.');
+      await this.ensureRequirementInProject(projectId, dto.requirementId);
+      data.requirement = { connect: { id: dto.requirementId } };
     }
     if (dto.expectedResult !== undefined) {
       data.expectedResult = dto.expectedResult === null ? null : (dto.expectedResult.trim() || null);
@@ -249,7 +245,8 @@ export class ScenariosService {
       return await this.prisma.testScenario.update({
         where: { id: scenarioId, projectId, archivedAt: null, requirementReviewRequiredAt: reviewedAt },
         data,
-        select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true, requirementReviewRequiredAt: true },
+        select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true, requirementReviewRequiredAt: true,
+          requirement: { select: { title: true, externalKey: true } } },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {

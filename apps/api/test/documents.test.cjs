@@ -324,10 +324,50 @@ test('analyzes, reviews, versions and removes documents with their source-derive
   assert.equal((await read(path)).data.length, 1);
 });
 
+async function authorizeTestProject(projectId) {
+  await prisma.project.update({ where: { id: projectId }, data: { status: 'READY', ownerLabel: 'QA' } });
+  return prisma.environment.create({ data: {
+    projectId, type: 'QA', accessMode: 'PUBLIC', baseUrl: 'https://example.test', allowedHosts: ['example.test'],
+    allowedPaths: [{ host: 'example.test', path: '/' }], authorizationConfirmed: true, authorizedAt: new Date(),
+  } });
+}
+
+test('un criterio sin historia bloquea la generación desde la API aun con una historia verificada', async () => {
+  const path = await project('Trazabilidad obligatoria');
+  const projectId = path.split('/')[1];
+  await authorizeTestProject(projectId);
+  const text = [
+    'HU-01: Como usuario quiero abrir el catálogo.',
+    'Criterio de aceptación: [HU-01] Se muestra el título del catálogo.',
+  ];
+  const sendDocs = lines => upload(path, [['historias.md', lines.join('\n')]], 'REQUIREMENTS', authorized, ['functional_web']);
+  const runAnalysis = () => request(path + '/analyze', { method: 'POST', headers: authorized });
+  const createCases = () => request('/' + projectId + '/automation', {
+    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.test', documentTestTypes: ['functional_web'] }),
+  });
+  const bad = await sendDocs([...text, 'Criterio de aceptación: [HU-999] Se muestra un mensaje.']);
+  assert.equal(bad.status, 201);
+  const blocked = await runAnalysis();
+  assert.equal(blocked.status, 200);
+  assert.equal(blocked.data.ipa.status, 'BLOCKED');
+  assert.equal(blocked.data.ipa.score, 69);
+  assert.equal((await createCases()).status, 409);
+
+  const good = await sendDocs(text);
+  assert.equal(good.status, 201);
+  const ready = await runAnalysis();
+  assert.equal(ready.status, 200);
+  assert.equal(ready.data.ipa.status, 'ASSESSED');
+  assert.ok(ready.data.ipa.score >= 70);
+  assert.equal((await createCases()).status, 201);
+});
+
 test('al agregar un documento de Performance se excluyen los tipos ya generados', async () => {
   const path = await project('Generación de documentación complementaria');
   const projectId = path.split('/')[1];
   const base = '/' + projectId + '/automation';
+  const environment = await authorizeTestProject(projectId);
   const uploadWeb = await upload(path, [['web.md', [
     'RF-1: Mostrar el catálogo.',
     'Criterio de aceptación: [RF-1] Aparece el título del catálogo.',
@@ -384,9 +424,8 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
     performance: [{ versionId: uploadPerf.data[0].currentVersion.id, clarifiedAt: null }],
   });
   assert.equal(saved.stage, 'selection-done');
-  const environment = await prisma.environment.create({ data: {
-    projectId, baseUrl: 'https://example.test', allowedHosts: ['example.test'], authorizationConfirmed: true,
-  } });
+  const perfRequirement = second.data.analysis.findings.find(item => item.kind === 'NON_FUNCTIONAL' && item.requirementId);
+  assert.ok(perfRequirement);
   const { runAutomation } = require('../dist/automation/pipeline-runner');
   const prompts = [];
   await runAutomation(prisma, {
@@ -394,7 +433,10 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   }, {
     async dispatch({ prompt }) {
       prompts.push(prompt);
-      return { model: 'test', text: '{"audits":[{"url":"https://example.test/catalogo"}],"loadTests":[]}' };
+      return { model: 'test', text: JSON.stringify({ audits: [
+        { url: 'https://example.test/catalogo', requirementId: perfRequirement.requirementId },
+        { url: 'https://example.test/sin-vinculo' },
+      ], loadTests: [] }) };
     },
   });
   const finished = await read(base + '/' + saved.id);
@@ -406,6 +448,8 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   assert.match(prompts[0], /menos de dos segundos/);
   assert.doesNotMatch(prompts[0], /Mostrar el catálogo/);
   assert.equal(await prisma.performanceAudit.count({ where: { projectId, environmentId: environment.id } }), 1);
+  const audit = await prisma.performanceAudit.findFirstOrThrow({ where: { projectId } });
+  assert.equal(audit.requirementId, perfRequirement.requirementId);
   assert.equal(await prisma.testScenario.count({ where: { projectId } }), 1);
   assert.equal((await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } })).requirementId, original.requirementId);
 });

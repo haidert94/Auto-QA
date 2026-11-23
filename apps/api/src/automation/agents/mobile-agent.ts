@@ -4,7 +4,7 @@
 
 import type { Prisma } from '@prisma/client';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -14,7 +14,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     '',
     'Historias y requisitos analizados:',
     scenarioAnalysisContext(ctx),
-    ctx.documentTestTypesConfirmed ? 'Cada caso debe incluir requirementId con uno de los identificadores listados. Genera solo casos sustentados por esos requisitos; si no aplica, devuelve una lista vacía.' : '',
+    LINKED_REQUIREMENT_INSTRUCTION,
     '',
     'Enfócate en: menús hamburguesa, formularios, scroll, botones grandes, gestos táctiles.',
     'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
@@ -61,8 +61,8 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     if (manual && !expectedResult?.trim()) { errors.push('mobile-' + index + '-sin-resultado-esperado'); continue; }
     const hasAssertion = manual ? steps.some(step => step.expected?.trim()) : hasPlaywrightAssertion(steps);
     if (!hasAssertion) { errors.push('mobile-' + index + '-sin-asercion'); continue; }
-    const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
-    if (ctx.documentTestTypesConfirmed && !requirementId) {
+    const requirementId = linkedRequirementId(ctx, s.requirementId);
+    if (!requirementId) {
       errors.push('scenario-' + index + '-sin-requisito-verificable');
       continue;
     }

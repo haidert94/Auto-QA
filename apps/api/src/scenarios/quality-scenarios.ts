@@ -41,7 +41,8 @@ const runStatuses: Record<RunStatus, Status> = {
   CANCELED: { label: 'Cancelada', tone: 'unknown' },
 };
 
-const runFields = { ...qualityAutomationSource, id: true, status: true, startedAt: true, completedAt: true } as const;
+const requirementFields = { requirementId: true, requirement: { select: { title: true, externalKey: true } } } as const;
+const runFields = { ...qualityAutomationSource, ...requirementFields, id: true, status: true, startedAt: true, completedAt: true } as const;
 
 function publicTarget(raw: string) {
   try {
@@ -82,13 +83,15 @@ function runInfo(run: Run) {
 
 function scenario(
   kind: Kind, title: string, target: string, context: string, action: string, expectedResult: string,
+  row: { requirementId: string | null; requirement: { title: string; externalKey: string | null } | null },
   origin: Omit<QualityScenarioOrigin, 'label' | 'kind'>,
 ) {
   return {
     id: kind + ':' + origin.resourceId,
     title,
     tags: kinds[kind].tags,
-    requirementId: null,
+    requirementId: row.requirementId,
+    requirement: row.requirement,
     expectedResult,
     steps: [
       { ordinal: 1, action: 'Dado ' + context + ' para ' + target + '.' },
@@ -105,7 +108,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
     db.monitor.findMany({
       where,
       select: {
-        ...qualityAutomationSource, id: true, name: true, active: true, intervalMinutes: true, timeoutMs: true,
+        ...qualityAutomationSource, ...requirementFields, id: true, name: true, active: true, intervalMinutes: true, timeoutMs: true,
         lastCheckedAt: true, lastStatus: true, lastLatencyMs: true, lastHttpStatus: true,
       },
     }),
@@ -129,7 +132,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
         : { label: 'Sin comprobaciones', tone: 'unknown' };
       return scenario('availability', row.name, displayTarget(row.url), 'que hay un monitor configurado',
         'AutoQA comprueba la disponibilidad cada ' + row.intervalMinutes + ' min',
-        'El servicio responde con un código HTTP entre 200 y 399 dentro de ' + row.timeoutMs + ' ms.', {
+        'El servicio responde con un código HTTP entre 200 y 399 dentro de ' + row.timeoutMs + ' ms.', row, {
           resourceId: row.id, automation: qualityAutomationStatus('availability', row),
           executionConfig: executionConfig(row, [
             { label: 'Comprobación', value: 'HTTP GET · códigos 200 a 399' },
@@ -147,7 +150,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
       const target = displayTarget(row.url);
       return scenario('lighthouse', 'Medir el rendimiento de ' + target, target, 'que se preparó una auditoría Lighthouse',
         'Lighthouse mide la carga de la página',
-        'Se registra la puntuación de rendimiento y las métricas de carga disponibles.', {
+        'Se registra la puntuación de rendimiento y las métricas de carga disponibles.', row, {
           resourceId: row.id, automation: qualityAutomationStatus('lighthouse', row),
           executionConfig: executionConfig(row, [
             { label: 'Navegador', value: 'Chrome' },
@@ -166,7 +169,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
       ].filter(Boolean).join(' · ');
       return scenario('load', row.name, displayTarget(row.url), 'que se preparó una prueba de carga',
         'la prueba aplica el perfil de carga configurado',
-        'Se registran la cantidad de solicitudes, los tiempos de respuesta y la proporción de errores.', {
+        'Se registran la cantidad de solicitudes, los tiempos de respuesta y la proporción de errores.', row, {
           resourceId: row.id, automation: qualityAutomationStatus('load', row),
           executionConfig: executionConfig(row, [
             { label: 'Método', value: 'HTTP GET' },
@@ -187,7 +190,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
           + (row.criticalCount === null ? '.' : ' · ' + row.criticalCount + (row.criticalCount === 1 ? ' crítico.' : ' críticos.'));
       return scenario('ux', 'Revisar usabilidad y accesibilidad de ' + target, target, 'que se preparó una auditoría de experiencia de usuario',
         'se revisa la página según los criterios de usabilidad y accesibilidad de la auditoría',
-        'El informe registra los hallazgos detectados y su severidad.', {
+        'El informe registra los hallazgos detectados y su severidad.', row, {
           resourceId: row.id, automation: qualityAutomationStatus('ux', row),
           executionConfig: executionConfig(row, [
             { label: 'Navegador', value: 'Chromium con Playwright' },

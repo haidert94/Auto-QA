@@ -129,3 +129,21 @@ test('readiness: recomendations conserva compat con la salida anterior', () => {
   assert.ok(Array.isArray(ipa.recommendations));
   assert.ok(ipa.recommendations.some(r => /autorización/i.test(r)));
 });
+
+test('readiness: la trazabilidad bloquea el umbral aunque el puntaje estructural sea suficiente', () => {
+  const project = baseProject();
+  const docs = [{ id: 'doc1', filename: 'spec.pdf', versions: [{ id: 'v1', number: 1, uploadedAt: new Date(),
+    processedAt: new Date(), validatedAt: new Date(), hasText: true }] }];
+  const story = finding({ kind: 'USER_STORY', hasCriteria: true });
+  const criterion = finding({ id: 'f-criterion', kind: 'ACCEPTANCE_CRITERION', requirementId: null });
+  const blocked = readiness(project, docs, [story, criterion]);
+  assert.equal(blocked.status, 'BLOCKED');
+  assert.equal(blocked.score, 69);
+  const signal = blocked.signals.find(entry => entry.criterion === 'Documentación funcional');
+  assert.equal(signal.blocking, true);
+  assert.ok(signal.anchors.some(anchor => anchor.id === criterion.id));
+  assert.equal(readiness(project, docs, [story], 1).score, 69);
+  const ready = readiness(project, docs, [story, { ...criterion, requirementId: story.requirementId }]);
+  assert.equal(ready.status, 'ASSESSED');
+  assert.equal(ready.score, 100);
+});

@@ -64,6 +64,8 @@ const pendingFinding = {
 let clarification = null;
 let docsFail = false;
 let ipaFail = false;
+let ipaTraceabilityBlocked = false;
+let checkScenarioTraceability = false;
 let saveCount = 0;
 let logoutCalled = false;
 let scenariosFail = false;
@@ -286,7 +288,9 @@ const api = createServer(async (request, response) => {
     if (scenario && scenarioPath === scenario.id && request.method === 'GET') return send(scenario);
     if (scenario && scenarioPath === scenario.id && request.method === 'PATCH') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
-      Object.assign(scenario, JSON.parse(Buffer.concat(chunks).toString())); return send(scenario);
+      Object.assign(scenario, JSON.parse(Buffer.concat(chunks).toString()));
+      scenario.requirement = scenario.requirementId === requirement.id ? requirement : null;
+      return send(scenario);
     }
     if (scenario && scenarioPath === scenario.id + '/runs' && request.method === 'POST') {
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
@@ -373,6 +377,10 @@ const api = createServer(async (request, response) => {
   if (path === base) return send(project);
   if (path === base + '/ipa') {
     if (ipaFail) return send({ message: 'IPA no disponible' }, 503);
+    if (ipaTraceabilityBlocked) return send({ ipa: { ...ipa, score: 69, status: 'BLOCKED',
+      blockers: ['Vincula criterios de aceptación explícitos con sus requisitos.'] } });
+    if (checkScenarioTraceability && !scenarios[0].requirementId) return send({ ipa: { ...ipa, score: 69, status: 'BLOCKED',
+      blockers: ['Asocia todos los escenarios activos a una historia de usuario o requisito.'] } });
     const newDocument = documents.find(document => document.filename === 'requisitos-demo.md');
     const points = newDocument?.state === 'VALIDATED' ? 40 : newDocument?.state === 'PROCESSED' ? 36 : newDocument ? 28 : 22;
     const current = {
@@ -534,7 +542,27 @@ async function verifyDocumentGenerationConfirmation(page) {
   const confirm = modal.getByRole('button', { name: 'Confirmar generación', exact: true });
   const cancel = modal.getByRole('button', { name: 'Cancelar', exact: true });
   try {
+    ipaTraceabilityBlocked = true;
     await scenariosTab.click();
+    await expect(generate).toBeDisabled();
+    await expect(page.getByText('Vincula criterios de aceptación explícitos con sus requisitos.', { exact: true })).toBeVisible();
+    ipaTraceabilityBlocked = false;
+    checkScenarioTraceability = true;
+    const firstScenario = scenarios[0];
+    Object.assign(firstScenario, { requirementId: null, requirement: null });
+    await page.reload();
+    await scenariosTab.click();
+    await expect(page.getByText('Asocia todos los escenarios activos a una historia de usuario o requisito.', { exact: true })).toBeVisible();
+    await expect(generate).toBeDisabled();
+    await page.getByRole('button', { name: 'Editar escenario', exact: true }).click();
+    const story = page.getByRole('combobox', { name: 'Historia o requisito asociado', exact: true });
+    await expect(story).toHaveValue('');
+    await story.selectOption(requirement.id);
+    await page.getByRole('button', { name: 'Guardar', exact: true }).click();
+    await expect(story).toBeHidden();
+    await expect(page.getByText('RF-01 / Checkout sandbox', { exact: true }).first()).toBeVisible();
+    await expect(generate).toBeEnabled();
+    assert.equal(firstScenario.requirementId, requirement.id);
     await generate.click();
     await expect(modal.getByText(/marca al menos un tipo/)).toBeVisible();
     await expect(confirm).toBeDisabled();
@@ -593,6 +621,8 @@ async function verifyDocumentGenerationConfirmation(page) {
     console.log('PASS Escenarios indica la causa y la referencia cuando Explorer rechaza la generación.');
   } finally {
     documents = original;
+    checkScenarioTraceability = false;
+    Object.assign(scenarios[0], { requirementId: requirement.id, requirement });
     generationSelectionBlocked = false;
     completedDocumentTypes.clear();
     generationErrorCode = null;
@@ -1166,6 +1196,7 @@ async function verifyScenarios(page, screenshots) {
   await page.getByRole('button', { name: 'Nuevo escenario', exact: true }).click();
   const form = page.getByRole('form', { name: 'Nuevo escenario manual' });
   await form.getByLabel('Título', { exact: true }).fill('Escenario creado desde el nuevo diseño');
+  await form.getByLabel('Historia o requisito asociado').selectOption(requirement.id);
   await form.getByLabel('Primer paso', { exact: true }).fill('goto: /qa');
   await form.getByRole('button', { name: 'Crear escenario', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Escenarios (4)', exact: true })).toBeVisible();

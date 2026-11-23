@@ -12,7 +12,7 @@ export function DocumentReport({ report: { ipa, analysis } }: { report: Report }
   return (
     <section aria-labelledby="ipa-heading">
       <h3 id="ipa-heading">Índice de Preparación para Automatización (IPA)</h3>
-      <p><strong>{ipa.score}/100</strong> · {ipa.status === 'BLOCKED' ? 'Bloqueado por autorización, alcance o estado del proyecto' : 'Evaluado'}</p>
+      <p><strong>{ipa.score}/100</strong> · {ipa.status === 'BLOCKED' ? 'Bloqueado. Consulta los motivos del IPA.' : 'Evaluado'}</p>
       <p>Declarados · {ipa.documents.declared} | Cargados · {ipa.documents.uploaded} | Procesados · {ipa.documents.processed} | Validados · {ipa.documents.validated}</p>
       <p>Requisitos verificables · {ipa.verifiable} | Requisitos ambiguos o pendientes · {ipa.ambiguous}</p>
       <details>

@@ -53,7 +53,8 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
         id: true,
         findings: {
           where: { versionId: { in: versionIds }, kind: { in: REQUIREMENT_KINDS } },
-          select: { versionId: true, pendingConfirmation: true, clarification: true },
+          select: { versionId: true, pendingConfirmation: true, clarification: true,
+            requirement: { select: { _count: { select: { criteria: true } } } } },
         },
       },
     }),
@@ -127,7 +128,7 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
   const findingsByVersion = new Map<string, { verified: number; pending: number; clarifiedAt: string | null }>();
   for (const finding of analysis.findings) {
     const totals = findingsByVersion.get(finding.versionId) ?? { verified: 0, pending: 0, clarifiedAt: null };
-    if (finding.pendingConfirmation) totals.pending++;
+    if (finding.pendingConfirmation || !finding.requirement?._count.criteria) totals.pending++;
     else totals.verified++;
     const approvedAt = object(finding.clarification).approvedAt;
     if (typeof approvedAt === 'string' && (!totals.clarifiedAt || approvedAt > totals.clarifiedAt)) {

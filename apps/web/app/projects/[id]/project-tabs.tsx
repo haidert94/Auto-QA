@@ -27,6 +27,7 @@ export function useScenarioSuite() { return useContext(ScenarioSuiteContext); }
 
 const ScenarioHeaderContext = createContext<{
   element: HTMLDivElement | null;
+  active: boolean;
   setCount: (count: number | null) => void;
   specs: ScenarioSpecs;
 } | null>(null);
@@ -172,7 +173,8 @@ export function ProjectTabs({
   const suiteContext = useMemo(() => ({
     open: openSuite, hasSuite, suiteRunning, progress: suiteProgress, trackingWarning: suiteTrackingWarning, stopping, stop: stopSuite, historyVersion,
   }), [openSuite, hasSuite, suiteRunning, suiteProgress, suiteTrackingWarning, stopping, stopSuite, historyVersion]);
-  const scenarioHeader = useMemo(() => ({ element: headerElement, setCount: setScenarioCount, specs }), [headerElement, specs]);
+  const scenarioHeader = useMemo(() => ({ element: headerElement, active: active === 'escenarios', setCount: setScenarioCount, specs }),
+    [headerElement, active, specs]);
   const [automationElement, setAutomationElement] = useState<HTMLDivElement | null>(null);
   const automationHeader = useMemo(() => ({ element: automationElement, active: active === 'automatizacion', specs, setSpecs }), [automationElement, active, specs]);
   const [reportElement, setReportElement] = useState<HTMLDivElement | null>(null);

@@ -41,6 +41,7 @@ export const analysisSelect = {
     orderBy: { ordinal: 'asc' },
     select: {
       id: true, kind: true, text: true, pendingConfirmation: true, pendingReason: true, requirementId: true, clarification: true,
+      requirement: { select: { _count: { select: { criteria: true } } } },
       locator: true, relatedLocator: true, version: { select: sourceSelect }, relatedVersion: { select: sourceSelect },
     },
   },
@@ -52,7 +53,7 @@ export function describeAnalysis(record: AnalysisRecord | null) {
   if (!record) return null;
   return {
     id: record.id, createdAt: record.createdAt, warnings: record.warnings,
-    findings: record.findings.map(({ version, locator, relatedVersion, relatedLocator, ...finding }) => ({
+    findings: record.findings.map(({ version, locator, relatedVersion, relatedLocator, requirement: _requirement, ...finding }) => ({
       ...finding,
       source: { versionId: version.id, version: version.number, ...version.document, locator },
       relatedSource: relatedVersion
@@ -115,7 +116,7 @@ export async function currentScenarioRequirements(tx: Prisma.TransactionClient, 
   const select = {
     id: true,
     requirements: {
-      where: { sources: { some: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false } } },
+      where: { criteria: { some: {} }, sources: { some: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false } } },
       orderBy: { id: 'asc' as const },
       select: {
         id: true, title: true,

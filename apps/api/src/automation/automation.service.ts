@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DOCUMENT_STORAGE, type DocumentStorage } from '../documents/document-storage';
+import { currentReadiness } from '../documents/readiness';
+import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { PrismaService } from '../prisma.service';
 import { documentGenerationScope, readGenerationSources, type DocumentGenerationSources } from './document-generation';
 import { CreateAutomationDto } from './dto/create-automation.dto';
@@ -31,6 +33,7 @@ export class AutomationService {
     let documentGenerationSources: DocumentGenerationSources | undefined;
     if (dto.documentTestTypes) {
       if (dto.documents?.length) throw new BadRequestException('Usa los documentos guardados en Datos para esta selección.');
+      await this.ensureGenerationReady(this.prisma, projectId);
       const scope = await documentGenerationScope(this.prisma, projectId);
       const pending = Object.keys(scope.sources);
       if (!pending.length || pending.length !== dto.documentTestTypes.length || !dto.documentTestTypes.every(type => pending.includes(type))) {
@@ -140,6 +143,7 @@ export class AutomationService {
 
     const inputs = { ...currentInputs, selection: dto.types };
     const queue = async (tx: Prisma.TransactionClient) => {
+      await this.ensureGenerationReady(tx, projectId);
       const result = await tx.automationJob.updateMany({
         where: { id: jobId, projectId, stage: 'review-ready' },
         data: {
@@ -173,6 +177,13 @@ export class AutomationService {
       await queue(this.prisma);
     }
     return { message: 'Selección guardada. Los agentes comenzarán la generación.' };
+  }
+
+  private async ensureGenerationReady(tx: Prisma.TransactionClient, projectId: string) {
+    const { ipa } = await currentReadiness(tx, projectId);
+    if (ipa.status !== 'ASSESSED' || ipa.score < IPA_AUTOMATION_THRESHOLD) {
+      throw new ConflictException(ipa.blockers[0] || 'El IPA no alcanza el umbral para generar escenarios.');
+    }
   }
 
   async pendingDocumentTypes(projectId: string, workspace: Workspace) {

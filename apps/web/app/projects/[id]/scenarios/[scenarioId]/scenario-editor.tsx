@@ -128,9 +128,9 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
       <input value={title} onChange={e => setTitle(e.target.value)} required maxLength={300}/>
     </label>
 
-    <label>Requisito asociado
-      <select value={requirementId} onChange={e => setRequirementId(e.target.value)}>
-        <option value="">— Sin requisito —</option>
+    <label>Historia o requisito asociado
+      <select value={requirementId} required onChange={e => setRequirementId(e.target.value)}>
+        <option value="">Selecciona una historia o requisito</option>
         {requirements.map(r => <option key={r.id} value={r.id}>
           {r.externalKey ? `[${r.externalKey}] ` : ''}{r.title}
         </option>)}

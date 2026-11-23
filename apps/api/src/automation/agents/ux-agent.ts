@@ -3,9 +3,9 @@
 // el análisis real (Playwright + DOM a11y + IA) ocurre en ux-runner.ts.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
 
-type Payload = { audits?: Array<{ url?: string }> };
+type Payload = { audits?: Array<{ requirementId?: string; url?: string }> };
 
 export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   if (!ctx.environmentId) {
@@ -18,11 +18,12 @@ export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<Ag
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
-    'Historias detectadas:',
-    storiesContext(ctx.review),
+    'Historias y requisitos analizados:',
+    scenarioAnalysisContext(ctx),
+    LINKED_REQUIREMENT_INSTRUCTION,
     '',
     'Prioriza páginas con interacciones (login, checkout, formularios complejos).',
-    'Responde SOLO JSON { "audits": [ { "url": "https://..." } ] }.',
+    'Responde SOLO JSON { "audits": [ { "requirementId": "id del requisito", "url": "https://..." } ] }.',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -34,11 +35,12 @@ export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<Ag
 
   const parsed = extractJson<Payload>(response.text) ?? {};
   const audits = Array.isArray(parsed.audits) ? parsed.audits.slice(0, 3) : [];
-  const list = audits.length ? audits : [{ url: ctx.url }];
-  const errors: string[] = [];
+  const errors: string[] = audits.length ? [] : ['ux-no-linked-cases'];
   let created = 0;
 
-  for (const [index, a] of list.entries()) {
+  for (const [index, a] of audits.entries()) {
+    const requirementId = linkedRequirementId(ctx, a.requirementId);
+    if (!requirementId) { errors.push('ux-' + index + '-sin-requisito'); continue; }
     const url = typeof a.url === 'string' ? a.url.trim() : '';
     if (!url) { errors.push('ux-' + index + '-sin-url'); continue; }
     try {
@@ -46,6 +48,7 @@ export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<Ag
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
+          requirementId,
           url: url.slice(0, 2048),
           status: 'QUEUED',
         } as Prisma.UxAuditUncheckedCreateInput,

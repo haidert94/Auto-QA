@@ -19,7 +19,9 @@ export type IpaSummary = {
   signals: IpaSignal[];
 };
 
-export const IPA_AUTOMATION_THRESHOLD = 70;
+import { IPA_AUTOMATION_THRESHOLD } from '../../../../api/src/documents/readiness-policy';
+
+export { IPA_AUTOMATION_THRESHOLD };
 
 export function levelFor(score: number, status: IpaSummary['status']):
   { label: string; css: string; headline: string } {

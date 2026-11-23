@@ -1,10 +1,10 @@
 // Agente disponibilidad: crea Monitor HTTP para las URLs críticas que la
-// IA detecte del contexto (o la URL base como fallback).
+// IA vincule con las historias y requisitos analizados.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
 
-type Payload = { monitors?: Array<{ name?: string; url?: string; intervalMinutes?: number }> };
+type Payload = { monitors?: Array<{ requirementId?: string; name?: string; url?: string; intervalMinutes?: number }> };
 
 export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   if (!ctx.environmentId) {
@@ -17,10 +17,11 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
-    'Historias detectadas:',
-    storiesContext(ctx.review),
+    'Historias y requisitos analizados:',
+    scenarioAnalysisContext(ctx),
+    LINKED_REQUIREMENT_INSTRUCTION,
     '',
-    'Devuelve SOLO JSON { "monitors": [ { "name": "Landing", "url": "https://...", "intervalMinutes": 15 }, ... ] }.',
+    'Devuelve SOLO JSON { "monitors": [ { "name": "Landing", "requirementId": "id del requisito", "url": "https://...", "intervalMinutes": 15 }, ... ] }.',
     'intervalMinutes entre 5 y 60. Los URL deben estar dentro del mismo dominio de la URL base.',
   ].filter(Boolean).join('\n');
 
@@ -36,11 +37,12 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
   const errors: string[] = [];
   let created = 0;
 
-  const fallback = monitors.length === 0 ? [{ name: 'URL base', url: ctx.url, intervalMinutes: 15 }] : monitors;
-
-  for (const [index, m] of fallback.entries()) {
+  if (!monitors.length) errors.push('availability-no-linked-cases');
+  for (const [index, m] of monitors.entries()) {
     const name = typeof m.name === 'string' ? m.name.trim() : '';
     const url = typeof m.url === 'string' ? m.url.trim() : '';
+    const requirementId = linkedRequirementId(ctx, m.requirementId);
+    if (!requirementId) { errors.push('monitor-' + index + '-sin-requisito'); continue; }
     if (!name || !url) { errors.push('monitor-' + index + '-incompleto'); continue; }
     const intervalMinutes = Math.min(Math.max(typeof m.intervalMinutes === 'number' ? m.intervalMinutes : 15, 5), 60);
     try {
@@ -48,6 +50,7 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
+          requirementId,
           name: name.slice(0, 120),
           url: url.slice(0, 2048),
           intervalMinutes,

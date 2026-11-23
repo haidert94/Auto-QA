@@ -4,15 +4,15 @@ import Link from 'next/link';
 import { Code2, FileText, Pencil, PlayCircle, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { QualityResultsLink } from './quality-results-link';
-import { ScenarioCard, type ScenarioListItem } from './scenario-card';
+import { ScenarioCard, type RequirementOption, type ScenarioListItem } from './scenario-card';
 import { ScenarioListToolbar, ScenarioVisibleSelection } from './scenario-list-toolbar';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 import { durationLabel, gherkinKeyword, isManualScenario, MANUAL_SCENARIO_MESSAGE, matchesScenarioQuery, runPresentation, scenarioStepText, type ScenarioRun } from './scenario-presentation';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
-export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChecked, onChange, projectId, hasRunnableSpec, onRun, onDelete, deletionDisabled, role }: {
-  items: ScenarioListItem[]; runs: ScenarioRun[]; runsAvailable: boolean; checked: Set<string>;
+export function ScenarioWorkspace({ items, requirements, runs, runsAvailable, checked, setChecked, onChange, projectId, hasRunnableSpec, onRun, onDelete, deletionDisabled, role }: {
+  items: ScenarioListItem[]; requirements: RequirementOption[]; runs: ScenarioRun[]; runsAvailable: boolean; checked: Set<string>;
   setChecked: (selection: Set<string>) => void; onChange: (scenario: ScenarioListItem) => void;
   projectId: string; hasRunnableSpec: (scenario: ScenarioListItem) => boolean;
   onRun?: (scenarios: ScenarioListItem[]) => void;
@@ -79,7 +79,7 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
                   {status && <span className={`scenario-run-state scenario-run-state--${status.tone}`}>{status.label}{status.duration !== null && ` · ${durationLabel(status.duration)}`}</span>}
                 </div>
                 <h3><button type="button" aria-pressed={item.id === activeId} onClick={() => pick(item.id)}>{item.title}</button></h3>
-                <p className="scenario-source">{quality ? quality.label : item.requirement ? <>Requisito: {item.requirement.externalKey && `${item.requirement.externalKey} / `}{item.requirement.title}</> : 'Sin requisito asociado'}</p>
+                <p className="scenario-source">{item.requirement ? <>Requisito: {item.requirement.externalKey && `${item.requirement.externalKey} / `}{item.requirement.title}</> : quality?.label ?? 'Sin requisito asociado'}</p>
                 {item.tags?.length ? <ul className="scenario-result__tags" aria-label="Etiquetas">{item.tags.map(value => <li key={value} className={/^@flujo/i.test(value) ? 'flow' : ''}>{value}</li>)}</ul> : null}
                 {runAt && <time dateTime={runAt}>Última ejecución registrada: {new Date(runAt).toLocaleString('es-CO')}</time>}
               </div>
@@ -102,11 +102,11 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
           </div>
         </header>
         <div className="scenario-detail__body">
-          {editing ? <ul className="scenario-editor-list"><ScenarioCard key={active.id} projectId={projectId} scenario={active} scenarios={editableItems} initialEditing
+          {editing ? <ul className="scenario-editor-list"><ScenarioCard key={active.id} projectId={projectId} scenario={active} scenarios={editableItems} requirements={requirements} initialEditing
             onChange={onChange} onEditComplete={() => setEditing(false)} role={role} /></ul> : <>
             <h3>{active.title}</h3>
             {isManualScenario(active) && <p className="scenario-derived-note">{MANUAL_SCENARIO_MESSAGE}</p>}
-            <p className="scenario-detail__source"><FileText size={14} />{active.quality?.label ?? (active.requirement ? `${active.requirement.externalKey ? active.requirement.externalKey + ' / ' : ''}${active.requirement.title}` : 'Sin requisito asociado')}</p>
+            <p className="scenario-detail__source"><FileText size={14} />{active.requirement ? `${active.requirement.externalKey ? active.requirement.externalKey + ' / ' : ''}${active.requirement.title}` : active.quality?.label ?? 'Sin requisito asociado'}</p>
             <div className="scenario-detail__section-label"><span>Especificación BDD (vista derivada)</span><Code2 size={14} /></div>
             <div className="scenario-gherkin"><ol>{(active.steps ?? []).map((step, i) => <li key={i}>
               <span className="scenario-gherkin__keyword">{gherkinKeyword(step, active.steps?.[i - 1])}</span>

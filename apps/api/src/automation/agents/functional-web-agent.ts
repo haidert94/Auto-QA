@@ -3,7 +3,7 @@
 import type { Prisma } from '@prisma/client';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
   const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
@@ -14,7 +14,7 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
     '',
     'Historias y requisitos analizados:',
     scenarioAnalysisContext(ctx),
-    ctx.documentTestTypesConfirmed ? 'Cada caso debe incluir requirementId con uno de los identificadores listados. Genera solo casos sustentados por esos requisitos; si no aplica, devuelve una lista vacía.' : '',
+    LINKED_REQUIREMENT_INSTRUCTION,
     '',
     ...(!onlyManual ? [
       'Vocabulario de pasos para los casos automatizables:',
@@ -77,8 +77,8 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
     if (manual && !expectedResult?.trim()) { errors.push('scenario-' + index + '-sin-resultado-esperado'); continue; }
     const hasAssertion = manual ? normalized.some(step => step.expected?.trim()) : hasPlaywrightAssertion(normalized);
     if (!hasAssertion) { errors.push('scenario-' + index + '-sin-asercion'); continue; }
-    const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
-    if (ctx.documentTestTypesConfirmed && !requirementId) {
+    const requirementId = linkedRequirementId(ctx, s.requirementId);
+    if (!requirementId) {
       errors.push('scenario-' + index + '-sin-requisito-verificable');
       continue;
     }

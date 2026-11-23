@@ -10,28 +10,8 @@ import { analyzeFindings, classifyDocument, isRequirement, type DocumentAnalysis
 import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-files';
 import { analysisSelect, describeAnalysis, documentAnalysisSignature, documentSelect, metadata, persistFindings, readDocumentSnapshot } from './document-records';
 import { DOCUMENT_STORAGE, type DocumentStorage } from './document-storage';
-import { readiness, type ReadinessFinding } from './readiness';
+import { currentReadiness, readiness, toReadinessFinding, unlinkedScenarioCount } from './readiness';
 import { reviewDocumentTestTypes } from './document-test-type-review';
-
-type AnalysisFindingRow = Prisma.RequirementTraceabilityGetPayload<{
-  select: { id: true; kind: true; text: true; pendingConfirmation: true; pendingReason: true; requirementId: true; locator: true;
-    version: { select: { id: true; number: true; document: { select: { id: true; filename: true } } } } };
-}>;
-
-function toReadinessFinding(row: AnalysisFindingRow): ReadinessFinding {
-  return {
-    id: row.id,
-    kind: row.kind,
-    pendingConfirmation: row.pendingConfirmation,
-    text: row.text,
-    locator: row.locator,
-    documentId: row.version.document.id,
-    documentFilename: row.version.document.filename,
-    versionId: row.version.id,
-    versionNumber: row.version.number,
-    requirementId: row.requirementId,
-  };
-}
 
 export const DOCUMENT_ANALYZER = Symbol('DOCUMENT_ANALYZER');
 
@@ -282,14 +262,9 @@ export class DocumentsService {
 
   async report(projectId: string) {
     return this.prisma.$transaction(async tx => {
-      const project = await this.project(projectId, false, tx);
-      const documents = await this.rows(projectId, tx);
-      const signature = documentAnalysisSignature(await readDocumentSnapshot(tx, projectId));
-      const record = await tx.documentAnalysis.findUnique({
-        where: { projectId_signature: { projectId, signature } }, select: analysisSelect,
-      });
-      const findings = (record?.findings ?? []).map(toReadinessFinding);
-      return { analysis: describeAnalysis(record), ipa: readiness(project, documents, findings) };
+      await this.project(projectId, false, tx);
+      const { analysis, ipa } = await currentReadiness(tx, projectId);
+      return { analysis: describeAnalysis(analysis), ipa };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
@@ -340,7 +315,7 @@ export class DocumentsService {
       const record = await tx.documentAnalysis.findUniqueOrThrow({
         where: { id: finding.analysisId }, select: analysisSelect,
       });
-      const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), record.findings.map(toReadinessFinding));
+      const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), record.findings.map(toReadinessFinding), await unlinkedScenarioCount(tx, projectId));
       await tx.qualityAssessment.updateMany({
         where: { projectId, analysisId: finding.analysisId, type: 'READINESS' },
         data: { score: ipa.score, details: ipa },
@@ -436,7 +411,7 @@ export class DocumentsService {
           where: { id: record.id }, select: analysisSelect,
         });
         const enriched = (persisted?.findings ?? []).map(toReadinessFinding);
-        const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), enriched);
+        const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), enriched, await unlinkedScenarioCount(tx, projectId));
         await tx.qualityAssessment.create({
           data: { projectId, analysisId: record.id, type: 'READINESS', score: ipa.score, details: ipa },
         });

@@ -2,11 +2,11 @@
 // un LoadTest (k6) sobre URLs clave detectadas por la IA.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, storiesContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
 
 type Payload = {
-  audits?: Array<{ url?: string }>;
-  loadTests?: Array<{ name?: string; url?: string; profile?: 'suave' | 'medio' | 'intensivo' }>;
+  audits?: Array<{ requirementId?: string; url?: string }>;
+  loadTests?: Array<{ requirementId?: string; name?: string; url?: string; profile?: 'suave' | 'medio' | 'intensivo' }>;
 };
 
 const PROFILES: Record<string, Array<{ duration: string; target: number }>> = {
@@ -26,11 +26,12 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
-    'Historias detectadas:',
-    storiesContext(ctx.review),
+    'Historias y requisitos analizados:',
+    scenarioAnalysisContext(ctx),
+    LINKED_REQUIREMENT_INSTRUCTION,
     '',
     'Devuelve SOLO JSON con dos arrays:',
-    '{ "audits": [ { "url": "https://..." } ], "loadTests": [ { "name": "pico mañana", "url": "https://...", "profile": "suave|medio|intensivo" } ] }',
+    '{ "audits": [ { "requirementId": "id del requisito", "url": "https://..." } ], "loadTests": [ { "name": "pico mañana", "requirementId": "id del requisito", "url": "https://...", "profile": "suave|medio|intensivo" } ] }',
     'Máximo 3 audits y 2 loadTests. Si no estás seguro, deja loadTests vacío.',
   ].filter(Boolean).join('\n');
 
@@ -47,8 +48,10 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
   const errors: string[] = [];
   let created = 0;
 
-  const auditList = audits.length ? audits : [{ url: ctx.url }];
-  for (const [index, a] of auditList.entries()) {
+  if (!audits.length && !loadTests.length) errors.push('performance-no-linked-cases');
+  for (const [index, a] of audits.entries()) {
+    const requirementId = linkedRequirementId(ctx, a.requirementId);
+    if (!requirementId) { errors.push('audit-' + index + '-sin-requisito'); continue; }
     const url = typeof a.url === 'string' ? a.url.trim() : '';
     if (!url) { errors.push('audit-' + index + '-sin-url'); continue; }
     try {
@@ -56,6 +59,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
+          requirementId,
           url: url.slice(0, 2048),
           status: 'QUEUED',
           createdByUserId: null,
@@ -68,6 +72,8 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
   }
 
   for (const [index, lt] of loadTests.entries()) {
+    const requirementId = linkedRequirementId(ctx, lt.requirementId);
+    if (!requirementId) { errors.push('load-' + index + '-sin-requisito'); continue; }
     const name = typeof lt.name === 'string' ? lt.name.trim() : '';
     const url = typeof lt.url === 'string' ? lt.url.trim() : '';
     const profile = lt.profile && PROFILES[lt.profile] ? lt.profile : 'suave';
@@ -77,6 +83,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
+          requirementId,
           name: name.slice(0, 120),
           url: url.slice(0, 2048),
           stages: PROFILES[profile] as unknown as Prisma.InputJsonValue,

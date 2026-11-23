@@ -10,7 +10,6 @@ const { AutomationService } = require('../dist/automation/automation.service');
 const { runAutomation } = require('../dist/automation/pipeline-runner');
 const { RunsService } = require('../dist/runs/runs.service');
 const { ScenariosService } = require('../dist/scenarios/scenarios.service');
-const { generateSpec } = require('../dist/scenarios/playwright-generator');
 
 const context = {
   projectId: 'project',
@@ -24,6 +23,17 @@ const context = {
   requirements: [{ id: 'requirement-id', title: 'Información de errores', criteria: [{ text: 'El mensaje debe indicar cómo volver a intentar.' }] }],
 };
 const steps = [{ action: 'navigate: /login' }, { action: 'expect-text: Iniciar sesión' }];
+const readyProject = {
+  id: 'project', status: 'READY', ownerLabel: 'QA', organizationId: null, roles: [],
+  environments: [{ id: 'env', type: 'QA', baseUrl: context.url, authorizationConfirmed: true, authorizedAt: new Date(),
+    accessMode: 'PUBLIC', allowedHosts: ['example.test'], allowedPaths: [{ host: 'example.test', path: '/' }], excludedPaths: [] }],
+};
+const processedVersion = { uploadedAt: new Date(), processedAt: new Date(), validatedAt: new Date(), hasText: true };
+function traceableFinding(versionId, overrides = {}) {
+  return { id: versionId, kind: 'USER_STORY', requirementId: 'requirement-id', pendingConfirmation: false,
+    requirement: { _count: { criteria: 1 } }, versionId,
+    version: { id: versionId, number: 1, document: { id: 'document', filename: 'historias.md' } }, ...overrides };
+}
 
 for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobileAgent, '@mobile']]) {
   test(agent.name + ' guarda la clasificación de regresión y ejecución manual por escenario', async () => {
@@ -58,7 +68,7 @@ for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobil
                 },
                 { title: 'Manual incompleto', mode: 'manual', expectedResult: '  ', steps },
                 { title: 'Solo navegación', expectedResult: 'Abre Inicio', steps: [steps[0], { action: 'expect-text: ' }] },
-              ],
+              ].map(scenario => ({ requirementId: context.requirements[0].id, ...scenario })),
             }),
           };
         },
@@ -66,21 +76,20 @@ for (const [agent, typeTag] of [[runFunctionalWebAgent, '@funcional'], [runMobil
       prisma: { testScenario: { async create({ data }) { created.push(data); } } },
     });
 
-    assert.equal(outcomes.created, 6);
-    assert.equal(outcomes.errors.length, 2);
-    assert.match(outcomes.errors[0], /-6-sin-resultado-esperado$/);
-    assert.match(outcomes.errors[1], /-7-sin-asercion$/);
+    assert.equal(outcomes.created, 5);
+    assert.equal(outcomes.errors.length, 3);
+    assert.match(outcomes.errors[0], /-3-sin-requisito-verificable$/);
+    assert.match(outcomes.errors[1], /-6-sin-resultado-esperado$/);
+    assert.match(outcomes.errors[2], /-7-sin-asercion$/);
     assert.deepEqual(created[0].tags, [typeTag, '@flujoAlterno', '@regresion', '@login']);
     assert.deepEqual(created[1].tags, [typeTag, '@flujoBasico', '@regresion']);
     assert.deepEqual(created[2].tags, [typeTag, '@flujoBasico', '@nuevo']);
-    assert.deepEqual(created[3].tags, [typeTag, '@flujoBasico']);
-    assert.equal(created[4].tags.length, 20);
-    assert.ok(created[4].tags.includes('@regresion'));
-    assert.equal(created[3].requirementId, undefined);
-    assert.deepEqual(created[5].tags, [typeTag, '@manual', '@flujoAlterno', '@regresion']);
-    assert.equal(created[5].requirementId, context.requirements[0].id);
-    assert.equal(created[5].steps[0].action, 'Lee el mensaje de ayuda y comprueba si indica cómo recuperar el acceso.');
-    assert.equal(created[5].expectedResult, 'La ayuda indica cómo recuperar el acceso.');
+    assert.equal(created[3].tags.length, 20);
+    assert.ok(created[3].tags.includes('@regresion'));
+    assert.deepEqual(created[4].tags, [typeTag, '@manual', '@flujoAlterno', '@regresion']);
+    assert.ok(created.every(item => item.requirementId === context.requirements[0].id));
+    assert.equal(created[4].steps[0].action, 'Lee el mensaje de ayuda y comprueba si indica cómo recuperar el acceso.');
+    assert.equal(created[4].expectedResult, 'La ayuda indica cómo recuperar el acceso.');
   });
 }
 
@@ -89,7 +98,7 @@ test('la generación usa los requisitos de la versión documental vigente del pr
   const generationUpdates = [];
   const signature = createHash('sha256').update(JSON.stringify(['rules-v1', [['document', 'version']]])).digest('hex');
   const prisma = {
-    project: { async findUnique() { return { organizationId: null, environments: [] }; } },
+    project: { async findUnique() { return readyProject; }, async findUniqueOrThrow() { return readyProject; } },
     automationJob: {
       async findUnique() { return { result: { review: { stories: [] } }, steps: {} }; },
       async update({ data }) {
@@ -99,16 +108,18 @@ test('la generación usa los requisitos de la versión documental vigente del pr
     document: {
       async findMany({ where }) {
         assert.deepEqual(where, { projectId: 'project', removedAt: null });
-        return [{ id: 'document', versions: [{ id: 'version' }] }];
+        return [{ id: 'document', versions: [{ ...processedVersion, id: 'version' }] }];
       },
     },
     documentAnalysis: {
       async findUnique({ where }) {
         assert.deepEqual(where.projectId_signature, { projectId: 'project', signature });
-        return { requirements: context.requirements };
+        return { id: 'analysis', findings: [traceableFinding('version')],
+          requirements: context.requirements.map(requirement => ({ ...requirement, sources: [{ versionId: 'version', clarification: null }] })),
+        };
       },
     },
-    testScenario: { async create({ data }) { saved.push(data); } },
+    testScenario: { async count() { return 0; }, async create({ data }) { saved.push(data); } },
   };
   await runAutomation(prisma, {
     id: 'job', projectId: 'project', priorStage: 'selection-done', runKey: null,
@@ -144,22 +155,12 @@ test('la API rechaza generar código o encolar Playwright para un caso manual', 
   await assert.rejects(runs.create('project', 'scenario', { environmentId: 'environment' }, workspace), /requiere ejecución manual/);
 });
 
-test('compatibilidad crea una comprobación HTTP activa cuando falta un escenario base con aserciones', async () => {
-  const created = [];
+test('compatibilidad omite los casos sin escenario base vinculado', async () => {
   const outcome = await runCompatibilityAgent(context, {
-    prisma: {
-      testScenario: {
-        async findMany() { return []; },
-        async create({ data }) { created.push(data); },
-      },
-    },
+    prisma: { testScenario: { async findMany() { return []; } } },
   });
-  assert.equal(outcome.created, 3);
-  assert.deepEqual(outcome.errors, []);
-  for (const scenario of created) {
-    assert.deepEqual(scenario.steps, [{ ordinal: 1, action: 'expect-http-ok: ' + context.url }]);
-    assert.match(generateSpec({ id: 'fixture', ...scenario }), /expect\(\(await page\.goto\('[^']+'\)\)\?\.ok\(\)\)\.toBe\(true\)/);
-  }
+  assert.equal(outcome.created, 0);
+  assert.deepEqual(outcome.errors, ['compatibility-no-linked-base']);
 });
 
 test('el asistente de requisitos solo devuelve propuestas con aserciones', async () => {
@@ -189,7 +190,7 @@ test('las variantes de compatibilidad conservan la etiqueta aunque el caso base 
     { title: 'Caso de regresión', steps, expectedResult: null, tags: ['@funcional', '@regresion'] },
     { title: 'Caso nuevo', steps, expectedResult: null, tags: ['@funcional', ...extraTags] },
     { title: 'Caso antiguo incompleto', steps: [steps[0]], expectedResult: 'Abre el acceso', tags: ['@funcional'] },
-  ];
+  ].map(scenario => ({ ...scenario, requirementId: context.requirements[0].id }));
   const outcome = await runCompatibilityAgent(context, {
     prisma: {
       testScenario: {
@@ -199,6 +200,7 @@ test('las variantes de compatibilidad conservan la etiqueta aunque el caso base 
           assert.ok(where.NOT.OR.some(filter => filter.title?.startsWith === '[COMPAT:'));
           return base;
         },
+        async findFirst() { return null; },
         async create({ data }) { created.push(data); },
       },
     },
@@ -217,7 +219,7 @@ test('la generación respeta los tipos documentales confirmados y separa los cas
   const outcomes = await runSelectedAgents(['functional_web', 'manual'], {
     ...context, documentTestTypesConfirmed: true,
     requirements: [
-      { id: 'verifiable', title: 'Pantalla de acceso', criteria: [] },
+      { id: 'verifiable', title: 'Pantalla de acceso', criteria: [{ text: 'Aparece el formulario.' }] },
       { id: 'covered', title: 'Caso ya cubierto', criteria: [],
         scenarios: [{ tags: ['@funcional'] }, { tags: ['@manual'] }] },
     ],
@@ -241,8 +243,8 @@ test('la generación respeta los tipos documentales confirmados y separa los cas
 test('la API solo confirma tipos con documentos pendientes y comprueba que el alcance siga vigente', async () => {
   const uploadedAt = new Date('2026-11-19T00:00:00Z');
   const docs = [
-    { id: 'old', filename: 'web.md', testTypes: ['functional_web', 'manual'], versions: [{ id: 'web-version', storageKey: 'old', uploadedAt }] },
-    { id: 'new', filename: 'performance.md', testTypes: ['performance'], versions: [{ id: 'perf-version', storageKey: 'new', uploadedAt }] },
+    { id: 'old', filename: 'web.md', testTypes: ['functional_web', 'manual'], versions: [{ ...processedVersion, id: 'web-version', storageKey: 'old', uploadedAt }] },
+    { id: 'new', filename: 'performance.md', testTypes: ['performance'], versions: [{ ...processedVersion, id: 'perf-version', storageKey: 'new', uploadedAt }] },
   ];
   const completed = ['functional_web', 'manual'].map(type => ({ type, created: 1, errorCount: 0 }));
   const historical = {
@@ -257,18 +259,18 @@ test('la API solo confirma tipos con documentos pendientes y comprueba que el al
   const service = new AutomationService({
     async $transaction(fn) { return fn(this); },
     async $queryRaw() {},
-    project: { async findFirst() { return { id: 'project' }; } },
+    project: { async findFirst() { return { id: 'project' }; }, async findUniqueOrThrow() { return readyProject; } },
     document: { async findMany() { return docs; } },
     documentAnalysis: {
       async findUnique() {
         return { id: 'analysis', findings: [
-          { versionId: 'web-version', pendingConfirmation: false, clarification: approvedAt ? { approvedAt } : null },
-          { versionId: 'perf-version', pendingConfirmation: false, clarification: null },
+          traceableFinding('web-version', { clarification: approvedAt ? { approvedAt } : null }),
+          traceableFinding('perf-version'),
         ] };
       },
-      async findMany() { return [{ id: 'old-analysis', versions: [{ id: 'web-version' }] }]; },
+      async findMany() { return [{ id: 'old-analysis', versions: [{ ...processedVersion, id: 'web-version' }] }]; },
     },
-    testScenario: { async findMany() { return [{ tags: ['@funcional'] }, { tags: ['@manual'] }]; } },
+    testScenario: { async count() { return 0; }, async findMany() { return [{ tags: ['@funcional'] }, { tags: ['@manual'] }]; } },
     automationJob: {
       async findMany() { return jobs; },
       async create({ data }) { job = data; writes.push(data); return job; },
@@ -319,9 +321,10 @@ test('el agente de Performance recibe solo requisitos de sus versiones pendiente
       assert.match(prompt, /Latencia del catálogo/);
       assert.match(prompt, /p95 en el entorno QA/);
       assert.doesNotMatch(prompt, /Autenticación existente/);
-      return { model: 'test', text: '{"audits":[{"url":"https://example.test/catalogo"}]}' };
+      return { model: 'test', text: '{"audits":[{"url":"https://example.test/catalogo","requirementId":"perf"}]}' };
     } },
   });
   assert.deepEqual(outcomes.map(({ type, created }) => [type, created]), [['performance', 1]]);
   assert.equal(audits[0].url, 'https://example.test/catalogo');
+  assert.equal(audits[0].requirementId, 'perf');
 });

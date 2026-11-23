@@ -60,6 +60,7 @@ function request(url, options) {
 }
 
 async function post(projectId, body) {
+  if (!Object.hasOwn(body, 'requirementId')) body = { ...body, requirementId: await makeRequirement(projectId) };
   return request(`${baseUrl}/projects/${projectId}/scenarios`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body), signal: AbortSignal.timeout(10000),
@@ -87,6 +88,12 @@ test('POST crea un escenario con pasos normalizados', async () => {
   assert.deepEqual(detail.steps.map(s => s.ordinal), [1, 2, 3]);
   assert.equal(detail.steps[0].action, 'Abrir /login');
   assert.equal(detail.steps[2].action, 'Hacer clic en Entrar');
+});
+
+test('POST rechaza un escenario sin historia o requisito asociado', async () => {
+  const projectId = await makeProject();
+  const result = await post(projectId, { title: 'Sin vínculo', requirementId: null, steps: [{ ordinal: 1, action: 'x' }] });
+  assert.equal(result.status, 400);
 });
 
 test('POST rechaza título vacío', async () => {
@@ -158,7 +165,7 @@ test('PATCH actualiza título y reemplaza los pasos completos', async () => {
   assert.equal(detail.steps[0].action, 'Único paso');
 });
 
-test('PATCH desconecta el requisito cuando se envía null', async () => {
+test('PATCH impide quitar el requisito asociado', async () => {
   const projectId = await makeProject();
   const reqId = await makeRequirement(projectId);
   const created = await (await post(projectId, {
@@ -170,10 +177,10 @@ test('PATCH desconecta el requisito cuando se envía null', async () => {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ requirementId: null }),
   });
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 400);
 
   const detail = await request(`${baseUrl}/projects/${projectId}/scenarios/${created.id}`).then(r => r.json());
-  assert.equal(detail.requirementId, null);
+  assert.equal(detail.requirementId, reqId);
 });
 
 test('las ejecuciones de un escenario archivado quedan fuera de Reportes y de la exportación', async () => {

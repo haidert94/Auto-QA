@@ -263,6 +263,10 @@ model Requirement {
   description        String?
   acceptanceCriteria Json?
   scenarios          TestScenario[]
+  monitors           Monitor[]
+  performanceAudits  PerformanceAudit[]
+  loadTests          LoadTest[]
+  uxAudits           UxAudit[]
   criteria           AcceptanceCriterion[]
   sources            RequirementTraceability[]
 
@@ -414,6 +418,8 @@ model LoadTest {
   id              String       @id @default(uuid())
   projectId       String
   project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirementId   String?
+  requirement     Requirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
   environmentId   String?
   environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   name            String
@@ -457,6 +463,8 @@ model UxAudit {
   id              String       @id @default(uuid())
   projectId       String
   project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirementId   String?
+  requirement     Requirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
   environmentId   String?
   environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   url             String
@@ -489,6 +497,8 @@ model Monitor {
   id              String        @id @default(uuid())
   projectId       String
   project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirementId   String?
+  requirement     Requirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
   environmentId   String?
   environment     Environment?  @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   name            String
@@ -533,6 +543,8 @@ model PerformanceAudit {
   id              String       @id @default(uuid())
   projectId       String
   project         Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirementId   String?
+  requirement     Requirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
   environmentId   String?
   environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   url             String
