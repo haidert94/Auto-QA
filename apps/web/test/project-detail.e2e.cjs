@@ -354,14 +354,32 @@ async function verifyDocumentUploads(page) {
   const savedPanel = dialog.getByRole('region', { name: 'Archivos del proyecto' });
   const row = name => uploadPanel.getByRole('region', { name, exact: true });
   const section = name => savedPanel.getByRole('region', { name, exact: true });
-  const choose = async (type, filename) => {
-    const chooser = page.waitForEvent('filechooser');
-    await row(type).getByRole('button', { name: 'Cargar archivo' }).click();
-    await (await chooser).setFiles({ name: filename, mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba') });
-  };
+  const picker = type => row(type).locator('input[type="file"]');
+  const choose = (type, filename) => picker(type).setInputFiles({
+    name: filename, mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba'),
+  });
   try {
-    for (const type of ['General', 'Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX', 'Casos manuales']) {
-      await expect(row(type).getByRole('button', { name: 'Cargar archivo' })).toBeEnabled();
+    const types = ['General', 'Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX', 'Casos manuales'];
+    await expect(uploadPanel.getByRole('button', { name: 'Cargar archivo', exact: true })).toHaveCount(0);
+    const firstPicker = await picker('General').boundingBox();
+    for (const type of types) {
+      await expect(picker(type)).toBeVisible();
+      await expect(picker(type)).toBeEnabled();
+      await expect(picker(type)).toHaveAccessibleName(type);
+      const box = await picker(type).boundingBox();
+      assert.equal(box.x, firstPicker.x, 'Los selectores empiezan en la misma columna.');
+      assert.equal(box.width, firstPicker.width, 'Los selectores tienen el mismo ancho.');
+    }
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    try {
+      const mobileRow = await row('Compatibilidad').boundingBox();
+      const mobilePicker = await picker('Compatibilidad').boundingBox();
+      const heading = await row('Compatibilidad').getByRole('heading').boundingBox();
+      assert.ok(mobilePicker.y >= heading.y + heading.height, 'En móvil el selector se apila debajo del nombre.');
+      assert.ok(mobilePicker.x + mobilePicker.width <= mobileRow.x + mobileRow.width, 'El selector cabe en la fila móvil.');
+    } finally {
+      await page.setViewportSize(viewport);
     }
     await expect(section('General').getByText('spec-checkout.yaml')).toBeVisible();
     const uploads = await uploadPanel.boundingBox();

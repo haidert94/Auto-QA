@@ -6,7 +6,7 @@ En **Registrar aplicación**, selecciona o arrastra archivos en **Documentación
 
 Al guardar un proyecto nuevo, AutoQA lo crea antes de cargar los archivos seleccionados. Si una carga falla, el proyecto guardado conserva su identificador y el archivo queda en la lista local con el error. Puedes reintentar desde **Subir archivos** de la sección correspondiente. En un proyecto existente, ese botón carga los pendientes sin guardar los demás campos del formulario.
 
-En un proyecto con registro completo, abre **Datos → Documentos asociados y contratos técnicos**. Cada tipo de prueba y **General** tienen su propio botón **Cargar archivo**. Al seleccionar los archivos, AutoQA los sube y guarda el tipo correspondiente. Si un archivo falla, puedes corregir su clasificación, volver a intentar la carga o quitarlo. Usa **Aplica a** en un archivo guardado si debe aparecer en varios tipos.
+En un proyecto con registro completo, abre **Datos → Documentos asociados y contratos técnicos**. Cada tipo de prueba y **General** tienen su propio selector de archivos. Al seleccionar los archivos, AutoQA los sube y guarda el tipo correspondiente. Si un archivo falla, puedes corregir su clasificación, volver a intentar la carga o quitarlo. Usa **Aplica a** en un archivo guardado si debe aparecer en varios tipos.
 
 Pulsa **Analizar documentación** para leer las versiones actuales y consulta **Hallazgos y fuentes**. Después de revisar un documento procesado con texto, puedes marcarlo como validado o retirar su validación. Esa revisión se aplica a la versión indicada. Un archivo con el mismo nombre y contenido que la versión actual se reutiliza. Cambiar el contenido con el mismo nombre crea una versión nueva.
 

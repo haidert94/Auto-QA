@@ -579,8 +579,13 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .document-uploads { border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
 .document-upload { padding: 8px 12px; }
 .document-upload + .document-upload { border-top: 1px solid var(--line); }
-.document-upload__head { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; }
+.document-upload__head { display: grid; grid-template-columns: 9rem minmax(0, 1fr); align-items: center; gap: 8px 16px; }
 .document-upload__head h4 { margin: 0; font-size: 13px; }
-.document-upload__head button { flex-shrink: 0; padding: 7px 12px; }
+.document-upload__head input[type="file"] { min-width: 0; margin: 0; padding: 5px 8px; font-size: 12px; }
+.document-upload__head input[type="file"]::file-selector-button { margin: 0 8px 0 0; padding: 5px 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--quiet); color: var(--ink); font: inherit; cursor: pointer; }
+.document-upload__head input[type="file"]:disabled::file-selector-button { cursor: default; }
+@media (max-width: 520px) {
+  .document-upload__head { grid-template-columns: minmax(0, 1fr); }
+}
 .document-upload > button { margin-top: 8px; }
 .document-sections + button { margin-top: 14px; }

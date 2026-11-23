@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useId, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   ALL_TEST_TYPES, categoryLabels, documentRequest, extensions, fileFormat, fileLimit, fileSize,
   TEST_TYPE_LABELS,
@@ -163,13 +163,18 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
           {sections.map(({ label, testType }) => {
             const key = testType ?? 'general';
             const queued = pending.filter(item => item.testTypes[0] === testType);
-            return <section key={key} className="document-upload" aria-labelledby={sectionId + '-upload-' + key}
+            const headingId = sectionId + '-upload-' + key;
+            return <section key={key} className="document-upload" aria-labelledby={headingId}
               onDragOver={event => event.preventDefault()}
               onDrop={event => { event.preventDefault(); select(event.dataTransfer.files, testType); }}>
               <header className="document-upload__head">
-                <h4 id={sectionId + '-upload-' + key}>{label}</h4>
-                <DocumentPicker disabled={locked} label={uploadOnSelect ? 'Cargar archivo' : 'Seleccionar archivos'}
-                  onSelect={files => select(files, testType)} />
+                <h4 id={headingId}>{label}</h4>
+                <input type="file" multiple aria-labelledby={headingId} disabled={locked}
+                  accept={extensions.map(ext => '.' + ext).join(',')}
+                  onChange={event => {
+                    if (event.target.files) select(event.target.files, testType);
+                    event.target.value = '';
+                  }} />
               </header>
               {selectionError?.testType === testType && selectionError?.message &&
                 <p className="error" role="alert">{selectionError.message}</p>}
@@ -220,18 +225,4 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
       {report && <DocumentReport report={report} />}
     </section>
   );
-}
-
-function DocumentPicker({ disabled, label, onSelect }: { disabled: boolean; label: string; onSelect: (files: FileList) => void }) {
-  const input = useRef<HTMLInputElement>(null);
-  return <>
-    <input ref={input} type="file" multiple hidden accept={extensions.map(ext => '.' + ext).join(',')} disabled={disabled}
-      onChange={event => {
-        if (event.target.files) onSelect(event.target.files);
-        event.target.value = '';
-      }} />
-    <button type="button" className="secondary" disabled={disabled} onClick={() => input.current?.click()}>
-      {label}
-    </button>
-  </>;
 }
