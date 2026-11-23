@@ -64,6 +64,7 @@ const pendingFinding = {
   source: { filename: 'requisitos-pagos.pdf', version: 1, locator: 'página 2' }, relatedSource: null,
 };
 let clarification = null;
+let documentIpaOverride = null;
 let docsFail = false;
 let ipaFail = false;
 let ipaTraceabilityBlocked = false;
@@ -498,7 +499,7 @@ const api = createServer(async (request, response) => {
       ...pendingFinding, pendingConfirmation: !clarification, clarification,
     }] },
     ipa: { ...ipa, verifiable: clarification ? 5 : 4, ambiguous: clarification ? 0 : 1,
-      documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, signals: [], recommendations: [] },
+      documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, signals: [], recommendations: [], ...documentIpaOverride },
   });
   if (path === base + '/documents/analysis/' + pendingFinding.id + '/clarification' && request.method === 'PATCH') {
     const chunks = [];
@@ -715,6 +716,32 @@ async function verifyRequirementClarification(page) {
     clarification = null;
   }
   console.log('PASS permite adjuntar y aprobar una aclaración, y muestra el escenario afectado.');
+}
+
+async function verifyIpaPoints(page) {
+  documentIpaOverride = {
+    score: 100,
+    signals: [
+      { criterion: 'Aplicación y autorización', weight: 15, points: 15, available: [], missing: [] },
+      { criterion: 'Documentación funcional', weight: 30, points: 30, available: [], missing: [] },
+      { criterion: 'Accesos y permisos', weight: 0, points: 0, available: ['No se han declarado roles.'], missing: [] },
+      { criterion: 'Alcance y seguridad', weight: 15, points: 15, available: [], missing: [] },
+    ],
+  };
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.getByText('Información disponible y faltante', { exact: true }).click();
+    const section = page.locator('details.detail-analysis__section').filter({ hasText: 'Información disponible y faltante' });
+    await expect(section.getByText('60 de 60 puntos aplicables', { exact: true })).toBeVisible();
+    await expect(section.getByText('100 %', { exact: true })).toHaveCount(3);
+    await expect(section.getByText('No aplica', { exact: true })).toBeVisible();
+    await expect(section.getByText('Los criterios marcados como «No aplica» quedan fuera del cálculo del IPA.')).toBeVisible();
+    console.log('PASS Datos distingue porcentajes por criterio, puntos aplicables y accesos sin roles.');
+  } finally {
+    documentIpaOverride = null;
+    await page.reload();
+  }
 }
 
 async function verifyDocumentUploads(page) {
@@ -2355,6 +2382,7 @@ async function run() {
     await page.goto(`${website}/projects/${projectId}`);
     await verifyPostmanLoadImport(page, website);
     await verifyDocumentUploads(page);
+    await verifyIpaPoints(page);
     await verifyDocumentGenerationConfirmation(page);
     await verifyRequirementClarification(page);
     await verifyQualityScenarios(page);

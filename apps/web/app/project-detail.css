@@ -109,6 +109,9 @@
 .detail-analysis__section > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .detail-analysis__section-count { margin-left: auto; padding: 2px 8px; background: #f5f4f0; border: 1px solid #e9e7e1; border-radius: 2px; font: 500 10px/1.3 var(--mono); color: var(--ink); letter-spacing: .04em; }
 .detail-analysis__section[open] .detail-analysis__section-count { background: var(--surface); border-color: var(--blue); color: var(--blue); }
+.detail-analysis__score-basis { margin: 0 0 10px; font: 400 11px/1.55 var(--sans); color: var(--muted); }
+.detail-analysis__score-basis strong, .detail-analysis__score-basis span { display: block; }
+.detail-analysis__score-basis strong { color: var(--ink); font-weight: 600; }
 .detail-analysis__signals { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
 .detail-analysis__signals > li { border: 1px solid #e9e7e1; border-radius: 3px; padding: 10px 12px; background: var(--surface); }
 .detail-analysis__signals > li > header { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; }

@@ -140,6 +140,9 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
   }
 
   const { ipa, analysis } = report;
+  const applicableSignals = ipa.signals.filter(signal => signal.weight > 0);
+  const applicablePoints = applicableSignals.reduce((total, signal) => total + signal.weight, 0);
+  const earnedPoints = applicableSignals.reduce((total, signal) => total + signal.points, 0);
   const statusLabel = ipa.status === 'BLOCKED'
     ? 'Bloqueado por autorización, alcance o estado del proyecto'
     : 'Evaluado';
@@ -195,12 +198,16 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
           <span>Información disponible y faltante</span>
           <span className="detail-analysis__section-count">{ipa.signals.length}</span>
         </summary>
+        {applicablePoints > 0 && <p className="detail-analysis__score-basis">
+          <strong>{earnedPoints} de {applicablePoints} puntos aplicables</strong>
+          {applicableSignals.length < ipa.signals.length && <span>Los criterios marcados como «No aplica» quedan fuera del cálculo del IPA.</span>}
+        </p>}
         <ul className="detail-analysis__signals">
           {ipa.signals.map(signal => (
             <li key={signal.criterion}>
               <header>
                 <strong>{signal.criterion}</strong>
-                <span>{signal.weight ? `${signal.points}/${signal.weight}` : 'No aplica'}</span>
+                <span>{signal.weight > 0 ? `${Math.round(100 * signal.points / signal.weight)} %` : 'No aplica'}</span>
               </header>
               {(signal.available.length > 0 || signal.missing.length > 0) && <ul>
                 {signal.available.map(item => <li key={item} className="success">{item}</li>)}
