@@ -14,6 +14,7 @@ import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { defaultScenarioBrowser } from '../scenarios/playwright-generator';
 import { CreateRunDto } from './dto/create-run.dto';
+import { readQualitySuiteActivity, stopQualitySuiteAttempts } from '../scenarios/quality-suite-activity';
 
 @Injectable()
 export class RunsService {
@@ -161,13 +162,17 @@ export class RunsService {
       _count: { _all: true },
       _min: { createdAt: true },
     });
+    const quality = await readQualitySuiteActivity(this.prisma, projectId);
+    const allCounts = [...counts.map(row => ({
+      status: row.status, errorCode: row.errorCode, count: row._count._all, queuedAt: row._min.createdAt,
+    })), ...quality];
     const activity = { running: 0, queued: 0, stopping: 0, oldestQueuedSeconds: 0 };
     const now = Date.now();
-    for (const row of counts) {
+    for (const row of allCounts) {
       const bucket = row.status === 'QUEUED' ? 'queued' : row.errorCode === RUN_STOP_REQUESTED ? 'stopping' : 'running';
-      activity[bucket] += row._count._all;
-      if (bucket === 'queued' && row._min.createdAt) {
-        activity.oldestQueuedSeconds = Math.max(activity.oldestQueuedSeconds, Math.floor((now - row._min.createdAt.getTime()) / 1000));
+      activity[bucket] += row.count;
+      if (bucket === 'queued' && row.queuedAt) {
+        activity.oldestQueuedSeconds = Math.max(activity.oldestQueuedSeconds, Math.floor((now - row.queuedAt.getTime()) / 1000));
       }
     }
     return activity;
@@ -182,7 +187,8 @@ export class RunsService {
         data: { status: 'CANCELED', completedAt, errorCode: RUN_CANCELED_BY_USER },
         select: { runKey: true },
       });
-      const runKeys = queued.flatMap(run => run.runKey ? [run.runKey] : []);
+      const quality = await stopQualitySuiteAttempts(tx, projectId, workspace, completedAt);
+      const runKeys = [...queued.flatMap(run => run.runKey ? [run.runKey] : []), ...quality.runKeys];
       if (workspace.organizationId && runKeys.length) {
         await tx.meteredRun.updateMany({
           where: { projectId, organizationId: workspace.organizationId, runKey: { in: runKeys }, completedAt: null },
@@ -193,7 +199,7 @@ export class RunsService {
         where: { projectId, status: 'RUNNING', OR: [{ errorCode: null }, { errorCode: { not: RUN_STOP_REQUESTED } }] },
         data: { errorCode: RUN_STOP_REQUESTED },
       });
-      return { queuedCanceled: queued.length, runningRequested: running.count };
+      return { queuedCanceled: queued.length + quality.queuedCanceled, runningRequested: running.count + quality.runningRequested };
     });
   }
 

@@ -547,6 +547,57 @@ test('los agentes conservan el archivo, rechazan planes inválidos y permiten co
   }
 });
 
+test('la suite encola los cuatro tipos de calidad sobre los registros existentes y permite detenerlos', async () => {
+  const projectId = await makeProject();
+  const otherProject = await makeProject();
+  const environment = await prisma.environment.create({ data: {
+    projectId, type: 'QA', baseUrl: 'https://example.test', allowedHosts: ['example.test'],
+    allowedPaths: [{ host: 'example.test', path: '/catalogo' }], authorizationConfirmed: true, readOnly: true,
+  } });
+  const source = { projectId, environmentId: environment.id, url: 'https://example.test/catalogo' };
+  const stages = [{ duration: '10s', target: 2 }];
+  const signature = (kind, timeout, stageList) => createHash('sha256')
+    .update(JSON.stringify([1, kind, source.url, timeout, stageList])).digest('hex');
+  const [monitor, audit, load, ux] = await Promise.all([
+    prisma.monitor.create({ data: { ...source, name: 'Monitor de la suite', active: false,
+      timeoutMs: 5000, automationSignature: signature('availability', 5000) } }),
+    prisma.performanceAudit.create({ data: { ...source, status: 'COMPLETED', automationSignature: signature('lighthouse'),
+      performanceScore: 90 } }),
+    prisma.loadTest.create({ data: { ...source, status: 'FAILED', name: 'Carga de la suite', stages } }),
+    prisma.uxAudit.create({ data: { ...source, status: 'COMPLETED', automationSignature: signature('ux') } }),
+  ]);
+  const root = baseUrl + '/projects/' + projectId;
+  const loadAutomation = await request(root + '/scenarios/quality/load/' + load.id + '/automation', { method: 'POST' });
+  assert.equal((await loadAutomation.json()).prepared, true);
+  const paths = Object.entries({ availability: monitor, lighthouse: audit, load, ux }).map(([kind, row]) => (
+    '/scenarios/quality/' + kind + '/' + row.id + '/executions/' + randomUUID()
+  ));
+  for (const path of paths) {
+    const queued = await request(root + path, { method: 'POST' });
+    assert.equal(queued.status, 201, path + ' ' + await queued.clone().text());
+    assert.equal((await queued.json()).status, 'QUEUED');
+    assert.equal((await (await request(root + path, { method: 'POST' })).json()).status, 'QUEUED', 'Repetir la solicitud conserva el intento');
+    assert.equal((await request(baseUrl + '/projects/' + otherProject + path, { method: 'POST' })).status, 404);
+  }
+  assert.equal(await prisma.performanceAudit.count({ where: { projectId } }), 1);
+  assert.equal((await prisma.performanceAudit.findUnique({ where: { id: audit.id } })).performanceScore, null);
+  assert.equal(await prisma.monitorCheck.count({ where: { monitorId: monitor.id } }), 1);
+  const activity = await (await request(root + '/runs/activity')).json();
+  assert.equal(activity.queued, 4);
+  assert.equal((await request(root + '/report/export')).status, 409);
+  assert.equal((await request(root + '/runs/cancel', { method: 'POST' })).status, 200);
+  for (const path of paths) assert.equal((await (await request(root + path)).json()).status, 'CANCELED');
+  const records = await (await request(root + '/report/quality')).json();
+  assert.deepEqual(records, []);
+  assert.equal((await prisma.monitor.findUnique({ where: { id: monitor.id } })).active, false);
+  await prisma.environment.update({ where: { id: environment.id }, data: {
+    allowedPaths: [{ host: 'example.test', path: '/otro' }],
+  } });
+  const newAttempt = paths[0].replace(/[^/]+$/, randomUUID());
+  assert.equal((await request(root + newAttempt, { method: 'POST' })).status, 400);
+  assert.equal(await prisma.monitorCheck.count({ where: { monitorId: monitor.id } }), 1);
+});
+
 test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async () => {
   const projectId = await makeProject();
   const otherProjectId = await makeProject();

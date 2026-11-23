@@ -5,6 +5,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { LIGHTHOUSE_CATEGORIES, parseLighthouseReport, type LighthouseMetrics } from '../../api/src/performance/lighthouse-report';
 import { type ScreenshotStorage } from './screenshot-storage';
+import { runnableQualityAttempt, suiteAttempt } from './quality-attempt';
 
 // chrome-launcher v1 y lighthouse v12 son ESM; el explorer está en CJS
 // (Node16 module). Los cargamos con import() dinámico.
@@ -24,10 +25,15 @@ export async function runAudit(
   prisma: PrismaClient,
   claim: AuditClaim,
   storage: ScreenshotStorage,
-  log: Logger = () => {},
+  log: Logger = () => {}, signal?: AbortSignal,
 ): Promise<void> {
   const startedAt = Date.now();
   let chrome: LaunchedChrome | null = null;
+  let closing: Promise<void> | undefined;
+  function stopChrome() {
+    if (chrome) closing ??= chrome.kill().catch(() => {});
+  }
+  signal?.addEventListener('abort', stopChrome, { once: true });
   try {
     const launcherModule = await import('chrome-launcher');
     const launch = (launcherModule as unknown as {
@@ -44,10 +50,12 @@ export async function runAudit(
     });
     // Importamos dinámicamente para no cargar Lighthouse en memoria si el
     // worker nunca procesa audits.
+    signal?.throwIfAborted();
     const imported = await import('lighthouse');
     const lighthouseFn = ((imported as unknown as { default?: unknown }).default ?? imported) as (
       url: string, opts: unknown,
     ) => Promise<{ lhr: unknown; report: string | string[] } | undefined>;
+    signal?.throwIfAborted();
     const result = await lighthouseFn(claim.url, {
       port: chrome.port,
       output: 'json',
@@ -59,8 +67,8 @@ export async function runAudit(
     const reportText = Array.isArray(result.report) ? result.report[0] : result.report;
     const reportKey = await storage.put(Buffer.from(reportText, 'utf8'), { contentType: 'application/json' });
 
-    await prisma.performanceAudit.update({
-      where: { id: claim.id },
+    await prisma.performanceAudit.updateMany({
+      where: runnableQualityAttempt(claim),
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
@@ -75,20 +83,23 @@ export async function runAudit(
     });
     await settleUsage(prisma, claim, startedAt);
   } catch (error) {
+    if (signal?.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     log('ERROR', 'audit-crashed: ' + message);
-    await prisma.performanceAudit.update({
-      where: { id: claim.id },
+    await prisma.performanceAudit.updateMany({
+      where: runnableQualityAttempt(claim),
       data: { status: 'FAILED', completedAt: new Date(), errorCode: 'audit-failed' },
     }).catch(() => {});
     await settleUsage(prisma, claim, startedAt).catch(() => {});
   } finally {
-    if (chrome) { try { await chrome.kill(); } catch {} }
+    signal?.removeEventListener('abort', stopChrome);
+    stopChrome();
+    await closing;
   }
 }
 
 async function settleUsage(prisma: PrismaClient, claim: AuditClaim, startedAt: number): Promise<void> {
-  if (!claim.runKey) return;
+  if (!claim.runKey || suiteAttempt(claim)) return;
   const project = await prisma.project.findUnique({ where: { id: claim.projectId }, select: { organizationId: true } });
   if (!project?.organizationId) return;
   const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));

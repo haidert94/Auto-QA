@@ -13,6 +13,7 @@ import { QualityResultsLink } from './quality-results-link';
 import { ProjectHeading } from './project-heading';
 import { useAutomationHeader, useScenarioQuality, useScenarioSuite } from './project-tabs';
 import { AutomationRunStatus } from './automation-run-status';
+import { qualityExecutionProblem } from './suite-quality-availability';
 import { scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
 import { COMPATIBILITY_SCENARIO_TAG } from '../../../../api/src/scenarios/scenario-tags';
@@ -206,8 +207,10 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const generationSelection = new Set([...selectedScenarios.map(item => item.id), ...selectedQualityRows.map(({ scenario }) => scenario.id)]);
   const ready = rows.filter(({ scenario, status }) => selected.has(scenario.id) && status === 'generated').map(({ scenario }) => scenario);
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError && !onlyQuality;
-  const browserSuite = selectedQualityRows.length && !canRun ? [] : ready;
-  const suiteCount = browserSuite.length + selectedQualityRows.length;
+  const browserSuite = canRun ? ready : [];
+  const runnableQualityCount = project.status === 'READY'
+    ? selectedQualityRows.filter(({ scenario }) => !qualityExecutionProblem(scenario, project, role)).length : 0;
+  const suiteCount = browserSuite.length + runnableQualityCount;
   const pendingQuality = selectedQualityRows.filter(({ origin }) => !origin.automation.prepared);
   const generationDisabled = busy || ((!!listError || ready.length === selectedScenarios.length) && pendingQuality.length === 0);
 
@@ -311,7 +314,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         ? 'Genera código para los escenarios seleccionados y revisa la configuración antes de ejecutar.'
         : 'Genera y ejecuta el código de los escenarios seleccionados.'}
       actions={<>{canRunSuite && runner && <button type="button"
-        disabled={runner.stopping || (!runner.hasSuite && (busy || (!canRun && !selectedQualityRows.length)))}
+        disabled={runner.stopping || (!runner.hasSuite && (busy || suiteCount === 0))}
         onClick={() => runner.open(browserSuite, selectedQualityRows.map(({ scenario }) => scenario))}>
         <ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suiteCount})`}
       </button>}</>} />, header.element)}

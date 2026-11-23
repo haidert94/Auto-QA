@@ -39,7 +39,7 @@ export class MonitorsService {
       where: { id: monitorId, projectId },
       include: {
         environment: { select: { id: true, baseUrl: true, type: true } },
-        checks: { orderBy: { at: 'desc' }, take: 100,
+        checks: { where: { status: { in: ['UP', 'DOWN'] } }, orderBy: { at: 'desc' }, take: 100,
           select: { id: true, at: true, status: true, httpStatus: true, latencyMs: true, errorCode: true } },
       },
     });

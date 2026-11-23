@@ -8,6 +8,7 @@ import { can } from '../../permissions';
 import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { EnvironmentsDialog } from './environments-dialog';
 import { SuiteQualityConfiguration } from './suite-quality-configuration';
+import { qualityExecutionProblem } from './suite-quality-availability';
 import type { ScenarioListItem } from './scenario-card';
 import type { GeneratedSpec } from './automation-export';
 import { runPresentation } from './scenario-presentation';
@@ -20,6 +21,9 @@ function resultLabel(state: SuiteState) {
     case 'rejected': return { label: 'No ejecutado', className: 'error' };
     case 'unknown': return { label: 'Estado sin confirmar', className: 'muted' };
     case 'finished': {
+      if (state.run.status === 'COMPLETED' && state.quality) {
+        return state.run.results.length ? { label: 'Pasó', className: 'success' } : { label: 'Finalizada', className: 'muted' };
+      }
       const { label, tone } = runPresentation(state.run, true);
       return { label, className: tone === 'passed' ? 'success' : tone === 'failed' ? 'error' : 'muted' };
     }
@@ -33,7 +37,7 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
   qualityScenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
   control: Ref<ScenarioSuiteControl>;
-  open: boolean; onHide: () => void; onClose: () => void; onViewReport: () => void;
+  open: boolean; onHide: () => void; onClose: () => void; onViewReport: (qualityOnly: boolean) => void;
   onRunningChange: (running: boolean) => void; onRunsChanged?: () => void;
   onProgress: (results: SuiteResult[]) => void;
   onTrackingWarning: (warning: string) => void;
@@ -46,7 +50,15 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
   const currentProject = savedProject && savedProject.revision > project.revision ? savedProject : project;
   const environments = currentProject.environments.filter(item => !scenarioRunEnvironmentError(item));
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '');
-  const [showQuality, setShowQuality] = useState(qualityScenarios.length > 0);
+  const candidates = [...scenarios, ...qualityScenarios];
+  const runnable = [...scenarios, ...qualityScenarios.filter(item => !qualityExecutionProblem(item, currentProject, role))];
+  const [selectedIds, setSelectedIds] = useState(() => new Set(runnable.map(scenario => scenario.id)));
+  const selectedScenarios = runnable.filter(scenario => selectedIds.has(scenario.id));
+  const selectedQuality = selectedScenarios.filter(scenario => scenario.quality);
+  const hasBrowser = selectedScenarios.length > selectedQuality.length;
+  const selectAll = useRef<HTMLInputElement>(null);
+  const allSelected = runnable.length > 0 && selectedScenarios.length === runnable.length;
+  const someSelected = selectedScenarios.length > 0 && !allSelected;
   const [confirmedScope, setConfirmedScope] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<SuiteResult[] | null>(null);
@@ -57,7 +69,7 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
   const hasUnknown = results?.some(({ state }) => state.kind === 'unknown');
   const environment = environments.find(item => item.id === environmentId);
   const allowsWrites = environment?.readOnly === false;
-  const scope = environment ? JSON.stringify([environment.id, environment.readOnly, environment.authorizedAt]) : null;
+  const scope = hasBrowser ? (environment ? JSON.stringify([environment.id, environment.readOnly, environment.authorizedAt]) : null) : 'quality';
   const confirmed = scope !== null && confirmedScope === scope;
   const canConfigureWrites = !!environment && !allowsWrites && supportsScenarioWrites(environment.type)
     && currentProject.status !== 'ARCHIVED' && can(role, 'project.update');
@@ -67,6 +79,9 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
     if (open) element.showModal();
     else element.close();
   }, [open]);
+  useEffect(() => {
+    if (selectAll.current) selectAll.current.indeterminate = someSelected;
+  }, [someSelected]);
   useEffect(() => () => suite.current?.controller.abort(), []);
   useImperativeHandle(control, () => ({
     async stop() {
@@ -89,28 +104,34 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
     router.refresh();
   }
 
-  function changeStep(review: boolean) {
-    setShowQuality(review);
+  function updateSelection(id: string | null, checked: boolean) {
     setConfirmedScope(null);
-    requestAnimationFrame(() => dialog.current?.querySelector('h2')?.focus());
+    setSelectedIds(previous => {
+      if (id === null) return new Set(checked ? runnable.map(scenario => scenario.id) : []);
+      const next = new Set(previous);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }
 
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (showQuality || !scenarios.length || suite.current || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
+    if (!selectedScenarios.length || suite.current || results || !confirmed || (hasBrowser && (!environment || (allowsWrites && !environment.authorizedAt)))) return;
     const controller = new AbortController();
     setBusy(true);
     onRunningChange(true);
     onTrackingWarning('');
     const finished = runScenarioSuite({
       projectId: project.id,
-      scenarios: scenarios.map(scenario => ({
+      scenarios: selectedScenarios.map(scenario => ({
         scenarioId: scenario.id,
         title: scenario.title,
         automationId: specs?.[scenario.id]?.automationId ?? scenario.playwright?.automationId ?? null,
+        quality: scenario.quality ? { kind: scenario.quality.kind, resourceId: scenario.quality.resourceId } : undefined,
       })),
       environmentId,
-      writeAuthorizationAt: allowsWrites ? environment.authorizedAt ?? undefined : undefined,
+      writeAuthorizationAt: hasBrowser && allowsWrites ? environment?.authorizedAt ?? undefined : undefined,
       signal: controller.signal,
       onProgress: next => { setResults(next); onProgress(next); },
       onWarning: warning => { setTrackingWarning(warning); onTrackingWarning(warning); },
@@ -119,6 +140,8 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
     try {
       await finished;
       if (!controller.signal.aborted) onRunsChanged?.();
+    } catch {
+      if (!controller.signal.aborted) onTrackingWarning('No se pudo completar el seguimiento de la suite.');
     } finally {
       suite.current = null;
       if (!controller.signal.aborted) {
@@ -130,40 +153,49 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
 
   return <><dialog ref={dialog} className="scenario-run-dialog" aria-labelledby="suite-title"
     onCancel={event => { event.preventDefault(); close(); }}>
-    <h2 id="suite-title" tabIndex={-1}>Ejecutar suite ({scenarios.length + (showQuality ? qualityScenarios.length : 0)})</h2>
-    {showQuality ? <>
-      <SuiteQualityConfiguration project={currentProject} scenarios={qualityScenarios} />
-      <div className="actions">
-        {scenarios.length > 0 && <button type="button" onClick={() => changeStep(false)}>
-          Continuar con Playwright ({scenarios.length})
-        </button>}
-        <button type="button" className="secondary" onClick={onClose}>{scenarios.length ? 'Cancelar' : 'Cerrar'}</button>
-      </div>
-    </> : !results ? <>
-      <p>Se solicitará una ejecución por escenario. La API comprobará autorización, alcance, plan y cuotas.</p>
-      <ul className="scenario-run-targets">{scenarios.map(scenario => <li key={scenario.id}>{scenario.title}</li>)}</ul>
+    <h2 id="suite-title" tabIndex={-1}>Ejecutar suite ({results?.length ?? selectedScenarios.length})</h2>
+    {!results ? <>
+      <p>Marca las pruebas que quieres ejecutar.</p>
       <form onSubmit={queue}>
-        <label>Entorno autorizado<select value={environment?.id ?? ''} onChange={event => { setEnvironmentId(event.target.value); setConfirmedScope(null); }} disabled={busy} required>
-          {!environment && <option value="" disabled>Selecciona un entorno autorizado</option>}
-          {environments.map(environment => <option key={environment.id} value={environment.id}>
-            {environment.type ? environmentTypes[environment.type] : 'Entorno'} · {environment.baseUrl}
-            {environment.readOnly ? ' · Solo lectura' : ' · Cambios con datos de prueba'}
-          </option>)}
-        </select></label>
-        {canConfigureWrites && <div className="scenario-run-environment-help">
-          <p>Para probar flujos que guardan datos o confirman pedidos, habilita los cambios en la configuración de este entorno.</p>
-          <button type="button" className="secondary" disabled={busy}
-            onClick={() => setEditingEnvironmentId(environment.id)}>Configurar cambios con datos de prueba</button>
-        </div>}
+        <fieldset className="scenario-run-selection" disabled={busy}>
+          <legend>Pruebas para ejecutar</legend>
+          {runnable.length > 1 && <label className="check scenario-run-select-all">
+            <input ref={selectAll} type="checkbox" checked={allSelected} onChange={event => updateSelection(null, event.target.checked)} />
+            Seleccionar todas
+          </label>}
+          <ul className="scenario-run-targets">{candidates.map(scenario => {
+            const problem = qualityExecutionProblem(scenario, currentProject, role);
+            return <li key={scenario.id}>
+              <label className="check">
+                <input type="checkbox" checked={!problem && selectedIds.has(scenario.id)} disabled={!!problem}
+                  onChange={event => updateSelection(scenario.id, event.target.checked)} />
+                <span>{scenario.title}{problem && <small>{problem}</small>}</span>
+              </label>
+            </li>;
+          })}</ul>
+        </fieldset>
+        {selectedQuality.length > 0 && <SuiteQualityConfiguration project={currentProject} scenarios={selectedQuality} />}
+        {hasBrowser && <>
+          <label>Entorno autorizado<select value={environment?.id ?? ''} onChange={event => { setEnvironmentId(event.target.value); setConfirmedScope(null); }} disabled={busy} required>
+            {!environment && <option value="" disabled>Selecciona un entorno autorizado</option>}
+            {environments.map(environment => <option key={environment.id} value={environment.id}>
+              {environment.type ? environmentTypes[environment.type] : 'Entorno'} · {environment.baseUrl}
+              {environment.readOnly ? ' · Solo lectura' : ' · Cambios con datos de prueba'}
+            </option>)}
+          </select></label>
+          {canConfigureWrites && <div className="scenario-run-environment-help">
+            <p>Para probar flujos que guardan datos o confirman pedidos, habilita los cambios en la configuración de este entorno.</p>
+            <button type="button" className="secondary" disabled={busy}
+              onClick={() => setEditingEnvironmentId(environment.id)}>Configurar cambios con datos de prueba</button>
+          </div>}
+        </>}
         <label className="check">
           <input type="checkbox" required checked={confirmed} disabled={busy} onChange={event => setConfirmedScope(event.target.checked ? scope : null)} />
-          {allowsWrites
+          {!hasBrowser ? 'Confirmo ejecutar las pruebas seleccionadas dentro del alcance autorizado.' : allowsWrites
             ? 'Confirmo ejecutar los escenarios seleccionados con cambios en los datos de prueba, dentro del alcance autorizado.'
             : 'Confirmo ejecutar los escenarios seleccionados en solo lectura, dentro del alcance autorizado.'}
         </label>
-        <div className="actions"><button type="submit" disabled={busy || !environment || !confirmed}>Confirmar ejecución</button>
-          {qualityScenarios.length > 0 && <button type="button" className="secondary" disabled={busy}
-            onClick={() => changeStep(true)}>Volver a configuración</button>}
+        <div className="actions"><button type="submit" disabled={busy || !selectedScenarios.length || (hasBrowser && !environment) || !confirmed}>Confirmar ejecución</button>
           <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancelar</button></div>
       </form>
     </> : <>
@@ -180,7 +212,7 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
         </li>;
       })}</ul>
       <div className="actions">
-        <button type="button" disabled={busy || pending > 0 || !hasReportableRun || hasUnknown} onClick={onViewReport}>Ver reporte</button>
+        <button type="button" disabled={busy || pending > 0 || !hasReportableRun || hasUnknown} onClick={() => onViewReport(!hasBrowser)}>Ver reporte</button>
         <button type="button" className="secondary" onClick={close}>Cerrar</button>
       </div>
     </>}

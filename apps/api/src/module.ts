@@ -29,6 +29,7 @@ import { RunsController } from './runs/runs.controller';
 import { RunsService } from './runs/runs.service';
 import { ScenariosController } from './scenarios/scenarios.controller';
 import { ScenariosService } from './scenarios/scenarios.service';
+import { QualityExecutionService } from './scenarios/quality-execution.service';
 import { CodeHealthController } from './quality/code-health.controller';
 import { CodeHealthService } from './quality/code-health.service';
 
@@ -39,6 +40,7 @@ import { CodeHealthService } from './quality/code-health.service';
     ProjectsService,
     ExplorationsService,
     ScenariosService,
+    QualityExecutionService,
     RunsService,
     IpaService,
     IcspService,

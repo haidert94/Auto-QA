@@ -9,10 +9,12 @@ import { join } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { generateK6Script, parseK6Summary, type LoadStage } from '../../api/src/load/k6-summary';
 import { type ScreenshotStorage } from './screenshot-storage';
+import { runnableQualityAttempt, suiteAttempt } from './quality-attempt';
 
 export type LoadClaim = {
   id: string;
   projectId: string;
+  environmentId: string | null;
   url: string;
   stages: unknown;
   runKey: string | null;
@@ -31,7 +33,7 @@ function coerceStages(raw: unknown): LoadStage[] {
 }
 
 export async function runLoadTest(
-  prisma: PrismaClient, claim: LoadClaim, storage: ScreenshotStorage, log: Logger = () => {},
+  prisma: PrismaClient, claim: LoadClaim, storage: ScreenshotStorage, log: Logger = () => {}, signal?: AbortSignal,
 ): Promise<void> {
   const startedAt = Date.now();
   const stages = coerceStages(claim.stages);
@@ -45,17 +47,20 @@ export async function runLoadTest(
   const summaryPath = join(workdir, 'summary.json');
 
   try {
-    const script = generateK6Script({ url: claim.url, stages });
+    signal?.throwIfAborted();
+    const script = generateK6Script({ url: claim.url, stages, standalone: signal ? { needsQuery: false } : undefined });
     await writeFile(scriptPath, script, { encoding: 'utf8' });
-    const outcome = await spawnK6(scriptPath, summaryPath, log);
+    signal?.throwIfAborted();
+    const outcome = await spawnK6(scriptPath, summaryPath, log, signal);
+    signal?.throwIfAborted();
     const summaryText = await readFile(summaryPath, 'utf8').catch(() => '{}');
     const parsed = (() => { try { return JSON.parse(summaryText); } catch { return {}; } })();
     const metrics = parseK6Summary(parsed);
     const summaryKey = await storage.put(Buffer.from(summaryText, 'utf8'), { contentType: 'application/json' });
 
-    const failed = outcome.exitCode !== 0 && metrics.totalRequests === null;
-    await prisma.loadTest.update({
-      where: { id: claim.id },
+    const failed = outcome.exitCode !== 0 && (suiteAttempt(claim) || metrics.totalRequests === null);
+    await prisma.loadTest.updateMany({
+      where: runnableQualityAttempt(claim),
       data: {
         status: failed ? 'FAILED' : 'COMPLETED',
         completedAt: new Date(),
@@ -73,6 +78,7 @@ export async function runLoadTest(
     });
     await settleUsage(prisma, claim, startedAt);
   } catch (error) {
+    if (signal?.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     log('ERROR', 'load-crashed: ' + message);
     await failLoad(prisma, claim, 'load-crashed', message);
@@ -83,11 +89,11 @@ export async function runLoadTest(
 
 type SpawnOutcome = { exitCode: number | null };
 
-function spawnK6(scriptPath: string, summaryPath: string, log: Logger): Promise<SpawnOutcome> {
+function spawnK6(scriptPath: string, summaryPath: string, log: Logger, signal?: AbortSignal): Promise<SpawnOutcome> {
   return new Promise(resolve => {
     const child = spawn('k6', [
       'run', '--summary-export', summaryPath, '--quiet', scriptPath,
-    ], { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' });
+    ], { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32', signal, killSignal: 'SIGKILL' });
     const stderr: string[] = [];
     child.stdout.on('data', chunk => { void chunk; });
     child.stderr.on('data', chunk => stderr.push(chunk.toString()));
@@ -111,15 +117,15 @@ function spawnK6(scriptPath: string, summaryPath: string, log: Logger): Promise<
 }
 
 async function failLoad(prisma: PrismaClient, claim: LoadClaim, code: string, _message: string): Promise<void> {
-  await prisma.loadTest.update({
-    where: { id: claim.id },
+  await prisma.loadTest.updateMany({
+    where: runnableQualityAttempt(claim),
     data: { status: 'FAILED', completedAt: new Date(), errorCode: code },
   }).catch(() => {});
   await settleUsage(prisma, claim, Date.now()).catch(() => {});
 }
 
 async function settleUsage(prisma: PrismaClient, claim: LoadClaim, startedAt: number): Promise<void> {
-  if (!claim.runKey) return;
+  if (!claim.runKey || suiteAttempt(claim)) return;
   const project = await prisma.project.findUnique({ where: { id: claim.projectId }, select: { organizationId: true } });
   if (!project?.organizationId) return;
   const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));

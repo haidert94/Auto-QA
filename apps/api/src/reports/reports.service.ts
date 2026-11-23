@@ -6,6 +6,7 @@ import { KEY_PATTERN } from '../exploration/s3-config';
 import { qualityError, readQualityResults, type AvailabilityCheck, type UxResultDetail } from './quality-results';
 import { IcspService } from '../icsp/icsp.service';
 import { computeIcsp } from '../icsp/icsp-calculator';
+import { readQualitySuiteActivity } from '../scenarios/quality-suite-activity';
 import { PrismaService } from '../prisma.service';
 import { ACTIVE_RUN_STATUSES, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../runs/run-report-policy';
 
@@ -27,7 +28,7 @@ export class ReportsService {
     await this.ensureProject(projectId, workspace);
     const monitor = await this.prisma.monitor.findFirst({
       where: { projectId, id },
-      select: { checks: { orderBy: [{ at: 'desc' }, { id: 'asc' }], take: 100,
+      select: { checks: { where: { status: { in: ['UP', 'DOWN'] } }, orderBy: [{ at: 'desc' }, { id: 'asc' }], take: 100,
         select: { id: true, at: true, status: true, httpStatus: true, latencyMs: true, errorCode: true } } },
     });
     if (!monitor) throw new NotFoundException('Monitor no encontrado.');
@@ -96,7 +97,7 @@ export class ReportsService {
       where: { projectId, status: { in: [...ACTIVE_RUN_STATUSES] } },
       select: { id: true },
     });
-    if (active) throw new ConflictException(REPORT_WHILE_RUNNING);
+    if (active || (await readQualitySuiteActivity(this.prisma, projectId)).length) throw new ConflictException(REPORT_WHILE_RUNNING);
 
     const icspInput = await this.icsp.collect(projectId, true);
     if (!icspInput.runs.length) throw new ConflictException(REPORT_WITHOUT_RUNS);

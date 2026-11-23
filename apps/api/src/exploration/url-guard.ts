@@ -29,6 +29,25 @@ export type GuardScope = {
   excludedPaths?: string[];
 };
 
+export function configuredUrlScope(url: string, environment: {
+  allowedHosts: unknown; allowedPaths?: unknown; excludedPaths?: unknown;
+}): GuardScope {
+  const host = URL.canParse(url) ? new URL(url).hostname : '';
+  function paths(raw: unknown) {
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap(entry => {
+      if (typeof entry === 'string') return [entry];
+      return entry && typeof entry === 'object' && entry.host === host && typeof entry.path === 'string'
+        ? [entry.path] : [];
+    });
+  }
+  const allowedPaths = paths(environment.allowedPaths);
+  const allowedForHost = !Array.isArray(environment.allowedPaths) || !environment.allowedPaths.length || !!allowedPaths.length;
+  const allowedHosts = allowedForHost && Array.isArray(environment.allowedHosts)
+    ? environment.allowedHosts.filter((entry): entry is string => typeof entry === 'string') : [];
+  return { allowedHosts, allowedPaths, excludedPaths: paths(environment.excludedPaths) };
+}
+
 export type AddressResolver = (host: string) => Promise<string[]>;
 
 export type GuardResult =

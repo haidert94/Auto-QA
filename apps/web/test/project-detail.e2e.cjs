@@ -50,6 +50,7 @@ const loadRequests = [];
 const generationRequests = [];
 const generationJobId = '60400000-0000-4000-8000-000000000001';
 let generationSelectionBlocked = false;
+const qualityExecutionRequests = new Map();
 let qualityScenarioRows = [];
 const qualityFileRequests = [];
 let qualityWaitForPeers = null;
@@ -247,6 +248,18 @@ const api = createServer(async (request, response) => {
     summary: 'Resumen UX de prueba', findings: [{ severity: 'major', summary: 'Campo sin etiqueta', recommendation: 'Añadir etiqueta' }],
     hasScreenshot: true,
   });
+  const execution = path.match(/\/scenarios\/quality\/([^/]+)\/([^/]+)\/executions\/([^/]+)$/);
+  if (execution) {
+    const [, kind, resourceId, id] = execution;
+    if (request.method === 'POST') {
+      const row = qualityScenarioRows.find(item => item.quality.kind === kind && item.quality.resourceId === resourceId);
+      if (!row?.quality.automation.prepared || !row.quality.executionConfig.environmentId) return send({ message: 'Prueba pendiente.' }, 400);
+      qualityExecutionRequests.set(id, kind);
+      return send({ id, status: 'QUEUED' }, 201);
+    }
+    if (!qualityExecutionRequests.has(id)) return send({ message: 'Ejecución no encontrada.' }, 404);
+    return send({ id, status: 'COMPLETED', passed: kind === 'availability' });
+  }
   const qualityFile = qualityScenarioRows.find(row => path === base + '/scenarios/quality/'
     + row.quality.kind + '/' + row.quality.resourceId + '/automation');
   if (qualityFile) {
@@ -889,22 +902,7 @@ async function verifyQualityScenarios(page) {
     await automation.getByRole('button', { name: 'Calidad (4)', exact: true }).click();
     await expect(automationList.getByRole('heading')).toHaveText(qualityScenarioRows.map(row => row.title));
     await expect(generate).toBeEnabled();
-    const qualitySuite = page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true });
-    await qualitySuite.click();
-    const qualityDialog = page.getByRole('dialog', { name: 'Ejecutar suite (4)', exact: true });
-    await expect(qualityDialog.getByRole('heading', { name: 'Configuración de las pruebas de calidad' })).toBeVisible();
-    for (const row of qualityScenarioRows) {
-      const config = qualityDialog.getByRole('listitem').filter({ has: page.getByRole('heading', { name: row.title, exact: true }) });
-      await expect(config.getByText(qualityUrl, { exact: true })).toBeVisible();
-      for (const parameter of row.quality.executionConfig.parameters) {
-        await expect(config.getByText(parameter.label, { exact: true })).toBeVisible();
-        await expect(config.getByText(parameter.value, { exact: true })).toBeVisible();
-      }
-      if (row.quality.href) await expect(config.getByRole('link', { name: 'Ver configuración en Calidad →' })).toHaveAttribute('href', row.quality.href);
-    }
-    await expect(qualityDialog.getByText('Requiere un entorno autorizado.')).toBeVisible();
-    await expect(qualityDialog.getByRole('button', { name: 'Confirmar ejecución' })).toHaveCount(0);
-    await qualityDialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Ejecutar suite (0)', exact: true })).toBeDisabled();
     assert.equal(queuedRequests.length, runCount);
     const selectVisible = automation.getByRole('checkbox', { name: 'Seleccionar visibles (4)', exact: true });
     await selectVisible.uncheck();
@@ -947,17 +945,52 @@ async function verifyQualityScenarios(page) {
       qualityScenarioRows.map(row => row.quality.kind));
     await expect(generate).toBeDisabled();
     await automation.getByRole('button', { name: 'Todos (' + total + ')', exact: true }).click();
-    await page.getByRole('button', { name: 'Ejecutar suite (6)', exact: true }).click();
-    const mixed = page.getByRole('dialog', { name: 'Ejecutar suite (6)', exact: true });
-    await mixed.getByRole('button', { name: 'Continuar con Playwright (2)', exact: true }).click();
-    const browserConfirmation = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
-    await expect(browserConfirmation.getByRole('combobox', { name: 'Entorno autorizado' })).toBeVisible();
-    await expect(browserConfirmation.getByRole('button', { name: 'Confirmar ejecución' })).toBeDisabled();
-    await browserConfirmation.getByRole('button', { name: 'Volver a configuración', exact: true }).click();
-    await expect(mixed.getByRole('heading', { name: 'Configuración de las pruebas de calidad' })).toBeVisible();
-    await mixed.getByRole('button', { name: 'Cancelar', exact: true }).click();
-    assert.equal(queuedRequests.length, runCount);
-    await automationList.getByRole('link', { name: 'Ver resultados en Reportes →' }).first().click();
+    const initialRuns = scenarioRuns.length;
+    await page.getByRole('button', { name: 'Ejecutar suite (5)', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: /^Ejecutar suite/ });
+    const confirm = dialog.getByRole('button', { name: 'Confirmar ejecución' });
+    const authorize = dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ });
+    await expect(confirm).toBeDisabled();
+    await expect(dialog.getByRole('checkbox', { name: /Revisar usabilidad del catálogo/ })).toBeDisabled();
+    await dialog.getByRole('checkbox', { name: 'Seleccionar todas' }).uncheck();
+    await expect(dialog).toHaveAccessibleName('Ejecutar suite (0)');
+    await authorize.check();
+    await expect(confirm).toBeDisabled();
+    const chosenQuality = qualityScenarioRows.filter(row => row.quality.kind !== 'ux');
+    for (const row of chosenQuality) await dialog.getByRole('checkbox', { name: row.title, exact: true }).check();
+    await dialog.getByRole('checkbox', { name: scenarios[0].title, exact: true }).check();
+    await expect(dialog).toHaveAccessibleName('Ejecutar suite (4)');
+    await expect(authorize).not.toBeChecked();
+    await dialog.getByText('Configuración de las pruebas de calidad', { exact: true }).click();
+    for (const row of chosenQuality) {
+      const config = dialog.locator('.suite-quality-settings li').filter({ has: page.getByRole('heading', { name: row.title, exact: true }) });
+      await expect(config.getByText(qualityUrl, { exact: true })).toBeVisible();
+    }
+    await authorize.check();
+    await confirm.click();
+    await expect(dialog.getByText('Finalizada', { exact: true })).toHaveCount(2);
+    assert.deepEqual(queuedRequests.slice(runCount).map(request => request.scenarioId), [scenarios[0].id]);
+    assert.deepEqual([...qualityExecutionRequests.values()].sort(), ['availability', 'lighthouse', 'load']);
+    completeFixtureRun(scenarioRuns.at(-1));
+    await expect(dialog.getByText('Ejecuciones finalizadas (4/4).', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    const qualityOnly = qualityScenarioRows.find(row => row.quality.kind === 'ux');
+    qualityOnly.quality.executionConfig.environmentId = environment.id;
+    await page.reload();
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    await automation.getByRole('button', { name: 'Calidad (4)', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true }).click();
+    await dialog.getByRole('checkbox', { name: 'Seleccionar todas' }).uncheck();
+    await dialog.getByRole('checkbox', { name: qualityOnly.title, exact: true }).check();
+    await expect(dialog.getByRole('combobox', { name: 'Entorno autorizado' })).toHaveCount(0);
+    await authorize.check();
+    await confirm.click();
+    await expect(dialog.getByText('Ejecuciones finalizadas (1/1).', { exact: true })).toBeVisible();
+    assert.deepEqual([...qualityExecutionRequests.values()].sort(), ['availability', 'lighthouse', 'load', 'ux']);
+    await dialog.getByRole('button', { name: 'Ver reporte' }).click();
+    assert.equal(new URL(page.url()).searchParams.get('resultados'), 'calidad');
+    queuedRequests.length = runCount;
+    scenarioRuns.length = initialRuns;
     const reports = page.getByRole('tabpanel', { name: 'Reportes', exact: true });
     const qualityReport = reports.getByRole('region', { name: 'Resultados de calidad' });
     await expect(qualityReport).toBeVisible();
@@ -991,7 +1024,7 @@ async function verifyQualityScenarios(page) {
     await page.goto(new URL(`/projects/${projectId}`, page.url()).href);
     assert.equal(queuedRequests.length, runCount);
     console.log('PASS Reportes reúne resultados y evidencia de los cuatro tipos y Calidad conserva un enlace a Reportes.');
-    console.log('PASS Configuración de las cuatro pruebas, selección mixta y confirmación de Playwright sin iniciar ejecuciones.');
+    console.log('PASS La suite confirma la selección y ejecuta los tipos elegidos en una corrida mixta o de calidad.');
     console.log('PASS Generación mixta, estados guardados y descargas para Disponibilidad, Lighthouse, k6, UX y Playwright.');
   } finally {
     releasePeers();
@@ -999,6 +1032,7 @@ async function verifyQualityScenarios(page) {
     qualityReviewKind = null;
     qualityScenarioRows = [];
     qualityFileRequests.length = 0;
+    qualityExecutionRequests.clear();
     savedPlaywright.clear();
     for (const [id, spec] of saved) savedPlaywright.set(id, spec);
     await page.reload();
@@ -1289,7 +1323,7 @@ async function verifyScenarios(page, screenshots) {
   assert.equal(queuedRequests.length, 0, 'Cancelar la confirmación no encola nada.');
   await execute.click();
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
-  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('En cola', { exact: true })).toBeVisible();
   assert.deepEqual(queuedRequests, [{ scenarioId: scenarioA, environmentId: environment.id, automationId: fixtureSpec(scenarios[0]).automationId }]);
@@ -1301,7 +1335,7 @@ async function verifyScenarios(page, screenshots) {
   await list.getByRole('checkbox', { name: `Seleccionar ${scenarios[1].title}`, exact: true }).check();
   await execute.click();
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
-  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
   await expect(dialog.getByRole('status')).toHaveText('La suite no se inició.');
@@ -1413,7 +1447,7 @@ async function verifySavedAutomationAfterReload(page) {
     assert.equal(previewRequests.length, requestStart, 'El código guardado se reconoce sin solicitar una vista previa.');
     await runner.click();
     const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
-    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
     await dialog.getByRole('button', { name: 'Confirmar ejecución' }).click();
     await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
     assert.deepEqual(queuedRequests.slice(initialQueues).map(request => request.automationId),
@@ -1453,7 +1487,7 @@ async function verifySuiteProgress(page) {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await page.getByRole('button', { name: 'Ejecutar suite (3)', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Ejecutar suite (3)', exact: true });
-    await dialog.getByRole('checkbox').check();
+    await dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
     await dialog.getByRole('button', { name: 'Confirmar ejecución' }).click();
     const rows = dialog.getByRole('listitem');
     const first = rows.filter({ hasText: scenarios[0].title });
@@ -1538,11 +1572,11 @@ async function verifyAutomationRunStatus(page) {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     const indicator = page.getByRole('region', { name: 'Estado de ejecución', exact: true });
     const status = indicator.getByRole('status');
-    const viewer = page.getByRole('region', { name: 'Visor de código Playwright', exact: true });
+    const tests = page.getByRole('region', { name: 'Escenarios para Playwright', exact: true });
     await expect(status.getByText('No se pudo consultar el estado. Reintentando…', { exact: true })).toBeVisible();
     const indicatorBounds = await indicator.boundingBox();
-    const viewerBounds = await viewer.boundingBox();
-    assert.ok(indicatorBounds.y + indicatorBounds.height <= viewerBounds.y);
+    const testsBounds = await tests.boundingBox();
+    assert.ok(indicatorBounds.y + indicatorBounds.height <= testsBounds.y);
 
     activityUnavailable = false;
     await expect(status.getByText('0 en ejecución · 1 en cola', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -1585,7 +1619,7 @@ async function verifyStopSuiteDuringSubmission(page) {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await page.getByRole('button', { name: 'Ejecutar suite (2)', exact: true }).click();
     const suite = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
-    await suite.getByRole('checkbox').check();
+    await suite.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
     await suite.getByRole('button', { name: 'Confirmar ejecución' }).click();
     await expect.poll(() => queuedRequests.length - initialQueues).toBe(1);
     await suite.getByRole('button', { name: 'Cerrar', exact: true }).click();
@@ -1809,7 +1843,7 @@ async function verifyAutomation(page, screenshots) {
   await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
   assert.equal(queuedRequests.length, initialQueues);
   await execute.click(); dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
-  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('En cola', { exact: true })).toBeVisible();
   assert.equal(queuedRequests.at(-1).environmentId, environment.id);
@@ -1840,7 +1874,7 @@ async function verifyAutomation(page, screenshots) {
   await expect(section.locator('pre')).toHaveCount(0);
   await page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Ejecutar suite (1)', exact: true });
-  await dialog.getByRole('checkbox').check();
+  await dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ }).check();
   await dialog.getByRole('button', { name: 'Confirmar ejecución', exact: true }).click();
   await expect(dialog.getByText('Cuota de ejecuciones alcanzada.', { exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();

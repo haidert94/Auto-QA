@@ -181,6 +181,7 @@ test('el reporte consolidado espera la primera ejecución finalizada e ignora la
   const runs = [{ id: 'canceled', scenarioId: 'scenario', status: 'CANCELED', createdAt: new Date(), results: [] }];
   let documentReads = 0;
   const prisma = {
+    async $queryRaw() { return []; },
     project: { async findFirst({ where }) {
       assert.equal(where.organizationId, workspace.organizationId);
       return { id: 'project' };
@@ -215,6 +216,7 @@ test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto a
   const queuedAt = new Date(Date.now() - 125000);
   let counts = [{ status: 'QUEUED', errorCode: null, _count: { _all: 2 }, _min: { createdAt: queuedAt } }];
   const prisma = {
+    async $queryRaw() { return []; },
     project: { async findFirst({ where }) {
       assert.deepEqual(where, { id: 'project', organizationId: workspace.organizationId });
       return { id: 'project' };
@@ -231,8 +233,8 @@ test('la actividad cuenta solo las ejecuciones en curso y en cola del proyecto a
   assert.deepEqual(queuedActivity, { running: 0, queued: 2, stopping: 0 });
   assert.ok(oldestQueuedSeconds >= 125 && oldestQueuedSeconds < 180);
   counts = [
-    { status: 'RUNNING', errorCode: null, _count: { _all: 1 } },
-    { status: 'RUNNING', errorCode: 'cancel-requested', _count: { _all: 2 } },
+    { status: 'RUNNING', errorCode: null, _count: { _all: 1 }, _min: { createdAt: null } },
+    { status: 'RUNNING', errorCode: 'cancel-requested', _count: { _all: 2 }, _min: { createdAt: null } },
   ];
   assert.deepEqual(await controller.activity('project', workspace), { running: 1, queued: 0, stopping: 2, oldestQueuedSeconds: 0 });
   counts = [];
@@ -243,7 +245,9 @@ test('detener cancela la cola, libera solo sus reservas y solicita detener las a
   let queued = [{ runKey: 'queued-1' }, { runKey: null }];
   let running = 1;
   let released = 0;
+  const qualityAudit = { async updateManyAndReturn() { return []; }, async updateMany() { return { count: 0 }; } };
   const tx = {
+    performanceAudit: qualityAudit, loadTest: qualityAudit, uxAudit: qualityAudit, monitorCheck: qualityAudit,
     testRun: {
       async updateManyAndReturn({ where, data, select }) {
         assert.deepEqual(where, { projectId: 'project', status: 'QUEUED' });

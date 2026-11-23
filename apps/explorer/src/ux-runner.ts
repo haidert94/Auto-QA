@@ -9,6 +9,7 @@ import { chromium } from 'playwright';
 import { type AiRouter } from '../../api/src/ai/ai-router';
 import { buildUxPrompt, summarizeUxDom, UX_NAVIGATION_TIMEOUT_MS, UX_SYSTEM_PROMPT, UX_VIEWPORT } from '../../api/src/ux/ux-evidence';
 import { type ScreenshotStorage } from './screenshot-storage';
+import { runnableQualityAttempt } from './quality-attempt';
 
 export type UxAuditClaim = {
   id: string;
@@ -32,12 +33,14 @@ type UxReport = { findings?: Finding[]; overallSummary?: string };
 
 export async function runUxAudit(
   prisma: PrismaClient, claim: UxAuditClaim, storage: ScreenshotStorage,
-  router: AiRouter, log: Logger = () => {},
+  router: AiRouter, log: Logger = () => {}, signal?: AbortSignal,
 ): Promise<void> {
   const project = await prisma.project.findUnique({
     where: { id: claim.projectId }, select: { organizationId: true },
   });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+  function stopBrowser() { void browser?.close().catch(() => {}); }
+  signal?.addEventListener('abort', stopBrowser, { once: true });
   try {
     // --no-sandbox es necesario en VPS sin kernel.apparmor_restrict_unprivileged_userns=0.
     // Sin esto, Chrome aborta con "waiting for dynamic debugging port in
@@ -47,6 +50,7 @@ export async function runUxAudit(
       chromiumSandbox: false,
       args: ['--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check'],
     });
+    signal?.throwIfAborted();
     const context = await browser.newContext({ viewport: UX_VIEWPORT });
     const page = await context.newPage();
     await page.goto(claim.url, { waitUntil: 'networkidle', timeout: UX_NAVIGATION_TIMEOUT_MS });
@@ -59,6 +63,7 @@ export async function runUxAudit(
     await browser.close();
     browser = null;
 
+    signal?.throwIfAborted();
     const prompt = buildUxPrompt(claim.url, domSummary);
 
     const response = await router.dispatch({
@@ -71,6 +76,7 @@ export async function runUxAudit(
       maxOutputTokens: 3000,
     });
 
+    signal?.throwIfAborted();
     const parsed = parseReport(response.text);
     const findings = (parsed.findings ?? []).slice(0, 25);
     const counts = tallySeverities(findings);
@@ -79,8 +85,8 @@ export async function runUxAudit(
       ...parsed, findings, screenshotKey, model: response.model,
     }, null, 2), 'utf8'), { contentType: 'application/json' });
 
-    await prisma.uxAudit.update({
-      where: { id: claim.id },
+    await prisma.uxAudit.updateMany({
+      where: runnableQualityAttempt(claim),
       data: {
         status: 'COMPLETED', completedAt: new Date(),
         totalFindings: findings.length,
@@ -91,12 +97,15 @@ export async function runUxAudit(
     log('INFO', 'ux ok · findings=' + findings.length + ' c=' + counts.critical + ' M=' + counts.major + ' m=' + counts.minor);
   } catch (error) {
     if (browser) await browser.close().catch(() => {});
+    if (signal?.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     log('ERROR', 'ux-crashed: ' + message);
-    await prisma.uxAudit.update({
-      where: { id: claim.id },
+    await prisma.uxAudit.updateMany({
+      where: runnableQualityAttempt(claim),
       data: { status: 'FAILED', completedAt: new Date(), errorCode: message.slice(0, 120) },
     }).catch(() => {});
+  } finally {
+    signal?.removeEventListener('abort', stopBrowser);
   }
 }
 

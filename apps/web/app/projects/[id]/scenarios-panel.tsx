@@ -20,6 +20,7 @@ import { TEST_TYPE_LABELS, type TestTypeCode } from '../document-client';
 import { normalizeStepText } from './scenario-insights';
 import { isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioWorkspace } from './scenario-workspace';
+import { qualityExecutionProblem } from './suite-quality-availability';
 
 type AutomationSummary = {
   id: string; status: string; stage: string | null; errorCode?: string | null; createdAt: string;
@@ -157,7 +158,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       ]);
       if (listRes.ok) {
         const list: ScenarioListItem[] = await listRes.json();
-        setChecked(previous => new Set(list.filter(item => items === null || previous.has(item.id)).map(item => item.id)));
+        setChecked(previous => new Set([
+          ...list.filter(item => items === null || previous.has(item.id)).map(item => item.id),
+          ...[...previous].filter(id => id.includes(':')),
+        ]));
         setItems(list);
       }
       else { setListError('No se pudo cargar el listado de escenarios.'); }
@@ -346,7 +350,12 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
 
   const selected = (items ?? []).filter(item => checked.has(item.id));
   const suite = selected.filter(item => !isManualScenario(item));
-  const suiteReady = suite.length > 0 && selected.length === checked.size && suite.every(hasRunnableSpec);
+  const suiteReady = suite.length > 0 && suite.every(hasRunnableSpec);
+  const qualitySuite = qualityItems.filter(item => checked.has(item.id));
+  const runnableQualityCount = qualitySuite.filter(item => !qualityExecutionProblem(item, project, role)).length;
+  const browserSuite = runnableQualityCount ? suite.filter(item => runnable && !listError && hasRunnableSpec(item)) : suite;
+  const suiteCount = browserSuite.length + runnableQualityCount;
+  const canOpenSuite = project.status === 'READY' && (runnableQualityCount > 0 || (runnable && suiteReady && !listError));
 
   return <section className="scenarios-panel" aria-label="Gestión de escenarios">
     {header?.element && createPortal(<ProjectHeading project={project}
@@ -357,8 +366,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           disabled={!selected.length || deletionDisabled}
           onClick={deleteSelected}>Eliminar escenarios</button>}
         <ScenarioExport projectId={project.id} projectName={project.name} scenarios={checked.size ? selected : items ?? []} />
-        {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (!runnable || !suiteReady || !!listError))} onClick={() => runner.open(suite)}>
-          {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suite.length})`}<ArrowRight size={14} />
+        {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && !canOpenSuite)} onClick={() => runner.open(runnable && !listError ? browserSuite : [], qualitySuite)}>
+          {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suiteCount})`}<ArrowRight size={14} />
         </button>}
       </>} />, header.element)}
 
@@ -405,7 +414,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
       : <ScenarioWorkspace key={total ? 'active' : 'empty'} projectId={projectId} items={[...items, ...qualityItems]} requirements={requirements} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
-        hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
+        hasRunnableSpec={item => item.quality ? !qualityExecutionProblem(item, project, role) : runnable && hasRunnableSpec(item)}
+        onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
         onDelete={canDelete ? deleteScenario : undefined} deletionDisabled={deletionDisabled}
         onChange={updated => setItems(current => current?.map(item => item.id !== updated.id ? item : {
           ...updated, playwright: scenarioSpecSignature(item) === scenarioSpecSignature(updated) ? item.playwright : null,

@@ -3,6 +3,7 @@ import { IsUUID, isUUID } from 'class-validator';
 import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { CreateScenarioDto, ScenarioSelectionDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { ScenariosService } from './scenarios.service';
+import { QualityExecutionService } from './quality-execution.service';
 
 type HttpResponse = { setHeader(name: string, value: string): unknown };
 
@@ -13,7 +14,7 @@ class SuggestScenariosDto {
 @Controller('projects/:projectId/scenarios')
 @UseGuards(WorkspaceGuard)
 export class ScenariosController {
-  constructor(private readonly service: ScenariosService) {}
+  constructor(private readonly service: ScenariosService, private readonly qualityExecution: QualityExecutionService) {}
 
   @Get()
   list(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
@@ -68,6 +69,26 @@ export class ScenariosController {
   @RequiresPlanCapability('BROWSER_TESTS')
   listQuality(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
     return this.service.listQuality(projectId, workspace);
+  }
+
+  @Post('quality/:kind/:id/executions/:attemptId')
+  @RequiresRole('EDITOR')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  queueQuality(
+    @Param('projectId', ParseUUIDPipe) projectId: string, @Param('kind') kind: string,
+    @Param('id', ParseUUIDPipe) id: string, @Param('attemptId', ParseUUIDPipe) attemptId: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.qualityExecution.queue(projectId, id, kind, attemptId, workspace);
+  }
+
+  @Get('quality/:kind/:id/executions/:attemptId')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  qualityStatus(
+    @Param('projectId', ParseUUIDPipe) projectId: string, @Param('kind') kind: string,
+    @Param('id', ParseUUIDPipe) id: string, @Param('attemptId', ParseUUIDPipe) attemptId: string,
+  ) {
+    return this.qualityExecution.status(projectId, id, kind, attemptId);
   }
 
   @Get('quality/:kind/:id/automation')

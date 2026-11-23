@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { validateExplorationUrlSync } from '../exploration/url-guard';
+import { configuredUrlScope, validateExplorationUrlSync } from '../exploration/url-guard';
 import { prepareAvailability } from './quality-agents/availability-agent';
 import { prepareLighthouse } from './quality-agents/lighthouse-agent';
 import { prepareK6 } from './quality-agents/k6-agent';
@@ -27,7 +27,7 @@ export const qualityAutomationSource = {
   automationReview: true,
   environment: {
     select: {
-      id: true, projectId: true, authorizationConfirmed: true, authorizedAt: true,
+      id: true, projectId: true, authorizationConfirmed: true, authorizedAt: true, readOnly: true,
       allowedHosts: true, allowedPaths: true, excludedPaths: true,
     },
   },
@@ -54,20 +54,12 @@ function snapshotSignature(kind: QualityKind, source: Source) {
   ])).digest('hex');
 }
 
-function strings(value: Prisma.JsonValue) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-}
-
 function authorizedTarget(source: Source): URL {
   const environment = environmentFor(source);
   if (!environment?.authorizationConfirmed) {
     throw new QualityReviewRequired('Asocia la prueba a un entorno autorizado.');
   }
-  const checked = validateExplorationUrlSync(source.url, {
-    allowedHosts: strings(environment.allowedHosts),
-    allowedPaths: strings(environment.allowedPaths),
-    excludedPaths: strings(environment.excludedPaths),
-  });
+  const checked = validateExplorationUrlSync(source.url, configuredUrlScope(source.url, environment));
   if (!checked.ok) throw new QualityReviewRequired('La URL de la prueba está fuera del alcance autorizado o es inválida.');
   return checked.url;
 }
@@ -118,7 +110,7 @@ function checkModuleSyntax(code: string): Promise<boolean> {
   });
 }
 
-function readSource(db: Prisma.TransactionClient, kind: QualityKind, where: { id: string; projectId: string }): PromiseLike<StoredSource | null> {
+export function readQualityExecutionSource(db: Prisma.TransactionClient, kind: QualityKind, where: { id: string; projectId: string }): PromiseLike<StoredSource | null> {
   const select = { ...qualityAutomationSource, automationCode: true } as const;
   switch (kind) {
     case 'availability': return db.monitor.findFirst({ where, select: { ...select, timeoutMs: true, intervalMinutes: true } });
@@ -152,7 +144,7 @@ async function qualityFile(
   db: Prisma.TransactionClient, kind: QualityKind, id: string, projectId: string, context?: UxAgentContext,
 ): Promise<QualityFile> {
   const where = { id, projectId };
-  const source = await readSource(db, kind, where);
+  const source = await readQualityExecutionSource(db, kind, where);
   if (!source) throw new NotFoundException('Prueba de calidad no encontrada.');
 
   const metadata = qualityAutomationStatus(kind, source);
@@ -175,7 +167,7 @@ async function qualityFile(
     reviewReason = error.message;
   }
 
-  const latest = await readSource(db, kind, where);
+  const latest = await readQualityExecutionSource(db, kind, where);
   if (!latest) throw new NotFoundException('Prueba de calidad no encontrada.');
   if (snapshotSignature(kind, latest) !== signature) throw new ConflictException('La configuración cambió. Vuelve a generar el archivo.');
   const latestMetadata = qualityAutomationStatus(kind, latest);
@@ -185,7 +177,7 @@ async function qualityFile(
     automationSignature: signature, automationCode: code, automationReview: reviewReason,
   });
   if (!updated.count) {
-    const concurrent = await readSource(db, kind, where);
+    const concurrent = await readQualityExecutionSource(db, kind, where);
     if (concurrent && snapshotSignature(kind, concurrent) === signature) {
       const concurrentMetadata = qualityAutomationStatus(kind, concurrent);
       if (concurrentMetadata.prepared || concurrentMetadata.reviewReason) return concurrentMetadata;

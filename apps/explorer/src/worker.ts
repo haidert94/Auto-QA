@@ -10,6 +10,7 @@ import { runTestRun, type ExecutionClaim } from './execution-runner';
 import { runLoadTest, type LoadClaim } from './load-runner';
 import { tickMonitors } from './monitor-runner';
 import { runUxAudit, type UxAuditClaim } from './ux-runner';
+import { runQualityAttempt } from './quality-attempt';
 import { createScreenshotStorage } from './screenshot-storage';
 import { AiRouter } from '../../api/src/ai/ai-router';
 import { BudgetService } from '../../api/src/ai/budget.service';
@@ -57,7 +58,7 @@ export async function claimNextLoadTest(prisma: PrismaClient): Promise<LoadClaim
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
-    RETURNING id, "projectId", url, stages, "runKey";
+    RETURNING id, "projectId", "environmentId", url, stages, "runKey";
   `;
   return rows[0] ?? null;
 }
@@ -150,17 +151,17 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
   const auditClaim = await claimNextAudit(prisma);
   if (auditClaim) {
     const storage = createScreenshotStorage();
-    await runAudit(prisma, auditClaim, storage, (level, detail) => {
+    await runQualityAttempt(prisma, 'lighthouse', auditClaim, signal => runAudit(prisma, auditClaim, storage, (level, detail) => {
       console.log(`[audit ${auditClaim.id}] ${level}: ${detail}`);
-    });
+    }, signal));
     return true;
   }
   const loadClaim = await claimNextLoadTest(prisma);
   if (loadClaim) {
     const storage = createScreenshotStorage();
-    await runLoadTest(prisma, loadClaim, storage, (level, detail) => {
+    await runQualityAttempt(prisma, 'load', loadClaim, signal => runLoadTest(prisma, loadClaim, storage, (level, detail) => {
       console.log(`[load ${loadClaim.id}] ${level}: ${detail}`);
-    });
+    }, signal));
     return true;
   }
   // Automatización: pipeline convertir docs → revisar con IA, o fase de
@@ -178,9 +179,9 @@ export async function tick(prisma: PrismaClient): Promise<boolean> {
   if (uxClaim) {
     const storage = createScreenshotStorage();
     const router = buildAiRouter(prisma);
-    await runUxAudit(prisma, uxClaim, storage, router, (level, detail) => {
+    await runQualityAttempt(prisma, 'ux', uxClaim, signal => runUxAudit(prisma, uxClaim, storage, router, (level, detail) => {
       console.log(`[ux ${uxClaim.id}] ${level}: ${detail}`);
-    });
+    }, signal));
     return true;
   }
   // Monitores: no son una cola, son chequeos programados. Procesamos un

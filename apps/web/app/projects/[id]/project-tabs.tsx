@@ -165,11 +165,12 @@ export function ProjectTabs({
       });
       if (!response.ok) throw new Error('No se pudo detener la ejecución.');
       setHistoryVersion(version => version + 1);
+      void loadQuality();
     } finally {
       stopRequest.current = false;
       setStopping(false);
     }
-  }, [project.id]);
+  }, [project.id, loadQuality]);
   const suiteContext = useMemo(() => ({
     open: openSuite, hasSuite, suiteRunning, progress: suiteProgress, trackingWarning: suiteTrackingWarning, stopping, stop: stopSuite, historyVersion,
   }), [openSuite, hasSuite, suiteRunning, suiteProgress, suiteTrackingWarning, stopping, stopSuite, historyVersion]);
@@ -203,10 +204,11 @@ export function ProjectTabs({
     setRunSelection(null);
   }
 
-  function viewSuiteReport() {
+  function viewSuiteReport(qualityOnly: boolean) {
     closeSuite();
     const url = new URL(window.location.href);
-    url.searchParams.delete('resultados');
+    if (qualityOnly) url.searchParams.set('resultados', 'calidad');
+    else url.searchParams.delete('resultados');
     history.replaceState(window.history.state, '', url);
     select('reporte');
     requestAnimationFrame(() => document.getElementById(`${tabGroup}-reporte-tab`)?.focus());
@@ -262,7 +264,7 @@ export function ProjectTabs({
       {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection.scenarios} qualityScenarios={runSelection.qualityScenarios} specs={specs}
         control={suiteControl} open={suiteOpen} onHide={() => setSuiteOpen(false)}
         onClose={closeSuite} onViewReport={viewSuiteReport} onRunningChange={setSuiteRunning}
-        onRunsChanged={() => setHistoryVersion(version => version + 1)}
+        onRunsChanged={() => { setHistoryVersion(version => version + 1); void loadQuality(); }}
         onProgress={setSuiteProgress} onTrackingWarning={setSuiteTrackingWarning} />}
     </ExplorationHeaderContext.Provider>
     </QualityHeaderContext.Provider>

@@ -61,7 +61,7 @@ export function ScenarioWorkspace({ items, requirements, runs, runsAvailable, ch
       ] }}
       items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }}
     />
-    {editableItems.length > 0 && <ScenarioVisibleSelection visible={visible.filter(item => !item.quality)} selected={checked} onSelectionChange={setChecked} />}
+    {items.length > 0 && <ScenarioVisibleSelection visible={visible.filter(item => !item.quality || hasRunnableSpec(item))} selected={checked} onSelectionChange={setChecked} />}
     <div className={`scenario-workspace${active ? '' : ' scenario-workspace--list-only'}`}>
       <div className="scenario-list-region">
         <ul ref={results} className="scenario-results" tabIndex={-1} aria-label="Escenarios del proyecto">
@@ -72,7 +72,7 @@ export function ScenarioWorkspace({ items, requirements, runs, runsAvailable, ch
             const runAt = quality ? null : run?.createdAt;
             const displayId = quality?.resourceId ?? item.id;
             return <li key={item.id} className={`scenario-result${item.id === activeId ? ' scenario-result--active' : ''}`}>
-              <input type="checkbox" aria-label={`Seleccionar ${item.title}`} checked={checked.has(item.id)} disabled={!!quality} onChange={() => toggle(item.id)} />
+              <input type="checkbox" aria-label={`Seleccionar ${item.title}`} checked={checked.has(item.id)} disabled={!!quality && !hasRunnableSpec(item)} onChange={() => toggle(item.id)} />
               <div className="scenario-result__content">
                 <div className="scenario-result__meta"><span className="scenario-short-id" title={displayId}>{displayId.slice(0, 8)}</span>
                   {item.id === activeId && <span className="scenario-focused-label">En detalle</span>}
