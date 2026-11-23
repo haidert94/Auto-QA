@@ -1,6 +1,8 @@
 // Parseo puro del reporte JSON de Lighthouse. Separado del runner para
 // poder cubrirlo con tests sin instalar Chromium.
 
+export const LIGHTHOUSE_CATEGORIES = ['performance', 'accessibility', 'best-practices', 'seo'] as const;
+
 export type LighthouseMetrics = {
   performanceScore: number | null;
   accessibilityScore: number | null;

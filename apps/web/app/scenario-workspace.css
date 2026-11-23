@@ -153,6 +153,16 @@
 .scenario-run-environment-help { display: grid; gap: 8px; justify-items: start; margin-top: 12px; }
 .scenario-run-environment-help p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.65; }
 .scenario-run-targets { padding-left: 18px; font-size: 12px; line-height: 1.7; max-height: 160px; overflow: auto; }
+.suite-quality-settings h3 { font-size: 15px; margin: 16px 0 8px; }
+.suite-quality-settings p { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+.suite-quality-settings ul { list-style: none; display: grid; gap: 10px; padding: 0; margin: 12px 0 0; }
+.suite-quality-settings li { padding: 12px; border: 1px solid var(--line); border-radius: 3px; overflow-wrap: anywhere; }
+.suite-quality-settings h4 { font-size: 13px; margin: 0 0 3px; }
+.suite-quality-settings dl { display: grid; gap: 6px; margin: 10px 0; font-size: 12px; }
+.suite-quality-settings dl div { display: grid; grid-template-columns: minmax(100px, 2fr) minmax(0, 3fr); gap: 8px; }
+.suite-quality-settings dt { color: var(--muted); }
+.suite-quality-settings dd { margin: 0; }
+.suite-quality-settings a { display: inline-block; margin-top: 6px; font-size: 12px; }
 .scenario-run-dialog label.check { margin-top: 18px; align-items: flex-start; font-size: 12px; line-height: 1.65; }
 .scenario-run-dialog .check input { flex-shrink: 0; margin-top: 3px; accent-color: var(--blue); }
 .execution-schedule-timing { min-width: 0; margin: 16px 0 0; }

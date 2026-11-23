@@ -12,7 +12,7 @@ import { scenarioSpecSignature } from './automation-export';
 import { GenerationCard } from './generation-card';
 import { IPA_AUTOMATION_THRESHOLD } from './ipa-hero';
 import { ProjectHeading } from './project-heading';
-import { useScenarioHeader, useScenarioSuite } from './project-tabs';
+import { useScenarioHeader, useScenarioQuality, useScenarioSuite } from './project-tabs';
 import { ScenarioExport } from './scenario-export';
 import { ScenarioGenerationConfirmation } from './scenario-generation-confirmation';
 import type { TestTypeCode } from '../document-client';
@@ -46,6 +46,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const updateCount = header?.setCount;
   const [items, setItems] = useState<ScenarioListItem[] | null>(null);
   const [listError, setListError] = useState('');
+  const { items: qualityItems, error: qualityError, reload: loadQuality } = useScenarioQuality();
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [runs, setRuns] = useState<ScenarioRun[]>([]);
   const [runsAvailable, setRunsAvailable] = useState(false);
@@ -68,7 +69,8 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [generateNotice, setGenerateNotice] = useState('');
   const deletionDisabled = busy || generating || !!listError || !!runner?.suiteRunning || !!runner?.stopping;
 
-  useEffect(() => { updateCount?.(items?.length ?? null); }, [updateCount, items?.length]);
+  const total = items === null ? null : items.length + qualityItems.length;
+  useEffect(() => { updateCount?.(total); }, [updateCount, total]);
 
   const loadRuns = useCallback(async () => {
     try {
@@ -225,7 +227,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           ? 'Generación de Performance completada. Consulta el estado en Calidad.'
           : 'Generación completada. Revisa los escenarios abajo.');
       }
-      await load();
+      await Promise.all([load(), loadQuality()]);
     } catch (err) {
       setGenerateNotice('');
       setError(err instanceof Error ? err.message : 'No se pudo comunicar con la API.');
@@ -299,7 +301,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
 
   return <section className="scenarios-panel" aria-label="Gestión de escenarios">
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary={items ? `${items.length} escenarios registrados. Consulta sus pasos, requisitos asociados y resultados de ejecución.` : 'Consulta y prepara los escenarios del proyecto.'}
+      summary={total !== null ? `${total} escenarios registrados. Consulta sus pasos y resultados.` : 'Consulta y prepara los escenarios del proyecto.'}
       actions={<>
         {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
         {canDelete && !!items?.length && <button type="button" className="secondary"
@@ -352,12 +354,14 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {listError ? <div className="scenario-message" role="alert"><p className="error">{listError}</p>
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>
-      : <ScenarioWorkspace key={items.length ? 'active' : 'empty'} projectId={projectId} items={items} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
+      : <ScenarioWorkspace key={total ? 'active' : 'empty'} projectId={projectId} items={[...items, ...qualityItems]} runs={runs} runsAvailable={runsAvailable} checked={checked} setChecked={setChecked} role={role}
         hasRunnableSpec={hasRunnableSpec} onRun={runnable && canRun && !runner?.stopping ? runner?.open : undefined}
         onDelete={canDelete ? deleteScenario : undefined} deletionDisabled={deletionDisabled}
         onChange={updated => setItems(current => current?.map(item => item.id !== updated.id ? item : {
           ...updated, playwright: scenarioSpecSignature(item) === scenarioSpecSignature(updated) ? item.playwright : null,
         }) ?? null)} />}
+    {qualityError && <p className="scenario-history-warning" role="status">No se pudieron consultar las pruebas de calidad.{' '}
+      <button type="button" className="secondary" onClick={() => void loadQuality()}>Reintentar consulta de calidad</button></p>}
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
 

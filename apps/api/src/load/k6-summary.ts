@@ -3,6 +3,13 @@
 
 export type LoadStage = { duration: string; target: number };
 
+export const DEFAULT_K6_LIMITS = { p95Ms: 2000, errorRate: 0.05 };
+
+const DEFAULT_K6_THRESHOLDS = {
+  http_req_duration: ['p(95)<' + DEFAULT_K6_LIMITS.p95Ms],
+  http_req_failed: ['rate<' + DEFAULT_K6_LIMITS.errorRate],
+};
+
 export type LoadMetrics = {
   totalRequests: number | null;
   reqPerSec: number | null;
@@ -68,17 +75,48 @@ function validateStage(stage: LoadStage): LoadStage {
   return stage;
 }
 
+export function readLoadStages(value: unknown): LoadStage[] | null {
+  if (!Array.isArray(value) || !value.length) return null;
+  const stages: LoadStage[] = [];
+  for (const stage of value) {
+    if (!stage || typeof stage !== 'object' || Array.isArray(stage)
+      || typeof stage.duration !== 'string' || typeof stage.target !== 'number') return null;
+    try {
+      stages.push(validateStage({ duration: stage.duration, target: stage.target }));
+    } catch {
+      return null;
+    }
+  }
+  return stages;
+}
+
+export function totalLoadSeconds(stages: { duration: string }[]): number {
+  return stages.reduce((seconds, { duration }) => {
+    const units = { s: 1, m: 60, h: 3600 } as const;
+    const match = /^(\d+)([smh])$/.exec(duration);
+    return match ? seconds + Number(match[1]) * units[match[2] as keyof typeof units] : seconds;
+  }, 0);
+}
+
 // Genera el script k6 que ejecuta una carga GET contra la URL dada. Los
 // stages y la URL son del operador autenticado; se escapan como literales
 // JS para evitar inyección.
-export function generateK6Script(options: { url: string; stages: LoadStage[]; thresholds?: Record<string, string[]> }): string {
+export function generateK6Script(options: {
+  url: string;
+  stages: LoadStage[];
+  thresholds?: Record<string, string[]>;
+  standalone?: { needsQuery: boolean };
+}): string {
   const url = esc(options.url);
+  const querySetup = options.standalone?.needsQuery ? [
+    "const query = __ENV.AUTOQA_TARGET_QUERY;",
+    "if (!query || !query.startsWith('?')) throw new Error('Define AUTOQA_TARGET_QUERY con los parámetros del entorno autorizado.');",
+    '',
+  ] : [];
+  const target = "'" + url + "'" + (options.standalone?.needsQuery ? ' + query' : '');
   const stages = options.stages.map(validateStage)
     .map(s => `{ duration: '${esc(s.duration)}', target: ${s.target} }`).join(', ');
-  const thresholds = options.thresholds ?? {
-    http_req_duration: ['p(95)<2000'],
-    http_req_failed: ['rate<0.05'],
-  };
+  const thresholds = options.thresholds ?? DEFAULT_K6_THRESHOLDS;
   const thresholdLines = Object.entries(thresholds).map(([metric, rules]) =>
     `    ${JSON.stringify(metric)}: [${rules.map(r => `'${esc(r)}'`).join(', ')}]`
   ).join(',\n');
@@ -87,7 +125,9 @@ export function generateK6Script(options: { url: string; stages: LoadStage[]; th
     "import http from 'k6/http';",
     "import { check, sleep } from 'k6';",
     '',
+    ...querySetup,
     'export const options = {',
+    ...(options.standalone ? ['  maxRedirects: 0,'] : []),
     `  stages: [${stages}],`,
     '  thresholds: {',
     thresholdLines,
@@ -95,7 +135,7 @@ export function generateK6Script(options: { url: string; stages: LoadStage[]; th
     '};',
     '',
     'export default function () {',
-    `  const res = http.get('${url}');`,
+    `  const res = http.get(${target});`,
     "  check(res, { 'status < 400': r => r.status < 400 });",
     '  sleep(1);',
     '}',

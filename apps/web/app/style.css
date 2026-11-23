@@ -372,6 +372,9 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .wizard-actions button { margin: 0; }
 
 /* ---- Runs / audits ---- */
+.load-import { max-width: 720px; padding: 14px 16px; margin: 16px 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.load-import h2 { margin: 0 0 8px; font-size: 16px; }
+.load-import__omitted { padding-left: 20px; margin-bottom: 0; }
 .run-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; margin-top: 10px; }
 .run-form label { margin: 0; }
 .run-form .actions { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }

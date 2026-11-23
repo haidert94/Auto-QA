@@ -4,27 +4,14 @@ import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { OrgRole } from '../../../autoqa-server';
 import { can } from '../../../permissions';
+import { QualityResultsLink } from '../quality-results-link';
 
 type EnvironmentOption = { id: string; type: string | null; baseUrl: string | null };
 
 type Monitor = {
   id: string; name: string; url: string; active: boolean;
   intervalMinutes: number; timeoutMs: number; notifyEmails: string[];
-  lastCheckedAt: string | null; lastStatus: string | null;
-  lastLatencyMs: number | null; lastHttpStatus: number | null;
 };
-
-function statusBadge(status: string | null, active: boolean) {
-  if (!active) return { label: 'Pausado', cls: 'badge-canceled' };
-  if (status === 'UP') return { label: 'UP', cls: 'badge-completed' };
-  if (status === 'DOWN') return { label: 'DOWN', cls: 'badge-failed' };
-  return { label: 'Sin datos', cls: 'badge-queued' };
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
-}
 
 export function MonitorsPanel({ projectId, environments, role }: { projectId: string; environments: EnvironmentOption[]; role?: OrgRole }) {
   const canCreate = can(role, 'monitor.create');
@@ -84,7 +71,8 @@ export function MonitorsPanel({ projectId, environments, role }: { projectId: st
   }
 
   if (environments.length === 0) {
-    return <p className="muted">Autoriza al menos un entorno para configurar monitores.</p>;
+    return <><p className="muted">Autoriza al menos un entorno para configurar monitores.</p>
+      <QualityResultsLink projectId={projectId} /></>;
   }
 
   return <>
@@ -119,6 +107,7 @@ export function MonitorsPanel({ projectId, environments, role }: { projectId: st
     </form>}
 
     {error && <p className="error" role="alert">{error}</p>}
+    <p><QualityResultsLink projectId={projectId} /></p>
 
     {monitors === null
       ? <p className="muted">Cargando…</p>
@@ -126,21 +115,18 @@ export function MonitorsPanel({ projectId, environments, role }: { projectId: st
         ? <p className="muted">Sin monitores todavía.</p>
         : <ul className="audit-list">
           {monitors.map(m => {
-            const b = statusBadge(m.lastStatus, m.active);
             return <li key={m.id}>
               <div className="run-head">
-                <span className={`badge ${b.cls}`}>{b.label}</span>
+                <span className={`badge ${m.active ? 'badge-completed' : 'badge-canceled'}`}>{m.active ? 'Activo' : 'Pausado'}</span>
                 <strong>{m.name}</strong>
                 <span className="muted">· cada {m.intervalMinutes} min</span>
-                {m.lastLatencyMs !== null && <span className="muted">· {m.lastLatencyMs} ms</span>}
-                <span className="muted">· última {formatDate(m.lastCheckedAt)}</span>
               </div>
               <p className="audit-url muted">{m.url}</p>
               {m.notifyEmails.length > 0 && <p className="muted">
                 Alerta a: {m.notifyEmails.join(', ')}
               </p>}
               <div className="actions">
-                <Link href={`/projects/${projectId}/monitors/${m.id}`}>Ver historial →</Link>
+                <Link href={`/projects/${projectId}/monitors/${m.id}`}>Ver configuración →</Link>
                 {canUpdate && <button type="button" className="secondary" onClick={() => toggle(m.id, m.active)}>
                   {m.active ? 'Pausar' : 'Reactivar'}
                 </button>}

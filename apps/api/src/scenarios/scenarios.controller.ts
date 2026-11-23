@@ -61,6 +61,36 @@ export class ScenariosController {
     return new StreamableFile(bytes);
   }
 
+  @Get('quality')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  listQuality(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.listQuality(projectId, workspace);
+  }
+
+  @Get('quality/:kind/:id/automation')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  getQualityAutomation(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('kind') kind: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.qualityAutomation(projectId, kind, id, workspace, false);
+  }
+
+  @Post('quality/:kind/:id/automation')
+  @HttpCode(200)
+  @RequiresRole('EDITOR')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  async prepareQualityAutomation(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('kind') kind: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.qualityAutomation(projectId, kind, id, workspace, true);
+  }
+
   @Get(':id')
   get(
     @Param('projectId', ParseUUIDPipe) projectId: string,

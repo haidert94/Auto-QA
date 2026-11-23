@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
-const { randomBytes, randomUUID } = require('node:crypto');
+const { spawnSync } = require('node:child_process');
+const { createHash, randomBytes, randomUUID } = require('node:crypto');
 const { after, before, test } = require('node:test');
 const { PrismaClient } = require('@prisma/client');
 
@@ -325,10 +326,248 @@ test('Reportes conserva una fila por escenario aunque un caso acumule más inten
 test('GET /scenarios solo lista escenarios del propio proyecto', async () => {
   const projectA = await makeProject();
   const projectB = await makeProject();
-  await (await post(projectA, { title: 'Escenario A', steps: [{ ordinal: 1, action: 'x' }] })).json();
+  await prisma.testScenario.create({ data: {
+    projectId: projectA, title: 'Escenario A', steps: [{ ordinal: 1, action: 'x' }],
+    tags: ['@compatibility', '@compatibilidad', '@firefox'],
+  } });
   await (await post(projectB, { title: 'Escenario B', steps: [{ ordinal: 1, action: 'x' }] })).json();
 
   const listA = await request(`${baseUrl}/projects/${projectA}/scenarios`).then(r => r.json());
   assert.equal(listA.length, 1);
   assert.equal(listA[0].title, 'Escenario A');
+  assert.deepEqual(listA[0].tags, ['@compatibilidad', '@firefox']);
+  const detail = await request(`${baseUrl}/projects/${projectA}/scenarios/${listA[0].id}`).then(r => r.json());
+  assert.deepEqual(detail.tags, listA[0].tags);
+});
+
+test('Escenarios consulta monitores, Lighthouse, carga y UX con pasos en español y resultados del proyecto', async () => {
+  const projectId = await makeProject();
+  const otherProject = await makeProject();
+  const environment = await prisma.environment.create({ data: {
+    projectId, type: 'QA', baseUrl: 'https://example.test', allowedHosts: ['example.test'], authorizationConfirmed: true,
+  } });
+  const run = {
+    projectId, environmentId: environment.id, url: 'https://example.test/catalogo',
+    startedAt: new Date('2026-11-23T12:00:00Z'), completedAt: new Date('2026-11-23T12:00:02Z'),
+    status: 'COMPLETED',
+  };
+  const [monitor, audit, load, ux] = await Promise.all([
+    prisma.monitor.create({ data: {
+      projectId, environmentId: environment.id, name: 'Disponibilidad del catálogo', url: run.url + '?credencial=valor-de-prueba#secreto',
+      timeoutMs: 7000, intervalMinutes: 12, lastStatus: 'UP', lastHttpStatus: 204, lastCheckedAt: run.completedAt, lastLatencyMs: 86,
+    } }),
+    prisma.performanceAudit.create({ data: { ...run, performanceScore: 94 } }),
+    prisma.loadTest.create({ data: {
+      ...run, name: 'Carga del catálogo', stages: [{ duration: '15s', target: 2 }], totalRequests: 80, p95Ms: 250, failRate: 0,
+    } }),
+    prisma.uxAudit.create({ data: { ...run, totalFindings: 2, criticalCount: 1 } }),
+    prisma.monitor.create({ data: { projectId: otherProject, name: 'Monitor ajeno', url: run.url } }),
+  ]);
+  const root = `${baseUrl}/projects/${projectId}/scenarios`;
+  const response = await request(root + '/quality');
+  assert.equal(response.status, 200);
+  const cards = await response.json();
+  assert.equal(cards.length, 4);
+  const byResource = new Map(cards.map(card => [card.quality.resourceId, card]));
+  assert.deepEqual(byResource.get(monitor.id).tags, ['@disponibilidad']);
+  assert.equal(byResource.get(monitor.id).quality.status.label, 'Disponible');
+  assert.equal(byResource.get(monitor.id).quality.result, 'Última respuesta HTTP 204.');
+  assert.doesNotMatch(JSON.stringify(cards), /valor-de-prueba|Monitor ajeno/);
+  assert.deepEqual(byResource.get(audit.id).tags, ['@performance', '@lighthouse']);
+  assert.equal(byResource.get(audit.id).quality.status.label, 'Finalizada');
+  assert.equal(byResource.get(audit.id).quality.durationMs, 2000);
+  assert.deepEqual(byResource.get(load.id).tags, ['@performance', '@carga']);
+  assert.match(byResource.get(load.id).quality.result, /250 ms/);
+  assert.deepEqual(byResource.get(ux.id).tags, ['@ux']);
+  assert.match(byResource.get(ux.id).quality.result, /2 hallazgos registrados/);
+  const params = (id, label) => byResource.get(id).quality.executionConfig.parameters.find(field => field.label === label)?.value;
+  assert.equal(params(monitor.id, 'Intervalo del monitor'), '12 min');
+  assert.equal(params(monitor.id, 'Tiempo máximo de respuesta'), '7000 ms');
+  assert.match(params(audit.id, 'Categorías'), /Rendimiento, Accesibilidad/);
+  assert.equal(params(load.id, 'Etapa 1'), '15s · 2 usuarios virtuales');
+  assert.equal(params(load.id, 'Tiempo de respuesta (p95)'), 'Menor a 2000 ms');
+  assert.match(params(ux.id, 'Análisis'), /Nielsen.*WCAG/);
+  for (const card of cards) {
+    assert.equal(card.quality.executionConfig.environmentId, environment.id);
+    assert.equal(card.quality.executionConfig.url, run.url);
+    assert.deepEqual(card.steps.map(step => step.action.split(' ', 1)[0]), ['Dado', 'Cuando', 'Entonces']);
+    assert.ok(card.expectedResult);
+    assert.equal(card.quality.hasResult, true);
+  }
+  assert.deepEqual(await (await request(root)).json(), []);
+
+  const templates = [
+    [monitor, 'availability', 'disponibilidad.mjs', /fetch\(target/, /AUTOQA_TARGET_QUERY/],
+    [audit, 'lighthouse', 'lighthouse.mjs', /lighthouse\(target.href/, /lighthouse-report\.json/],
+    [load, 'load', 'carga.k6.js', /k6\/http/, /duration: '15s', target: 2/],
+    [ux, 'ux', 'evidencias-ux.mjs', /page\.evaluate/, /Nielsen y pautas WCAG/],
+  ];
+  for (const [resource, kind, name, runner, config] of templates) {
+    const path = root + '/quality/' + kind + '/' + resource.id + '/automation';
+    const wrongProject = `${baseUrl}/projects/${otherProject}/scenarios/quality/${kind}/${resource.id}/automation`;
+    assert.equal((await request(wrongProject, { method: 'POST' })).status, 404);
+    assert.equal((await request(path)).status, 404);
+    assert.equal(byResource.get(resource.id).quality.automation.prepared, false);
+    const response = await request(path, { method: 'POST' });
+    assert.equal(response.status, 200);
+    const prepared = await response.json();
+    assert.equal(prepared.filename, name);
+    assert.equal(prepared.prepared, true);
+    assert.equal(prepared.code, undefined);
+    assert.equal((await request(path, { method: 'POST' })).status, 200);
+    const saved = await (await request(path)).json();
+    assert.equal(saved.filename, name);
+    assert.match(saved.code, runner);
+    assert.match(saved.code, config);
+    assert.doesNotMatch(saved.code, /valor-de-prueba/);
+    const syntax = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: saved.code, encoding: 'utf8' });
+    assert.equal(syntax.status, 0, syntax.stderr);
+  }
+  const savedCards = await (await request(root + '/quality')).json();
+  assert.deepEqual(savedCards.map(card => card.quality.automation.prepared), [true, true, true, true]);
+  assert.deepEqual(savedCards.map(card => card.quality.status), cards.map(card => card.quality.status));
+  assert.equal(await prisma.testRun.count({ where: { projectId } }), 0);
+
+  await prisma.monitor.update({ where: { id: monitor.id }, data: { timeoutMs: 3200 } });
+  const changed = await (await request(root + '/quality')).json();
+  assert.equal(changed.find(card => card.quality.kind === 'availability').quality.automation.prepared, false);
+  const monitorPath = root + '/quality/availability/' + monitor.id + '/automation';
+  assert.equal((await request(monitorPath)).status, 404);
+  assert.equal((await request(monitorPath, { method: 'POST' })).status, 200);
+  assert.match((await (await request(monitorPath)).json()).code, /AbortSignal\.timeout\(3200\)/);
+});
+
+test('los agentes conservan el archivo, rechazan planes inválidos y permiten corregir la configuración', async () => {
+  const projectId = await makeProject();
+  const environment = await prisma.environment.create({ data: {
+    projectId, type: 'QA', baseUrl: 'https://example.test', allowedHosts: ['example.test'],
+    allowedPaths: ['/checkout'], authorizationConfirmed: true,
+  } });
+  const source = { projectId, environmentId: environment.id, url: 'https://example.test/checkout?token=fixture-private' };
+  const [ux, load, audit, wrongTarget] = await Promise.all([
+    prisma.uxAudit.create({ data: { ...source, status: 'COMPLETED' } }),
+    prisma.loadTest.create({ data: { ...source, name: 'Carga', stages: [{ duration: '5s', target: 2 }], status: 'COMPLETED' } }),
+    prisma.performanceAudit.create({ data: {
+      ...source, status: 'COMPLETED',
+      automationSignature: createHash('sha256').update(JSON.stringify([1, 'lighthouse', source.url, undefined, undefined])).digest('hex'),
+    } }),
+    prisma.performanceAudit.create({ data: { ...source, url: 'https://example.test/fuera', status: 'COMPLETED' } }),
+  ]);
+  const root = `${baseUrl}/projects/${projectId}/scenarios/quality`;
+  const path = (kind, resource) => root + '/' + kind + '/' + resource.id + '/automation';
+  const prepare = async (kind, resource) => {
+    const response = await request(path(kind, resource), { method: 'POST' });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const { AppModule } = require('../dist/module');
+  const ai = app.select(AppModule).get(require('../dist/ai/ai-router').AiRouter, { strict: true });
+  const dispatch = ai.dispatch;
+  let requests = 0;
+  let checks = ['no-permitido'];
+  ai.dispatch = async context => {
+    requests++;
+    assert.equal(context.operation, 'ux-analysis');
+    assert.equal(context.projectId, projectId);
+    assert.doesNotMatch(context.prompt, /example\.test|fixture-private/);
+    assert.match(context.prompt, /Tipo de página: Formulario/);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    return { text: JSON.stringify({ checks }), usedFallback: false };
+  };
+
+  try {
+    const [uxReview, loadReview, blocked] = await Promise.all([
+      prepare('ux', ux), prepare('load', load), prepare('lighthouse', wrongTarget),
+    ]);
+    assert.equal(uxReview.prepared, false);
+    assert.match(uxReview.reviewReason, /comprobaciones válidas/);
+    assert.match(loadReview.reviewReason, /10 segundos a 30 minutos/);
+    assert.match(blocked.reviewReason, /fuera del alcance autorizado/);
+    const invalid = await (await request(root)).json();
+    assert.equal(invalid.filter(card => card.quality.automation.reviewReason).length, 3);
+    assert.equal((await request(path('ux', ux))).status, 404);
+    assert.equal((await request(path('lighthouse', audit))).status, 200, 'se conservan las automatizaciones anteriores autorizadas');
+
+    checks = ['form-labels', 'page-language', 'form-labels'];
+    await prisma.loadTest.update({ where: { id: load.id }, data: { stages: [{ duration: '16s', target: 3 }] } });
+    const prepared = await Promise.all([prepare('ux', ux), prepare('ux', ux), prepare('load', load)]);
+    assert.equal(prepared.every(item => item.prepared && !item.reviewReason), true);
+    assert.equal(requests, 2, 'una revisión y una sola preparación para las dos solicitudes concurrentes');
+    const stored = await prisma.uxAudit.findUnique({ where: { id: ux.id } });
+    const saved = await (await request(path('ux', ux))).json();
+    assert.equal(saved.code, stored.automationCode);
+    assert.match(saved.code, /\["form-labels","page-language"\]/);
+    assert.match(saved.code, /ux-comprobaciones\.json/);
+    assert.doesNotMatch(saved.code, /fixture-private|no-permitido/);
+    assert.equal(requests, 2, 'la descarga reutiliza el archivo guardado');
+    assert.equal(await prisma.testRun.count({ where: { projectId } }), 0);
+    assert.equal(stored.status, 'COMPLETED');
+
+    await prisma.environment.update({ where: { id: environment.id }, data: { allowedPaths: ['/otro'] } });
+    assert.equal((await request(path('ux', ux))).status, 404);
+    assert.equal((await request(path('lighthouse', audit))).status, 404);
+  } finally {
+    ai.dispatch = dispatch;
+  }
+});
+
+test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async () => {
+  const projectId = await makeProject();
+  const otherProjectId = await makeProject();
+  const auditKey = randomBytes(16).toString('hex');
+  const screenshotKey = randomBytes(16).toString('hex');
+  const url = 'https://example.test/catalogo?token=privado-fixture#credencial';
+  const timestamp = new Date('2026-11-23T12:00:00Z');
+  const completed = { projectId, url, status: 'COMPLETED', completedAt: timestamp };
+  const [monitor, , , ux, otherUx] = await Promise.all([
+    prisma.monitor.create({ data: {
+      projectId, name: 'Monitor pausado', url, active: false, lastCheckedAt: timestamp, lastStatus: 'UP',
+      lastLatencyMs: 0, lastHttpStatus: 204,
+      checks: { create: { at: timestamp, status: 'UP', httpStatus: 204, latencyMs: 0 } },
+    } }),
+    prisma.performanceAudit.create({ data: { ...completed, performanceScore: 94, accessibilityScore: 0, tbtMs: 0 } }),
+    prisma.loadTest.create({ data: { ...completed, name: 'Carga registrada', stages: [], failRate: 0, p95Ms: 250 } }),
+    prisma.uxAudit.create({ data: { ...completed, totalFindings: 1, criticalCount: 0, reportKey: auditKey } }),
+    prisma.uxAudit.create({ data: { ...completed, projectId: otherProjectId, reportKey: auditKey } }),
+    prisma.performanceAudit.create({ data: { ...completed, status: 'RUNNING', performanceScore: 99 } }),
+    prisma.loadTest.create({ data: { ...completed, name: 'Carga cancelada', status: 'CANCELED', stages: [] } }),
+  ]);
+  const { AppModule } = require('../dist/module');
+  const { SCREENSHOT_READER } = require('../dist/exploration/screenshot-storage');
+  const reader = app.select(AppModule).get(SCREENSHOT_READER, { strict: false });
+  const read = reader.read;
+  reader.read = async function (key) {
+    if (key === auditKey) return Buffer.from(JSON.stringify({
+      overallSummary: 'Resumen de la auditoría', screenshotKey, findings: [
+        { severity: 'major', summary: 'Campo sin etiqueta', recommendation: 'Añadir una etiqueta visible', selector: 'input' },
+      ],
+    }));
+    if (key === screenshotKey) return Buffer.from([137, 80, 78, 71]);
+    return read.call(this, key);
+  };
+  const base = `${baseUrl}/projects/${projectId}/report/quality`;
+  try {
+    const response = await request(base);
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    const byKind = new Map(data.map(row => [row.kind, row]));
+    assert.equal(data.length, 4);
+    assert.equal(byKind.get('availability').status, 'available');
+    assert.deepEqual(byKind.get('availability').metrics, [{ label: 'Código HTTP', value: '204' }, { label: 'Latencia', value: '0 ms' }]);
+    assert.ok(byKind.get('lighthouse').metrics.some(metric => metric.value === '0/100'));
+    assert.ok(byKind.get('load').metrics.some(metric => metric.label === 'Tiempo de respuesta p95' && metric.value === '250 ms'));
+    assert.doesNotMatch(JSON.stringify(data), new RegExp(['privado-fixture', 'credencial', 'Carga cancelada', auditKey, otherUx.id].join('|')));
+    const history = await (await request(base + '/availability/' + monitor.id)).json();
+    assert.equal(history[0].httpStatus, 204);
+    const detail = await (await request(base + '/ux/' + ux.id)).json();
+    assert.deepEqual(detail, { summary: 'Resumen de la auditoría', hasScreenshot: true,
+      findings: [{ severity: 'major', summary: 'Campo sin etiqueta', recommendation: 'Añadir una etiqueta visible' }] });
+    const screenshot = await request(base + '/ux/' + ux.id + '/screenshot');
+    assert.equal(screenshot.headers.get('content-type'), 'image/png');
+    assert.deepEqual([...new Uint8Array(await screenshot.arrayBuffer())], [137, 80, 78, 71]);
+    assert.equal((await request(base + '/ux/' + otherUx.id)).status, 404);
+    assert.equal((await request(base + '/ux/' + otherUx.id + '/screenshot')).status, 404);
+  } finally {
+    reader.read = read;
+  }
 });

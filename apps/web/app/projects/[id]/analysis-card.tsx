@@ -22,7 +22,7 @@ const HELP_GUIDES: Record<string, HelpGuide> = {
     description: 'El agente no encontró documentos funcionales cargados para el proyecto. Sin requisitos ni historias, el IPA no puede evaluar la cobertura.',
     steps: [
       'Reunite con el equipo funcional y pedí las historias de usuario, requisitos o criterios de aceptación en PDF, DOCX, XLSX o Markdown.',
-      'Abrí "Documentos asociados y contratos técnicos" en esta misma pestaña.',
+      'Abrí "Historias de usuario y Documentos asociados" en esta misma pestaña.',
       'Subí los archivos usando el stepper de módulos. El análisis se dispara automáticamente al terminar.',
     ],
     action: { label: 'Abrir documentos', target: 'documents' },
@@ -31,7 +31,7 @@ const HELP_GUIDES: Record<string, HelpGuide> = {
     title: 'Valida un documento procesado',
     description: 'La IA ya extrajo findings pero nadie confirmó que el documento sea la fuente oficial. La validación es un sello de "esto es lo que vamos a probar contra".',
     steps: [
-      'Abrí "Documentos asociados y contratos técnicos" en esta misma pestaña.',
+      'Abrí "Historias de usuario y Documentos asociados" en esta misma pestaña.',
       'Ubicá en la lista el documento procesado que querés aprobar.',
       'Click en "Marcar como validado". Esta acción requiere rol ADMIN u OWNER.',
       'Si encontrás un error en el contenido, eliminá el documento y re-cargá la versión corregida.',

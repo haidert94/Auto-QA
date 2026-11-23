@@ -324,6 +324,8 @@ test('reserva y registra el navegador de compatibilidad, con prioridad para la e
   row.title = '[COMPAT] Página de inicio accesible';
   row.tags = ['@compatibility', '@firefox'];
   await queue('FIREFOX');
+  row.tags = ['@compatibilidad', '@webkit'];
+  await queue('WEBKIT');
 });
 
 test('la cuota admite los motores de compatibilidad solo si están incluidos en el plan', () => {

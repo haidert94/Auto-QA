@@ -10,11 +10,11 @@ import { useQualityHeader } from './project-tabs';
 import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
 import { REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
 import { levelFor, type IpaSummary } from './ipa-hero';
-import { dateText, durationText, runLabels } from './run-report-data';
+import { dateText } from './run-report-data';
 import { useScenarioInsights } from './scenario-insights';
 import { CodeHealthCard } from './code-health';
 import { IcspGapModal } from './icsp-gap-modal';
-import { LighthouseDetailModal, type LighthouseCategory } from './quality-detail-modal';
+import { QualityResultsLink } from './quality-results-link';
 
 type IcspGapKind = 'requirementsWithoutScenario' | 'scenariosNotExecuted' | 'unstableScenarios';
 
@@ -30,9 +30,6 @@ type Icsp = {
   gaps: Record<'requirementsWithoutScenario' | 'scenariosNotExecuted' | 'unstableScenarios', { id: string; label: string; detail?: string }[]>;
 };
 type Assessment = { id: string; score: number | null; createdAt: string; delta: number | null };
-type Audit = { id: string; status: keyof typeof runLabels; createdAt: string; completedAt: string | null;
-  performanceScore: number | null; accessibilityScore: number | null; bestPracticesScore: number | null; seoScore: number | null;
-  lcpMs: number | null; fcpMs: number | null; tbtMs: number | null; cls: number | null };
 type Data<T> = { value: T | null; error: string; loading: boolean };
 const pending = <T,>(): Data<T> => ({ value: null, error: '', loading: true });
 
@@ -53,19 +50,17 @@ export function QualityPanel({ project }: { project: Project }) {
   const [icsp, setIcsp] = useState<Data<Icsp>>(pending);
   const [ipaHistory, setIpaHistory] = useState<Data<Assessment[]>>(pending);
   const [icspHistory, setIcspHistory] = useState<Data<Assessment[]>>(pending);
-  const [audits, setAudits] = useState<Data<Audit[]>>(pending);
   const [refresh, setRefresh] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [gapOpen, setGapOpen] = useState<IcspGapKind | null>(null);
-  const [lighthouseOpen, setLighthouseOpen] = useState<LighthouseCategory | null>(null);
   const exportMenu = useRef<HTMLDetailsElement>(null);
   const insights = useScenarioInsights(project.id, !!header?.active, refresh);
 
   useEffect(() => {
     if (!header?.active) return;
     const controller = new AbortController();
-    setIpa(pending()); setIcsp(pending()); setIpaHistory(pending()); setIcspHistory(pending()); setAudits(pending());
+    setIpa(pending()); setIcsp(pending()); setIpaHistory(pending()); setIcspHistory(pending());
     async function read(path: string) {
       const response = await fetch(`/api/projects/${project.id}${path}`, { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) });
       if (!response.ok) throw new Error(response.status === 403 ? 'Consulta no autorizada o no incluida en el plan.' : 'No se pudo consultar esta evaluación.');
@@ -78,14 +73,14 @@ export function QualityPanel({ project }: { project: Project }) {
       if (!valid) throw new Error('La API no devolvió una evaluación válida.');
       return value;
     }
-    Promise.allSettled([read('/ipa'), read('/icsp'), read('/ipa/history'), read('/icsp/history'), read('/audits')]).then(results => {
+    Promise.allSettled([read('/ipa'), read('/icsp'), read('/ipa/history'), read('/icsp/history')]).then(results => {
       if (controller.signal.aborted) return;
       const state = <T,>(index: number): Data<T> => {
         const result = results[index];
         return result.status === 'fulfilled' ? { value: result.value as T, error: '', loading: false }
           : { value: null, error: result.reason instanceof Error ? result.reason.message : 'Consulta no disponible.', loading: false };
       };
-      setIpa(state(0)); setIcsp(state(1)); setIpaHistory(state(2)); setIcspHistory(state(3)); setAudits(state(4));
+      setIpa(state(0)); setIcsp(state(1)); setIpaHistory(state(2)); setIcspHistory(state(3));
     });
     return () => controller.abort();
   }, [project.id, header?.active, refresh, activity.waiting, activity.historyVersion]);
@@ -142,8 +137,6 @@ export function QualityPanel({ project }: { project: Project }) {
   const canGenerate = activity.verified && !activity.waiting && !loading && !!preparation && hasRuns;
   const exportNotice = activity.waiting ? REPORT_WHILE_RUNNING
     : activity.statusMessage || (!loading && health && !hasRuns ? REPORT_WITHOUT_RUNS : '');
-  const completedAudit = audits.value?.find(audit => audit.status === 'COMPLETED');
-  const lastAudit = audits.value?.[0];
 
   async function printReport() {
     if (!canGenerate || exporting) return;
@@ -164,7 +157,7 @@ export function QualityPanel({ project }: { project: Project }) {
 
   return <section className="quality-panel" aria-label="Calidad del proyecto">
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary="Evaluación de preparación (IPA), salud del producto (ICSP) y auditorías registradas. Consulta las fuentes y los datos pendientes antes de interpretar los indicadores."
+      summary="Evaluación de preparación (IPA), salud del producto (ICSP). Consulta las fuentes y los datos pendientes antes de interpretar los indicadores."
       actions={<><details ref={exportMenu} className="quality-export"><summary><Download size={14} />Exportar informe</summary><div>
         <button type="button" disabled={exporting || !canGenerate} onClick={() => void exportJson()}>{exporting ? 'Exportando…' : 'Descargar informe JSON'}</button>
         <button type="button" disabled={exporting || !canGenerate} onClick={() => void printReport()}>Imprimir / Guardar como PDF</button>
@@ -265,63 +258,16 @@ export function QualityPanel({ project }: { project: Project }) {
           </div>}
       </EvaluationCard>;
     })()}
-    {(() => {
-      // Tarjeta 04 con el mismo patrón visual que IPA/ICSP: anillo con score
-      // consolidado (promedio ponderado), headline con el nivel, badge en el
-      // header, barras por dimensión (las 4 tarjetas de Lighthouse se
-      // mantienen clicables para ver la explicación por categoría) y el
-      // enlace a la página standalone al final.
-      const scores = completedAudit ? [completedAudit.performanceScore, completedAudit.accessibilityScore, completedAudit.bestPracticesScore, completedAudit.seoScore].filter((n): n is number => typeof n === 'number') : [];
-      const lhScore = scores.length ? Math.round(scores.reduce((sum, n) => sum + n, 0) / scores.length) : null;
-      const lhLevel = lhScore === null ? null
-        : lhScore >= 90 ? 'ÓPTIMO'
-        : lhScore >= 70 ? 'ACEPTABLE'
-        : lhScore >= 50 ? 'MEJORABLE'
-        : 'CRÍTICO';
-      const lhBadge = audits.loading ? 'Consultando' : completedAudit ? `${lhLevel} · ${lhScore}/100` : 'Sin evaluación';
-      const lhHeadline = !completedAudit ? 'No hay auditorías Lighthouse completadas.'
-        : lhScore === null ? 'Sin puntajes registrados aún.'
-        : lhScore >= 90 ? 'Performance y calidad frontend óptimas.'
-        : lhScore >= 70 ? 'Buen nivel con margen de mejora en alguna dimensión.'
-        : lhScore >= 50 ? 'Varias dimensiones requieren atención.'
-        : 'Alta deuda frontend: prioriza las dimensiones con score bajo.';
-      return <EvaluationCard index="04" title="Auditorías Lighthouse" badge={lhBadge}>
-        {audits.loading ? <p className="quality-message" role="status">Consultando auditorías…</p>
-          : audits.error ? <p className="quality-message muted">{audits.error}</p>
-          : !completedAudit ? <p className="quality-message muted">No hay auditorías Lighthouse completadas. Puedes configurar una auditoría con su entorno y alcance autorizados.</p>
-          : <div className="quality-evaluation__body">
-            <div className="quality-score-summary"><Score label="Lighthouse" value={lhScore} /><div>
-              <h3>{lhHeadline}</h3>
-              <p>{lastAudit && <>Última solicitud: {runLabels[lastAudit.status]} · {dateText(lastAudit.createdAt)}. </>}
-                LCP: {durationText(completedAudit.lcpMs)} · TBT: {durationText(completedAudit.tbtMs)} · CLS: {completedAudit.cls ?? 'No disponible'}.</p>
-              <small>Completada: {dateText(completedAudit.completedAt)}</small>
-            </div></div>
-            <div className="quality-audit-values">{([
-              ['performance', 'performanceScore', 'Performance'],
-              ['accessibility', 'accessibilityScore', 'Accesibilidad'],
-              ['bestPractices', 'bestPracticesScore', 'Buenas prácticas'],
-              ['seo', 'seoScore', 'SEO'],
-            ] as const).map(([cat, key, label]) => <button key={key} type="button"
-              className="quality-audit-card" onClick={() => setLighthouseOpen(cat)}
-              aria-label={`Abrir explicación de ${label}`}>
-              <span>{label}</span><strong>{completedAudit[key] ?? '—'}<small>/100</small></strong>
-            </button>)}</div>
-            <Link className="quality-detail-link" href={`/projects/${project.id}/performance`}>Ver auditorías y configuración →</Link>
-          </div>}
-      </EvaluationCard>;
-    })()}
     <CodeHealthCard active={!!header?.active} projectId={project.id} />
     </div>
     <div className="quality-history-grid">{([{ title: 'Histórico IPA', data: ipaHistory }, { title: 'Histórico ICSP', data: icspHistory }]).map(({ title, data }) => <section className="quality-history" key={title} aria-label={title}>
       <h2>{title}</h2>{data.loading ? <p>Consultando histórico…</p> : data.error ? <p className="muted">{data.error}</p> : !data.value?.length ? <p>Sin evaluaciones guardadas.</p>
         : <ol>{data.value.slice(0, 3).map(item => <li key={item.id}><strong>{item.score ?? '—'}</strong><span>{dateText(item.createdAt)}</span><small>Variación: {item.delta === null ? 'Sin comparación' : item.delta > 0 ? `+${item.delta}` : item.delta}</small></li>)}</ol>}</section>)}</div>
-    <nav className="quality-tools" aria-label="Otras herramientas de calidad"><Link href={`/projects/${project.id}/report`}>Reporte consolidado</Link><Link href={`/projects/${project.id}/performance`}>Performance · Lighthouse</Link>
+    <nav className="quality-tools" aria-label="Otras herramientas de calidad"><QualityResultsLink projectId={project.id} /><Link href={`/projects/${project.id}/performance`}>Performance · Lighthouse</Link>
       <Link href={`/projects/${project.id}/load`}>Carga controlada</Link><Link href={`/projects/${project.id}/monitors`}>Monitores</Link></nav>
     {gapOpen && health && <IcspGapModal projectId={project.id}
       kind={gapOpen}
       title={({ requirementsWithoutScenario: 'Requisitos sin escenario', scenariosNotExecuted: 'Escenarios sin ejecución', unstableScenarios: 'Escenarios inestables' } as Record<string, string>)[gapOpen]}
       items={health.gaps[gapOpen]} onClose={() => setGapOpen(null)} />}
-    {lighthouseOpen && completedAudit && <LighthouseDetailModal projectId={project.id}
-      category={lighthouseOpen} audit={completedAudit} onClose={() => setLighthouseOpen(null)} />}
   </section>;
 }

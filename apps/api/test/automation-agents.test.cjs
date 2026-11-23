@@ -182,18 +182,20 @@ test('el asistente de requisitos solo devuelve propuestas con aserciones', async
   assert.deepEqual(result.scenarios.map(scenario => scenario.title), ['Verificar inicio']);
 });
 
-test('las variantes de compatibilidad heredan la regresión de su escenario base', async () => {
+test('las variantes de compatibilidad conservan la etiqueta aunque el caso base tenga 20 etiquetas', async () => {
   const created = [];
+  const extraTags = Array.from({ length: 19 }, (_, i) => '@tag-' + i);
   const base = [
     { title: 'Caso de regresión', steps, expectedResult: null, tags: ['@funcional', '@regresion'] },
-    { title: 'Caso nuevo', steps, expectedResult: null, tags: ['@funcional'] },
+    { title: 'Caso nuevo', steps, expectedResult: null, tags: ['@funcional', ...extraTags] },
     { title: 'Caso antiguo incompleto', steps: [steps[0]], expectedResult: 'Abre el acceso', tags: ['@funcional'] },
   ];
   const outcome = await runCompatibilityAgent(context, {
     prisma: {
       testScenario: {
         async findMany({ where }) {
-          assert.ok(where.NOT.OR.some(filter => filter.tags?.hasSome.includes('@manual')));
+          assert.ok(where.NOT.OR.some(filter => ['@manual', '@compatibilidad', '@compatibility']
+            .every(tag => filter.tags?.hasSome.includes(tag))));
           assert.ok(where.NOT.OR.some(filter => filter.title?.startsWith === '[COMPAT:'));
           return base;
         },
@@ -204,9 +206,9 @@ test('las variantes de compatibilidad heredan la regresión de su escenario base
 
   assert.equal(outcome.created, 6);
   for (const [index, browser] of ['@chromium', '@firefox', '@webkit'].entries()) {
-    assert.deepEqual(created[index].tags, ['@funcional', '@regresion', '@compatibility', browser]);
+    assert.deepEqual(created[index].tags, ['@funcional', '@regresion', '@compatibilidad', browser]);
     assert.deepEqual(created[index].steps, steps);
-    assert.deepEqual(created[index + 3].tags, ['@funcional', '@compatibility', browser]);
+    assert.deepEqual(created[index + 3].tags, ['@funcional', ...extraTags.slice(0, 17), '@compatibilidad', browser]);
   }
 });
 

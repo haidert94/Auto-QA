@@ -6,6 +6,7 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
 import { validateExplorationUrlSync, type GuardScope } from '../exploration/url-guard';
+import { totalLoadSeconds } from './k6-summary';
 import { CreateLoadTestDto } from './dto/create-load-test.dto';
 
 function scopeFromEnvironment(env: { allowedHosts: Prisma.JsonValue; allowedPaths: Prisma.JsonValue; excludedPaths: Prisma.JsonValue }): GuardScope {
@@ -16,16 +17,6 @@ function scopeFromEnvironment(env: { allowedHosts: Prisma.JsonValue; allowedPath
     allowedPaths: toStringArray(env.allowedPaths),
     excludedPaths: toStringArray(env.excludedPaths),
   };
-}
-
-function totalSeconds(stages: { duration: string }[]): number {
-  return stages.reduce((sum, s) => {
-    const match = /^(\d+)([smh])$/.exec(s.duration);
-    if (!match) return sum;
-    const value = Number(match[1]);
-    const mult = match[2] === 'h' ? 3600 : match[2] === 'm' ? 60 : 1;
-    return sum + value * mult;
-  }, 0);
 }
 
 @Injectable()
@@ -79,7 +70,7 @@ export class LoadService {
     }
 
     const maxVus = Math.max(...dto.stages.map(s => s.target), 0);
-    const seconds = totalSeconds(dto.stages);
+    const seconds = totalLoadSeconds(dto.stages);
     if (maxVus === 0) throw new BadRequestException('Al menos un stage debe tener target > 0.');
     if (seconds > 30 * 60) throw new BadRequestException('La duración total no puede superar 30 minutos.');
     if (seconds < 10) throw new BadRequestException('La duración total debe ser al menos 10 segundos.');

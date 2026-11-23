@@ -46,9 +46,14 @@ const ipa = { score: 82, status: 'ASSESSED', signals: [
   { criterion: 'Documentación y requisitos', weight: 40, points: 22, missing: ['Confirmar requisitos ambiguos.'], blocking: false },
   { criterion: 'Roles y credenciales', weight: 30, points: 30, missing: [], blocking: false },
 ] };
+const loadRequests = [];
 const generationRequests = [];
 const generationJobId = '60400000-0000-4000-8000-000000000001';
 let generationSelectionBlocked = false;
+let qualityScenarioRows = [];
+const qualityFileRequests = [];
+let qualityWaitForPeers = null;
+let qualityReviewKind = null;
 let generationErrorCode = null;
 const completedDocumentTypes = new Set();
 const pendingFinding = {
@@ -212,6 +217,34 @@ const api = createServer(async (request, response) => {
     generationRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
     return send({ id: generationJobId, status: 'QUEUED', stage: 'pending' }, 201);
   }
+  if (path === base + '/scenarios/quality') return send(qualityScenarioRows);
+  if (path === base + '/report/quality') return send(qualityScenarioRows.map(row => ({
+    id: row.quality.resourceId, kind: row.quality.kind, title: row.title,
+    target: row.quality.executionConfig.url, recordedAt: '2026-11-23T13:00:00.000Z',
+    status: row.quality.kind === 'availability' ? 'available' : 'completed', hasEvidence: true, error: null,
+    metrics: [{ label: 'Resultado registrado', value: row.quality.result }],
+  })));
+  if (path.startsWith(base + '/report/quality/availability/')) return send([{
+    id: 'fixture-check', at: '2026-11-23T13:00:00.000Z', status: 'UP', httpStatus: 204, latencyMs: 0, error: null,
+  }]);
+  if (path.startsWith(base + '/report/quality/ux/')) return send({
+    summary: 'Resumen UX de prueba', findings: [{ severity: 'major', summary: 'Campo sin etiqueta', recommendation: 'Añadir etiqueta' }],
+    hasScreenshot: true,
+  });
+  const qualityFile = qualityScenarioRows.find(row => path === base + '/scenarios/quality/'
+    + row.quality.kind + '/' + row.quality.resourceId + '/automation');
+  if (qualityFile) {
+    const { kind, automation } = qualityFile.quality;
+    qualityFileRequests.push({ kind, method: request.method });
+    if (request.method === 'POST') {
+      await qualityWaitForPeers?.(kind);
+      automation.prepared = kind !== qualityReviewKind;
+      automation.reviewReason = automation.prepared ? undefined : 'Configura un perfil de carga válido.';
+      return send(automation);
+    }
+    if (!automation.prepared) return send({ message: 'Generación pendiente' }, 404);
+    return send({ ...automation, code: '// Archivo preparado para ' + automation.tool });
+  }
   if (path === base + '/scenarios/requirements') return send([requirement]);
   if (path === base + '/scenarios/insights') {
     return send({ scenarios: scenarios.length, steps: 0, duplicateGroups: 0, duplicatedSteps: 0, groups: [] });
@@ -370,6 +403,15 @@ const api = createServer(async (request, response) => {
   if (path === base + '/report/export') return qualityExportFail ? send({ message: 'Exportación no disponible' }, 503) : send({
     project: { id: project.id, name: project.name, status: project.status }, ipa, icsp: qualityIcsp, traceability: [], generatedAt: '2026-11-18T12:00:00Z',
   });
+  if (path === base + '/load-tests') {
+    if (request.method === 'GET') return send([]);
+    if (request.method === 'POST') {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      loadRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
+      return send({ id: randomUUID(), status: 'QUEUED' }, 201);
+    }
+  }
   if (path === base + '/documents' && request.method === 'POST') {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
@@ -433,6 +475,54 @@ const api = createServer(async (request, response) => {
   return send({ message: 'No encontrado' }, 404);
 });
 
+async function verifyPostmanLoadImport(page, website) {
+  const original = project;
+  project = { ...project, environments: project.environments.map(env => ({ ...env, authorizationConfirmed: true })) };
+  const url = page.getByLabel('URL a cargar', { exact: true });
+  const input = page.getByLabel('Colección JSON', { exact: true });
+  const fixture = {
+    info: { schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+    item: [
+      { request: { method: 'GET', url: 'https://source.example.test/api/status?token=synthetic' } },
+      { request: { method: 'POST', url: '{{baseUrl}}/api/products' } },
+      { request: { method: 'GET', url: '{{baseUrl}}/api/products/:id' } },
+      { request: { method: 'GET', url: '//other.example.test/hidden' } },
+      { item: [{ request: { method: 'GET', url: { raw: '{{baseUrl}}/v1/products' } } }] },
+      { auth: { type: 'bearer' }, item: [{ request: { method: 'GET', url: '/private' } }] },
+    ],
+  };
+  const originalRequests = loadRequests.length;
+  try {
+    await page.goto(website + "/projects/" + projectId + "/load");
+    await input.setInputFiles({ name: 'collection.json', mimeType: 'application/json', buffer: Buffer.from('{') });
+    await expect(page.getByRole('alert').getByText('El archivo no contiene JSON válido.')).toBeVisible();
+    await input.setInputFiles({ name: 'collection.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture)) });
+    const endpoints = page.getByRole('combobox', { name: 'Endpoint GET', exact: true });
+    await expect(endpoints.locator('option')).toHaveCount(3);
+    await expect(page.getByText('Solicitudes con otros métodos: 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Solicitudes que requieren autenticación: 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Solicitudes con rutas pendientes de completar: 2', { exact: true })).toBeVisible();
+    await endpoints.selectOption({ label: 'GET · Raíz /api/status' });
+    await expect(url).toHaveValue('https://staging.example.test/api/status');
+    await expect(page.getByText('Agrega en la URL los parámetros de prueba que correspondan.')).toBeVisible();
+    await endpoints.selectOption({ label: 'GET · Entorno /v1/products' });
+    await expect(url).toHaveValue('https://staging.example.test/checkout/v1/products');
+    await page.getByRole('combobox', { name: 'Entorno', exact: true }).selectOption(project.environments[1].id);
+    await expect(url).toHaveValue('https://qa.example.test/v1/products');
+    assert.equal(loadRequests.length, originalRequests, 'Importar, elegir endpoint y cambiar entorno no encolan carga.');
+    await page.getByLabel('Nombre', { exact: true }).fill('Catálogo API');
+    await page.getByRole('button', { name: 'Encolar prueba', exact: true }).click();
+    await expect(page.getByLabel('Nombre', { exact: true })).toHaveValue('');
+    assert.equal(loadRequests.length, originalRequests + 1);
+    assert.equal(loadRequests.at(-1).url, 'https://qa.example.test/v1/products');
+    assert.equal(loadRequests.at(-1).environmentId, project.environments[1].id);
+    console.log('PASS importa Postman, usa el entorno autorizado y conserva el envío explícito de k6.');
+  } finally {
+    project = original;
+  }
+  await page.goto(website + "/projects/" + projectId);
+}
+
 async function verifyDocumentGenerationConfirmation(page) {
   const original = structuredClone(documents);
   const initialRequests = generationRequests.length;
@@ -448,8 +538,9 @@ async function verifyDocumentGenerationConfirmation(page) {
     await expect(confirm).toBeDisabled();
     await cancel.click();
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '02 // Historias de usuario y Documentos asociados', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
-    const documentsDialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
+    const documentsDialog = page.getByRole('dialog', { name: 'Historias de usuario y Documentos asociados', exact: true });
     const doc = documentsDialog.locator('ul.document-list--saved > li').filter({ hasText: 'requisitos-pagos.pdf' });
     await doc.getByText('Aplica a: General', { exact: true }).click();
     await doc.getByRole('checkbox', { name: 'Funcional web', exact: true }).click();
@@ -545,7 +636,7 @@ async function verifyDocumentUploads(page) {
     ? { ...document, testTypes: ['functional_web', 'manual'], testTypesSource: 'AUTOMATIC' }
     : document);
   await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
+  const dialog = page.getByRole('dialog', { name: 'Historias de usuario y Documentos asociados' });
   const uploadPanel = dialog.getByRole('region', { name: 'Carga de documentos' });
   const savedPanel = dialog.getByRole('region', { name: 'Archivos del proyecto' });
   const card = filename => savedPanel.locator('ul.document-list--saved > li').filter({ has: page.getByText(filename, { exact: true }) });
@@ -624,6 +715,253 @@ async function verifyDocumentUploads(page) {
     console.log('PASS la carga, el análisis y la validación actualizan el IPA sin recargar la página.');
   } finally {
     documents = original;
+  }
+}
+
+async function verifyQualityScenarios(page) {
+  const tools = {
+    availability: { tool: 'Node.js', filename: 'disponibilidad.mjs' },
+    lighthouse: { tool: 'Lighthouse', filename: 'lighthouse.mjs' },
+    load: { tool: 'k6', filename: 'carga.k6.js' },
+    ux: { tool: 'Playwright', filename: 'evidencias-ux.mjs' },
+  };
+  const settings = {
+    availability: [{ label: 'Intervalo del monitor', value: '12 min' }, { label: 'Tiempo máximo de respuesta', value: '7000 ms' }],
+    lighthouse: [{ label: 'Categorías', value: 'Rendimiento, Accesibilidad, Buenas prácticas, SEO' }],
+    load: [{ label: 'Etapa 1', value: '15s · 2 usuarios virtuales' }],
+    ux: [{ label: 'Resolución', value: '1280 × 720 px' }, { label: 'Análisis', value: 'Nielsen y WCAG' }],
+  };
+  const qualityUrl = 'https://example.test/catalogo';
+  const fixture = (kind, title, tags, result, href) => {
+    const resourceId = randomUUID();
+    return {
+      id: kind + ':' + resourceId,
+      title, tags, requirementId: null,
+      steps: [
+        { ordinal: 1, action: 'Dado que se configuró el destino del catálogo.' },
+        { ordinal: 2, action: 'Cuando AutoQA realiza la comprobación.' },
+        { ordinal: 3, action: 'Entonces se registran las métricas correspondientes.' },
+      ],
+      expectedResult: 'Se registran las métricas correspondientes.',
+      quality: {
+        kind, resourceId, label: title, result, href, hasResult: true,
+        status: { label: 'Finalizada', tone: 'unknown' }, runAt: null, durationMs: null,
+        automation: { ...tools[kind], prepared: false },
+        executionConfig: { environmentId: kind === 'ux' ? null : environment.id, url: qualityUrl, parameters: settings[kind] },
+      },
+    };
+  };
+  const saved = new Map(savedPlaywright);
+  const runCount = queuedRequests.length;
+  const startedKinds = new Set();
+  let releasePeers;
+  const peersReady = new Promise(resolve => { releasePeers = resolve; });
+  qualityWaitForPeers = kind => {
+    startedKinds.add(kind);
+    if (startedKinds.size === 4) releasePeers();
+    return peersReady;
+  };
+  qualityReviewKind = 'load';
+  qualityScenarioRows = [
+    fixture('availability', 'Disponibilidad del catálogo', ['@disponibilidad'], 'Última respuesta HTTP 204.', '/projects/' + projectId + '/monitors'),
+    fixture('lighthouse', 'Medir la carga del catálogo', ['@performance', '@lighthouse'], 'Puntuación de rendimiento 94/100.', '/projects/' + projectId + '/performance'),
+    fixture('load', 'Carga del catálogo', ['@performance', '@carga'], '80 solicitudes.', '/projects/' + projectId + '/load'),
+    fixture('ux', 'Revisar usabilidad del catálogo', ['@ux'], '2 hallazgos registrados.'),
+  ];
+
+  try {
+    await page.reload();
+    const tab = page.getByRole('tab', { name: 'Escenarios (' + (scenarios.length + 4) + ')', exact: true });
+    await tab.click();
+    const panel = page.getByRole('tabpanel', { name: /^Escenarios/ });
+    const list = panel.getByRole('list', { name: 'Escenarios del proyecto', exact: true });
+    const details = panel.getByRole('complementary', { name: 'Detalle del escenario seleccionado' });
+    for (const row of qualityScenarioRows) {
+      await list.getByRole('button', { name: row.title, exact: true }).click();
+      await expect(details.getByRole('heading', { name: row.title })).toBeVisible();
+      for (const keyword of ['Dado', 'Cuando', 'Entonces']) {
+        await expect(details.getByText(keyword, { exact: true })).toBeVisible();
+      }
+      await expect(details.getByRole('heading', { name: /Resultado esperado/ })).toBeVisible();
+      await expect(details.getByText(row.quality.result, { exact: true })).toHaveCount(0);
+      await expect(details.getByRole('link', { name: 'Ver resultados en Reportes →' })).toHaveAttribute('href', `/projects/${projectId}?resultados=calidad#reporte`);
+      await expect(details.getByRole('button', { name: /Ejecutar escenario seleccionado|Editar escenario|Eliminar escenario/ })).toHaveCount(0);
+      await expect(list.getByRole('checkbox', { name: 'Seleccionar ' + row.title, exact: true })).toBeDisabled();
+      if (row.quality.href) await expect(details.getByRole('link', { name: 'Ver configuración →' })).toHaveAttribute('href', row.quality.href);
+    }
+    await panel.getByText(/Todas las etiquetas/).click();
+    await panel.getByRole('button', { name: '@performance (2)', exact: true }).click();
+    await expect(list.getByRole('heading')).toHaveText(['Medir la carga del catálogo', 'Carga del catálogo']);
+    console.log('PASS Disponibilidad, Lighthouse, Carga y UX aparecen con el detalle y filtros de Escenarios.');
+
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    const automation = page.getByRole('region', { name: 'Automatización de pruebas', exact: true });
+    const automationList = automation.getByRole('list', { name: 'Pruebas de automatización', exact: true });
+    const generate = automation.getByRole('button', { name: /^Generar seleccionados/ });
+    const total = scenarios.filter(item => !item.tags?.includes('@manual')).length + qualityScenarioRows.length;
+    await expect(generate).toHaveText('Generar seleccionados (' + total + ')');
+    for (const row of qualityScenarioRows) {
+      const card = automationList.getByRole('listitem').filter({ has: page.getByRole('heading', { name: row.title, exact: true }) });
+      await expect(card.getByText(row.quality.label + ' · ' + row.quality.automation.tool, { exact: true })).toBeVisible();
+      await expect(card.getByText(row.quality.result, { exact: true })).toHaveCount(0);
+      await expect(card.getByRole('checkbox')).toBeChecked();
+      await expect(card.getByText('Pendiente', { exact: true })).toBeVisible();
+      if (row.quality.href) await expect(card.getByRole('link', { name: 'Ver configuración →' })).toHaveAttribute('href', row.quality.href);
+    }
+    await automation.getByRole('button', { name: 'Calidad (4)', exact: true }).click();
+    await expect(automationList.getByRole('heading')).toHaveText(qualityScenarioRows.map(row => row.title));
+    await expect(generate).toBeEnabled();
+    const qualitySuite = page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true });
+    await qualitySuite.click();
+    const qualityDialog = page.getByRole('dialog', { name: 'Ejecutar suite (4)', exact: true });
+    await expect(qualityDialog.getByRole('heading', { name: 'Configuración de las pruebas de calidad' })).toBeVisible();
+    for (const row of qualityScenarioRows) {
+      const config = qualityDialog.getByRole('listitem').filter({ has: page.getByRole('heading', { name: row.title, exact: true }) });
+      await expect(config.getByText(qualityUrl, { exact: true })).toBeVisible();
+      for (const parameter of row.quality.executionConfig.parameters) {
+        await expect(config.getByText(parameter.label, { exact: true })).toBeVisible();
+        await expect(config.getByText(parameter.value, { exact: true })).toBeVisible();
+      }
+      if (row.quality.href) await expect(config.getByRole('link', { name: 'Ver configuración en Calidad →' })).toHaveAttribute('href', row.quality.href);
+    }
+    await expect(qualityDialog.getByText('Requiere un entorno autorizado.')).toBeVisible();
+    await expect(qualityDialog.getByRole('button', { name: 'Confirmar ejecución' })).toHaveCount(0);
+    await qualityDialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    assert.equal(queuedRequests.length, runCount);
+    const selectVisible = automation.getByRole('checkbox', { name: 'Seleccionar visibles (4)', exact: true });
+    await selectVisible.uncheck();
+    await expect(generate).toHaveText('Generar seleccionados (' + (total - 4) + ')');
+    await selectVisible.check();
+    await expect(generate).toHaveText('Generar seleccionados (' + total + ')');
+    await automation.getByRole('button', { name: 'Todos (' + total + ')', exact: true }).click();
+    await automation.getByText(/Todas las etiquetas/).click();
+    await automation.getByRole('button', { name: '@performance (2)', exact: true }).click();
+    await expect(automationList.getByRole('heading')).toHaveText(['Medir la carga del catálogo', 'Carga del catálogo']);
+    await expect(generate).toBeEnabled();
+    await generate.click();
+    await expect(automation.getByText((total - 2) + ' con código guardado · 2 en revisión.', { exact: true })).toBeVisible();
+    assert.deepEqual([...startedKinds].sort(), qualityScenarioRows.map(row => row.quality.kind).sort());
+    assert.equal(qualityFileRequests.length, 4);
+    qualityWaitForPeers = null;
+    for (const scenario of scenarios.filter(item => item.steps?.length)) {
+      assert.ok(savedPlaywright.has(scenario.id), 'Generación Playwright en lote mixto');
+    }
+    assert.equal(queuedRequests.length, runCount);
+    await page.reload();
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    const incomplete = scenarios.find(item => !item.steps?.length);
+    await automationList.getByRole('checkbox', { name: 'Automatizar ' + incomplete.title, exact: true }).uncheck();
+    await automation.getByRole('button', { name: 'Calidad (4)', exact: true }).click();
+    const loadRow = automationList.getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Carga del catálogo', exact: true }) });
+    await expect(loadRow.getByText('Requiere revisión', { exact: true })).toBeVisible();
+    await expect(loadRow.getByText('Configura un perfil de carga válido.', { exact: true })).toBeVisible();
+    await expect(loadRow.getByRole('button', { name: 'Descargar carga.k6.js' })).toHaveCount(0);
+    qualityReviewKind = null;
+    await generate.click();
+    await expect(automation.getByText((total - 1) + ' con código guardado.', { exact: true })).toBeVisible();
+    assert.deepEqual(qualityFileRequests.slice(4), [{ kind: 'load', method: 'POST' }]);
+    for (const row of qualityScenarioRows) {
+      const button = automationList.getByRole('button', { name: 'Descargar ' + row.quality.automation.filename });
+      const [download] = await Promise.all([page.waitForEvent('download'), button.click()]);
+      assert.equal(download.suggestedFilename(), row.quality.automation.filename);
+    }
+    assert.deepEqual(qualityFileRequests.filter(request => request.method === 'GET').map(request => request.kind),
+      qualityScenarioRows.map(row => row.quality.kind));
+    await expect(generate).toBeDisabled();
+    await automation.getByRole('button', { name: 'Todos (' + total + ')', exact: true }).click();
+    await page.getByRole('button', { name: 'Ejecutar suite (6)', exact: true }).click();
+    const mixed = page.getByRole('dialog', { name: 'Ejecutar suite (6)', exact: true });
+    await mixed.getByRole('button', { name: 'Continuar con Playwright (2)', exact: true }).click();
+    const browserConfirmation = page.getByRole('dialog', { name: 'Ejecutar suite (2)', exact: true });
+    await expect(browserConfirmation.getByRole('combobox', { name: 'Entorno autorizado' })).toBeVisible();
+    await expect(browserConfirmation.getByRole('button', { name: 'Confirmar ejecución' })).toBeDisabled();
+    await browserConfirmation.getByRole('button', { name: 'Volver a configuración', exact: true }).click();
+    await expect(mixed.getByRole('heading', { name: 'Configuración de las pruebas de calidad' })).toBeVisible();
+    await mixed.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    assert.equal(queuedRequests.length, runCount);
+    await automationList.getByRole('link', { name: 'Ver resultados en Reportes →' }).first().click();
+    const reports = page.getByRole('tabpanel', { name: 'Reportes', exact: true });
+    const qualityReport = reports.getByRole('region', { name: 'Resultados de calidad' });
+    await expect(qualityReport).toBeVisible();
+    for (const row of qualityScenarioRows) {
+      await expect(qualityReport.getByText(row.quality.result, { exact: true })).toBeVisible();
+    }
+    const filterQuality = qualityReport.getByRole('combobox', { name: 'Tipo de prueba' });
+    await filterQuality.selectOption('availability');
+    await qualityReport.getByRole('button', { name: 'Historial del monitor' }).click();
+    await expect(qualityReport.getByRole('table', { name: 'Historial de disponibilidad' })).toBeVisible();
+    await expect(qualityReport.getByRole('cell', { name: '0 ms', exact: true })).toBeVisible();
+    await filterQuality.selectOption('ux');
+    await qualityReport.getByRole('button', { name: 'Hallazgos UX' }).click();
+    await expect(qualityReport.getByText('Mayor · Campo sin etiqueta')).toBeVisible();
+    await expect(qualityReport.getByRole('link', { name: 'Descargar captura UX' })).toBeVisible();
+    const [qualityDownload] = await Promise.all([page.waitForEvent('download'),
+      qualityReport.getByRole('button', { name: 'Exportar resultados de calidad' }).click()]);
+    assert.equal(qualityDownload.suggestedFilename(), 'autoqa-resultados-calidad.json');
+    const reportTypes = reports.getByRole('group', { name: 'Tipo de resultados' });
+    await reportTypes.getByRole('button', { name: 'Escenarios', exact: true }).click();
+    await expect(qualityReport).toHaveCount(0);
+    assert.equal(new URL(page.url()).searchParams.get('resultados'), null);
+    await reportTypes.getByRole('button', { name: 'Calidad', exact: true }).click();
+    await expect(qualityReport).toBeVisible();
+    assert.equal(new URL(page.url()).searchParams.get('resultados'), 'calidad');
+    await page.getByRole('tab', { name: 'Calidad', exact: true }).click();
+    const qualityPanel = page.getByRole('tabpanel', { name: 'Calidad', exact: true });
+    await expect(qualityPanel.getByText('Auditorías Lighthouse', { exact: true })).toHaveCount(0);
+    await expect(qualityPanel.getByRole('link', { name: 'Ver resultados en Reportes →' })).toBeVisible();
+    await page.goto(new URL(`/projects/${projectId}`, page.url()).href);
+    assert.equal(queuedRequests.length, runCount);
+    console.log('PASS Reportes reúne resultados y evidencia de los cuatro tipos y Calidad conserva un enlace a Reportes.');
+    console.log('PASS Configuración de las cuatro pruebas, selección mixta y confirmación de Playwright sin iniciar ejecuciones.');
+    console.log('PASS Generación mixta, estados guardados y descargas para Disponibilidad, Lighthouse, k6, UX y Playwright.');
+  } finally {
+    releasePeers();
+    qualityWaitForPeers = null;
+    qualityReviewKind = null;
+    qualityScenarioRows = [];
+    qualityFileRequests.length = 0;
+    savedPlaywright.clear();
+    for (const [id, spec] of saved) savedPlaywright.set(id, spec);
+    await page.reload();
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  }
+}
+
+async function verifyGenerationForBrowserTypes(page) {
+  const original = scenarios;
+  const cases = [
+    { title: 'Caso funcional web', tag: '@funcional', tags: ['@funcional'] },
+    { title: 'Caso móvil emulado', tag: '@mobile', tags: ['@mobile'] },
+    { title: '[COMPAT:FIREFOX] Caso de compatibilidad', tag: '@compatibilidad',
+      tags: ['@funcional', '@flujoBasico', '@regresion', '@compatibilidad', '@firefox'] },
+  ].map(item => ({
+    ...item, id: randomUUID(), expectedResult: 'El catálogo está disponible.',
+    steps: [{ ordinal: 1, action: 'goto: /' }, { ordinal: 2, action: 'expect-text: Catálogo' }],
+  }));
+  scenarios = cases;
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
+    const panel = page.getByRole('region', { name: 'Automatización Playwright', exact: true });
+    const generation = panel.getByRole('region', { name: 'Generar código de automatización', exact: true });
+    await expect(generation.getByText(/Funcional web, Mobile emulado o Compatibilidad/)).toBeVisible();
+    const list = panel.getByRole('list', { name: 'Escenarios para Playwright', exact: true });
+    for (const item of cases) {
+      const row = list.getByRole('listitem').filter({ has: page.getByRole('heading', { name: item.title, exact: true }) });
+      await expect(row.getByText(item.tag, { exact: true })).toBeVisible();
+      await expect(row.getByRole('checkbox')).toBeChecked();
+    }
+    const generate = generation.getByRole('button', { name: 'Generar seleccionados (3)', exact: true });
+    await generate.click();
+    await expect(panel.getByText('3 con código guardado.', { exact: true })).toBeVisible();
+    for (const item of cases) assert.ok(savedPlaywright.has(item.id), item.title + ' debe recibir código.');
+    await expect(generate).toBeDisabled();
+    console.log('PASS Generar seleccionados prepara Funcional web, Mobile emulado y Compatibilidad en el mismo lote.');
+  } finally {
+    scenarios = original;
+    for (const item of cases) savedPlaywright.delete(item.id);
+    await page.reload();
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
   }
 }
 
@@ -1340,7 +1678,7 @@ async function verifyAutomation(page, screenshots) {
   await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
   await expect(rows).toHaveCount(4);
   await expect(section.getByRole('region', { name: 'Visor de código Playwright' })).toHaveCount(0);
-  const generation = section.getByRole('region', { name: 'Generar código Playwright' });
+  const generation = section.getByRole('region', { name: 'Generar código de automatización' });
   const generate = generation.getByRole('button', { name: 'Generar seleccionados (4)', exact: true });
   await expect(generate).toBeVisible();
   await expect(section.getByRole('button', { name: /^Generar seleccionados/ })).toHaveCount(1);
@@ -1639,9 +1977,8 @@ async function verifyQuality(page, screenshots) {
   await health.getByText('Escenarios inestables (1)', { exact: true }).click();
   await expect(health.getByText('Tiene resultados distintos en la ventana.', { exact: true })).toBeVisible();
   await expect(panel.getByRole('region', { name: 'Histórico IPA', exact: true }).locator('li strong')).toHaveText(['82', '0']);
-  const audits = panel.getByRole('region', { name: 'Auditorías Lighthouse registradas', exact: true });
-  await expect(audits.locator('.quality-audit-values strong')).toHaveText(['94/100', '0/100', '90/100', '88/100']);
-  await expect(audits.getByText(/TBT: 0 ms · CLS: 0/)).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Ver resultados en Reportes →' })).toBeVisible();
+  await expect(panel.getByText('Auditorías Lighthouse', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Configurar auditoría', exact: true })).toHaveAttribute('href', `/projects/${projectId}/performance`);
   await page.setViewportSize({ width: 1170, height: 1000 });
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -1714,12 +2051,11 @@ async function verifyQuality(page, screenshots) {
   assert.ok((await health.locator('.quality-progress > span').evaluateAll(elements => elements.map(element => element.style.width))).every(width => width === '0%'));
   qualityNoResults = false; qualityAuditForbidden = true; qualityEmptyHistory = true;
   await refresh.click();
-  await expect(audits.getByText('Consulta no autorizada o no incluida en el plan.', { exact: true })).toBeVisible();
   await expect(panel.getByText('Sin evaluaciones guardadas.', { exact: true })).toHaveCount(2);
   await expect(health.getByRole('img', { name: 'ICSP: 88 de 100', exact: true })).toBeVisible();
   qualityAuditForbidden = false; qualityEmptyHistory = false;
   await refresh.click();
-  await expect(audits.locator('.quality-audit-values strong')).toHaveCount(4);
+  await expect(panel.getByRole('link', { name: 'Ver resultados en Reportes →' })).toBeVisible();
   qualityExportFail = true;
   await page.getByText('Exportar informe', { exact: true }).click();
   await page.getByRole('button', { name: 'Descargar informe JSON', exact: true }).click();
@@ -1867,9 +2203,12 @@ async function run() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(`${website}/projects/${projectId}`);
+    await verifyPostmanLoadImport(page, website);
     await verifyDocumentUploads(page);
     await verifyDocumentGenerationConfirmation(page);
     await verifyRequirementClarification(page);
+    await verifyQualityScenarios(page);
+    await verifyGenerationForBrowserTypes(page);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);
     await verifySavedAutomationAfterReload(page);

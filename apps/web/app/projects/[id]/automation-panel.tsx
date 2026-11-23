@@ -9,16 +9,19 @@ import type { ScenarioListItem } from './scenario-card';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { GenerationCard } from './generation-card';
+import { QualityResultsLink } from './quality-results-link';
 import { ProjectHeading } from './project-heading';
-import { useAutomationHeader, useScenarioSuite } from './project-tabs';
+import { useAutomationHeader, useScenarioQuality, useScenarioSuite } from './project-tabs';
 import { AutomationRunStatus } from './automation-run-status';
 import { scenarioSpecSignature, specFilename, specPath, type GeneratedSpec } from './automation-export';
 import { isManualScenario, matchesScenarioQuery } from './scenario-presentation';
+import { COMPATIBILITY_SCENARIO_TAG } from '../../../../api/src/scenarios/scenario-tags';
 import { ScenarioListToolbar, ScenarioVisibleSelection } from './scenario-list-toolbar';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 
 const AUTOMATION_STATUS_LABELS = {
   all: 'Todos',
+  quality: 'Calidad',
   pending: 'Pendiente',
   generating: 'Generando…',
   generated: 'Generado',
@@ -27,12 +30,29 @@ const AUTOMATION_STATUS_LABELS = {
 } as const;
 
 type AutomationFilter = keyof typeof AUTOMATION_STATUS_LABELS;
+type QualityOrigin = NonNullable<ScenarioListItem['quality']>;
+type PreparationOutcome = 'saved' | 'review' | 'error';
 
-function codeStatus(scenario: ScenarioListItem, spec: GeneratedSpec | undefined, generating: boolean): Exclude<AutomationFilter, 'all'> {
+async function fetchQualityFile(path: string, method: 'GET' | 'POST') {
+  const response = await fetch(path, { method, cache: 'no-store', signal: AbortSignal.timeout(method === 'POST' ? 35000 : 15000) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = Array.isArray(payload.message) ? payload.message.join(' · ') : payload.message;
+    throw new Error(typeof message === 'string' ? message : 'No se pudo obtener el archivo.');
+  }
+  return payload;
+}
+
+function codeStatus(scenario: ScenarioListItem, spec: GeneratedSpec | undefined, generating: boolean): Exclude<AutomationFilter, 'all' | 'quality'> {
   if (generating) return 'generating';
   if (spec?.automationId || scenario.playwright) return 'generated';
   if (spec?.error) return 'error';
   return spec?.review.length ? 'review' : 'pending';
+}
+
+function visibleScenarioTags(tags: string[] = []) {
+  const type = [COMPATIBILITY_SCENARIO_TAG, '@mobile', '@funcional'].find(tag => tags.includes(tag));
+  return (type ? [type, ...tags.filter(tag => tag !== type)] : tags).slice(0, 2);
 }
 
 function reviewCode(scenario: ScenarioListItem, code: string) {
@@ -49,11 +69,16 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const canRunSuite = can(role, 'run.execute');
   const header = useAutomationHeader();
   const runner = useScenarioSuite();
+  const { items: qualityItems, error: qualityError, reload: loadQuality, updateAutomation: updateQualityAutomation } = useScenarioQuality();
+  const hasQuality = qualityItems.length > 0;
+  const listTitle = hasQuality ? 'Pruebas de automatización' : 'Escenarios para Playwright';
   const specs = header?.specs ?? {};
   const setSpecs = header?.setSpecs;
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [listError, setListError] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [qualitySelection, setQualitySelection] = useState<Set<string> | null>(null);
+  const [qualityErrors, setQualityErrors] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -150,7 +175,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   }, [project.id, setSpecs]);
 
   const items = scenarios ?? [];
-  const statusCounts = { all: items.length, pending: 0, generating: 0, generated: 0, review: 0, error: 0 };
+  const statusCounts = { all: items.length + qualityItems.length, quality: qualityItems.length, pending: 0, generating: 0, generated: 0, review: 0, error: 0 };
   const normalized = query.trim().toLocaleLowerCase('es');
   const rows = items.map(scenario => {
     const spec = specs[scenario.id];
@@ -160,76 +185,212 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     statusCounts[status]++;
     return { scenario, spec, status, path };
   });
-  const filtered = rows.filter(({ scenario, path, status }) => !listError
-    && (statusFilter === 'all' || statusFilter === status)
-    && (!tag || scenario.tags?.includes(tag))
-    && matchesScenarioQuery(scenario, normalized, path));
+
+  const qualityRows = qualityItems.flatMap(scenario => {
+    const origin = scenario.quality;
+    if (!origin) return [];
+    const status: Exclude<AutomationFilter, 'all' | 'quality'> = generating.has(scenario.id) ? 'generating' : qualityErrors[scenario.id] ? 'error'
+      : origin.automation.prepared ? 'generated' : origin.automation.reviewReason ? 'review' : 'pending';
+    statusCounts[status]++;
+    const path = origin.label + ' · ' + origin.automation.tool + ' · ' + origin.automation.filename;
+    return [{ scenario, origin, status, path }];
+  });
+  const filtered = [...(listError ? [] : rows), ...qualityRows].filter(row =>
+    (statusFilter === 'all' || statusFilter === row.status || (statusFilter === 'quality' && 'origin' in row))
+    && (!tag || row.scenario.tags?.includes(tag))
+    && matchesScenarioQuery(row.scenario, normalized, row.path));
+  const onlyQuality = filtered.length > 0 && filtered.every(row => 'origin' in row);
   const { visible, results, resetPage, pagination } = useScenarioPagination(filtered);
-  const selectedScenarios = items.filter(scenario => selected.has(scenario.id));
+  const selectedScenarios = listError ? [] : items.filter(scenario => selected.has(scenario.id));
+  const selectedQualityRows = qualityRows.filter(({ scenario }) => qualitySelection === null || qualitySelection.has(scenario.id));
+  const generationSelection = new Set([...selectedScenarios.map(item => item.id), ...selectedQualityRows.map(({ scenario }) => scenario.id)]);
   const ready = rows.filter(({ scenario, status }) => selected.has(scenario.id) && status === 'generated').map(({ scenario }) => scenario);
-  const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError;
-  const generationDisabled = busy || !!listError || ready.length === selectedScenarios.length;
+  const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError && !onlyQuality;
+  const browserSuite = selectedQualityRows.length && !canRun ? [] : ready;
+  const suiteCount = browserSuite.length + selectedQualityRows.length;
+  const pendingQuality = selectedQualityRows.filter(({ origin }) => !origin.automation.prepared);
+  const generationDisabled = busy || ((!!listError || ready.length === selectedScenarios.length) && pendingQuality.length === 0);
+
+  function refreshList() {
+    setRefresh(value => value + 1);
+    void loadQuality();
+  }
 
   function toggle(id: string) { setSelected(previous => { const next = new Set(previous); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
+  function selectVisible(next: Set<string>) {
+    setSelected(new Set(items.filter(item => next.has(item.id)).map(item => item.id)));
+    setQualitySelection(new Set(qualityRows.filter(({ scenario }) => next.has(scenario.id)).map(({ scenario }) => scenario.id)));
+  }
+
+  function qualityFilePath(origin: QualityOrigin) {
+    return `/api/projects/${project.id}/scenarios/quality/${origin.kind}/${origin.resourceId}/automation`;
+  }
+
+  async function prepareQuality(scenario: ScenarioListItem, origin: QualityOrigin): Promise<PreparationOutcome> {
+    setGenerating(previous => new Set(previous).add(scenario.id));
+    setQualityErrors(previous => ({ ...previous, [scenario.id]: '' }));
+    try {
+      const payload = await fetchQualityFile(qualityFilePath(origin), 'POST');
+      const reviewReason = typeof payload.reviewReason === 'string' ? payload.reviewReason : undefined;
+      const prepared = payload.prepared === true;
+      if (!prepared && !reviewReason) throw new Error('La API no confirmó la generación del archivo.');
+      updateQualityAutomation(scenario.id, { ...origin.automation, prepared, reviewReason });
+      return prepared ? 'saved' : 'review';
+    } catch (reason) {
+      setQualityErrors(previous => ({ ...previous, [scenario.id]: reason instanceof Error ? reason.message : 'No se pudo preparar el archivo.' }));
+      return 'error';
+    } finally {
+      setGenerating(previous => { const next = new Set(previous); next.delete(scenario.id); return next; });
+    }
+  }
+
+  async function downloadQuality(origin: QualityOrigin) {
+    try {
+      const payload = await fetchQualityFile(qualityFilePath(origin), 'GET');
+      if (typeof payload.code !== 'string' || !payload.code || payload.filename !== origin.automation.filename) {
+        throw new Error('La API no devolvió un archivo de código válido.');
+      }
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(new Blob([payload.code], { type: 'text/javascript;charset=utf-8' }));
+      link.href = url;
+      link.download = payload.filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo descargar el archivo.');
+      void loadQuality();
+    }
+  }
+
   async function prepare() {
     if (generationDisabled) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const results = [];
-      for (const scenario of selectedScenarios) { if (!mounted.current) return; results.push(await generateOne(scenario, 'prepare')); }
-      if (results.some(spec => spec.error)) {
-        setError('Algunos archivos no se pudieron generar. Revisa los errores por escenario.'); return;
+      const selectedKinds = new Set(pendingQuality.map(({ origin }) => origin.kind));
+      const readyIds = new Set(ready.map(scenario => scenario.id));
+      async function prepareBrowserScenarios(): Promise<PreparationOutcome[]> {
+        const results: PreparationOutcome[] = [];
+        for (const scenario of selectedScenarios) {
+          if (!mounted.current) break;
+          if (readyIds.has(scenario.id)) {
+            results.push('saved');
+            continue;
+          }
+          const spec = await generateOne(scenario, 'prepare');
+          results.push(spec.error ? 'error' : spec.automationId ? 'saved' : 'review');
+        }
+        return results;
       }
-      const saved = results.filter(spec => spec.automationId).length;
-      const review = results.length - saved;
-      setNotice(`${saved} con código guardado${review ? ` · ${review} en revisión` : ''}.`);
+      const groups = await Promise.all([
+        prepareBrowserScenarios(),
+        ...Array.from(selectedKinds, async kind => {
+          const results: PreparationOutcome[] = [];
+          for (const { scenario, origin } of pendingQuality.filter(item => item.origin.kind === kind)) {
+            if (!mounted.current) break;
+            results.push(await prepareQuality(scenario, origin));
+          }
+          return results;
+        }),
+      ]);
+      if (!mounted.current) return;
+      if (pendingQuality.length) await loadQuality();
+      const results = groups.flat();
+      const saved = selectedQualityRows.length - pendingQuality.length + results.filter(result => result === 'saved').length;
+      const review = results.filter(result => result === 'review').length;
+      if (results.includes('error')) setError('Algunos archivos no se pudieron generar. Revisa los errores por escenario.');
+      if (saved || review) setNotice(`${saved} con código guardado${review ? ` · ${review} en revisión` : ''}.`);
     } catch { setError('No se pudo preparar el código. Vuelve a intentarlo.'); }
     finally { if (mounted.current) setBusy(false); }
   }
 
-  return <section className="automation-panel" aria-label="Automatización Playwright">
+  return <section className="automation-panel" aria-label={hasQuality ? 'Automatización de pruebas' : 'Automatización Playwright'}>
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary="Genera y ejecuta el código Playwright de los escenarios seleccionados."
-      actions={<>{canRunSuite && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && (busy || !canRun))} onClick={() => runner.open(ready)}><ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${ready.length})`}</button>}</>} />, header.element)}
-    {canGenerate && <GenerationCard title="Generar código Playwright" variant="playwright" disabled={generationDisabled} action={
+      summary={hasQuality
+        ? 'Genera código para los escenarios seleccionados y revisa la configuración antes de ejecutar.'
+        : 'Genera y ejecuta el código de los escenarios seleccionados.'}
+      actions={<>{canRunSuite && runner && <button type="button"
+        disabled={runner.stopping || (!runner.hasSuite && (busy || (!canRun && !selectedQualityRows.length)))}
+        onClick={() => runner.open(browserSuite, selectedQualityRows.map(({ scenario }) => scenario))}>
+        <ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suiteCount})`}
+      </button>}</>} />, header.element)}
+    {canGenerate && <GenerationCard title="Generar código de automatización" variant="playwright" disabled={generationDisabled} action={
       <button type="button" disabled={generationDisabled} onClick={() => void prepare()}>
-        <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${selected.size})`}
+        <Play size={13} aria-hidden="true" />{busy ? 'Generando…' : `Generar seleccionados (${generationSelection.size})`}
       </button>
     }>
-      <p className="muted">El agente convierte los escenarios seleccionados en código Playwright.</p>
+      <p className="muted">{hasQuality
+        ? 'Los agentes preparan el archivo de cada prueba seleccionada con su herramienta correspondiente.'
+        : 'Selecciona los casos de Funcional web, Mobile emulado o Compatibilidad para generar su código.'}</p>
     </GenerationCard>}
     {notice && <p className="automation-message automation-operation-notice" role="status">{notice}</p>}
     {error && <p className="automation-message error" role="alert">{error}</p>}
     <ScenarioListToolbar
-      label="Buscar y filtrar automatización" searchLabel="Buscar escenarios para Playwright" placeholder="Buscar por título, ID, paso o archivo…"
+      label="Buscar y filtrar automatización" searchLabel={hasQuality ? 'Buscar pruebas para automatización' : 'Buscar escenarios para Playwright'}
+      placeholder="Buscar por título, ID, paso o archivo…"
       query={query} onQueryChange={value => { setQuery(value); resetPage(); }}
-      status={{ label: 'Filtrar por estado del código', value: statusFilter, onChange: value => { setStatusFilter(value); resetPage(); },
-        options: (Object.keys(AUTOMATION_STATUS_LABELS) as AutomationFilter[]).map(value => ({
-          value, label: AUTOMATION_STATUS_LABELS[value].replace('…', ''), count: statusCounts[value],
-        })) }}
-      items={items} tag={tag} onTagChange={value => { setTag(value); resetPage(); }}
+      status={{ label: hasQuality ? 'Filtrar pruebas de automatización' : 'Filtrar por estado del código',
+        value: statusFilter, onChange: value => { setStatusFilter(value); resetPage(); },
+        options: (Object.keys(AUTOMATION_STATUS_LABELS) as AutomationFilter[])
+          .filter(value => value !== 'quality' || hasQuality || statusFilter === 'quality')
+          .map(value => ({
+            value, label: AUTOMATION_STATUS_LABELS[value].replace('…', ''), count: statusCounts[value],
+          })) }}
+      items={[...items, ...qualityItems]} tag={tag} onTagChange={value => { setTag(value); resetPage(); }}
     />
     {header?.active && <AutomationRunStatus projectId={project.id} canStop={canRunSuite} />}
     {(project.status !== 'READY' || !environments.length) && <p className="automation-message">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
     <section className="automation-scenarios" aria-labelledby="automation-scenarios-heading">
       <header>
-        <h2 id="automation-scenarios-heading">Escenarios para Playwright</h2>
+        <h2 id="automation-scenarios-heading">{listTitle}</h2>
         <div className="automation-scenarios__tools">
           <span className="automation-suite-count">Suite {selected.size}/{scenarios?.length ?? '…'}</span>
-          <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={13} /></button>
+          <button type="button" aria-label="Actualizar escenarios de automatización" disabled={busy} onClick={refreshList}><RefreshCw size={13} /></button>
         </div>
-        <ScenarioVisibleSelection visible={visible.map(row => row.scenario)} selected={selected}
-          onSelectionChange={setSelected} selectionDisabled={busy} />
+        <ScenarioVisibleSelection visible={visible.map(row => row.scenario)}
+          selected={generationSelection} onSelectionChange={selectVisible} selectionDisabled={busy} />
       </header>
-      {listError ? <div className="automation-list-message" role="alert"><p className="error">{listError}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar automatización</button></div>
-        : scenarios === null ? <p className="automation-list-message" role="status">Cargando escenarios…</p>
-        : !scenarios.length ? <div className="automation-list-message"><FileCode2 size={25} /><h3>Aún no hay escenarios para automatizar</h3><p>Crea escenarios y define sus pasos para preparar código.</p><Link href="#escenarios">Ir a Escenarios →</Link></div>
+      {qualityError && <p className="automation-message" role="status">No se pudieron consultar las pruebas de calidad.{' '}
+        <button type="button" className="secondary" onClick={() => void loadQuality()}>Reintentar consulta de calidad</button></p>}
+      {listError && <div className="automation-list-message" role="alert"><p className="error">{listError}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar automatización</button></div>}
+      {scenarios === null && !hasQuality ? (listError ? null : <p className="automation-list-message" role="status">Cargando escenarios…</p>)
+        : !scenarios?.length && !hasQuality ? <div className="automation-list-message"><FileCode2 size={25} /><h3>Aún no hay escenarios para automatizar</h3><p>Crea escenarios y define sus pasos para preparar código.</p><Link href="#escenarios">Ir a Escenarios →</Link></div>
         : !visible.length ? <div className="automation-list-message"><h3>No hay coincidencias</h3>
           <button type="button" className="secondary" onClick={() => { setQuery(''); setTag(''); setStatusFilter('all'); resetPage(); }}>Limpiar filtros</button></div>
-        : <ul ref={results} className="automation-pick-list" tabIndex={-1} aria-label="Escenarios para Playwright">{visible.map(({ scenario, spec, status, path }) => {
+        : <ul ref={results} className="automation-pick-list" tabIndex={-1} aria-label={listTitle}>{visible.map(row => {
+          const { scenario, path, status } = row;
+          if ('origin' in row) {
+            const { origin } = row;
+            return <li key={scenario.id}>
+              <input type="checkbox" checked={generationSelection.has(scenario.id)} disabled={busy}
+                aria-label={`Automatizar ${scenario.title}`} onChange={event => {
+                  const next = new Set(selectedQualityRows.map(({ scenario: item }) => item.id));
+                  if (event.target.checked) next.add(scenario.id); else next.delete(scenario.id);
+                  setQualitySelection(next);
+                }} />
+              <div>
+                <div className="automation-pick-meta">
+                  <code title={origin.resourceId}>{origin.resourceId.slice(0, 8)}</code>
+                  {scenario.tags?.map(tag => <span key={tag}>{tag}</span>)}
+                  <span className={`automation-generation-state${status === 'generated' ? ' is-generated' : status === 'error' ? ' is-error' : status === 'review' ? ' is-review' : ''}`}>{AUTOMATION_STATUS_LABELS[status]}</span>
+                </div>
+                <h3>{scenario.title}</h3>
+                <p className="automation-quality-detail">{origin.label} · {origin.automation.tool}</p>
+                {origin.kind === 'ux' && <p className="automation-quality-detail">El archivo reúne comprobaciones de accesibilidad y evidencias para el análisis UX de AutoQA.</p>}
+                {status === 'review' && <p className="automation-review-reasons">{origin.automation.reviewReason}</p>}
+                {qualityErrors[scenario.id] && <p className="error" role="alert">{qualityErrors[scenario.id]}</p>}
+                {origin.automation.prepared && <button type="button" className="secondary automation-row-retry"
+                  onClick={() => void downloadQuality(origin)}>Descargar {origin.automation.filename}</button>}
+                {origin.href && <Link className="automation-quality-link" href={origin.href}>Ver configuración →</Link>}
+                {origin.hasResult && <p className="automation-quality-detail"><QualityResultsLink projectId={project.id} /></p>}
+              </div>
+            </li>;
+          }
+          const { spec } = row;
           return <li key={scenario.id}>
             <input type="checkbox" checked={selected.has(scenario.id)} disabled={busy} aria-label={`Automatizar ${scenario.title}`} onChange={() => toggle(scenario.id)} />
-            <div><div className="automation-pick-meta"><code title={scenario.id}>{scenario.id.slice(0, 8)}</code>{scenario.tags?.slice(0, 2).map(tag => <span key={tag}>{tag}</span>)}
+            <div><div className="automation-pick-meta"><code title={scenario.id}>{scenario.id.slice(0, 8)}</code>{visibleScenarioTags(scenario.tags).map(tag => <span key={tag}>{tag}</span>)}
               <span className={`automation-generation-state${status === 'error' ? ' is-error' : status === 'review' ? ' is-review' : status === 'generated' ? ' is-generated' : ''}`}>{AUTOMATION_STATUS_LABELS[status]}</span></div>
               <h3>{scenario.title}</h3>
               <p className="automation-pick-path" title={path || undefined}>{path || (status === 'error' ? 'Código no disponible' : 'Código pendiente de generación')}</p>
@@ -243,7 +404,7 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
             </div>
           </li>;
         })}</ul>}
-      {scenarios && !listError && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
+      {(scenarios || hasQuality) && <ScenarioPagination label="Paginación de automatización" {...pagination} />}
     </section>
   </section>;
 }

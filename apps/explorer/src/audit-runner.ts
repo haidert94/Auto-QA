@@ -3,7 +3,7 @@
 // parsea el reporte y guarda las métricas y el JSON crudo.
 
 import type { PrismaClient } from '@prisma/client';
-import { parseLighthouseReport, type LighthouseMetrics } from '../../api/src/performance/lighthouse-report';
+import { LIGHTHOUSE_CATEGORIES, parseLighthouseReport, type LighthouseMetrics } from '../../api/src/performance/lighthouse-report';
 import { type ScreenshotStorage } from './screenshot-storage';
 
 // chrome-launcher v1 y lighthouse v12 son ESM; el explorer está en CJS
@@ -52,7 +52,7 @@ export async function runAudit(
       port: chrome.port,
       output: 'json',
       logLevel: 'error',
-      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+      onlyCategories: LIGHTHOUSE_CATEGORIES,
     });
     if (!result) throw new Error('Lighthouse no produjo resultado.');
     const metrics: LighthouseMetrics = parseLighthouseReport(result.lhr);

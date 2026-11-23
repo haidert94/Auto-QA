@@ -11,9 +11,10 @@ import { ScenarioRunDialog, type ScenarioSuiteControl } from './scenario-run-dia
 import type { SuiteResult } from './scenario-suite';
 
 type ScenarioSpecs = Record<string, GeneratedSpec>;
+type SuiteSelection = { scenarios: ScenarioListItem[]; qualityScenarios: ScenarioListItem[] };
 
 const ScenarioSuiteContext = createContext<{
-  open: (scenarios: ScenarioListItem[]) => void;
+  open: (scenarios: ScenarioListItem[], qualityScenarios?: ScenarioListItem[]) => void;
   hasSuite: boolean;
   suiteRunning: boolean;
   progress: SuiteResult[] | null;
@@ -30,6 +31,13 @@ const ScenarioHeaderContext = createContext<{
   specs: ScenarioSpecs;
 } | null>(null);
 export function useScenarioHeader() { return useContext(ScenarioHeaderContext); }
+const ScenarioQualityContext = createContext<{
+  items: ScenarioListItem[];
+  error: boolean;
+  reload: () => Promise<void>;
+  updateAutomation: (id: string, automation: NonNullable<ScenarioListItem['quality']>['automation']) => void;
+}>({ items: [], error: false, reload: async () => {}, updateAutomation: () => {} });
+export function useScenarioQuality() { return useContext(ScenarioQualityContext); }
 const AutomationHeaderContext = createContext<{
   element: HTMLDivElement | null;
   active: boolean;
@@ -86,8 +94,10 @@ export function ProjectTabs({
   const tabGroup = useId();
   const [headerElement, setHeaderElement] = useState<HTMLDivElement | null>(null);
   const [scenarioCount, setScenarioCount] = useState<number | null>(null);
+  const [qualityItems, setQualityItems] = useState<ScenarioListItem[]>([]);
+  const [qualityError, setQualityError] = useState(false);
   const [specs, setSpecs] = useState<ScenarioSpecs>({});
-  const [runSelection, setRunSelection] = useState<ScenarioListItem[] | null>(null);
+  const [runSelection, setRunSelection] = useState<SuiteSelection | null>(null);
   const [suiteOpen, setSuiteOpen] = useState(false);
   const [suiteRunning, setSuiteRunning] = useState(false);
   const [suiteProgress, setSuiteProgress] = useState<SuiteResult[] | null>(null);
@@ -97,9 +107,45 @@ export function ProjectTabs({
   const suiteControl = useRef<ScenarioSuiteControl>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const hasSuite = runSelection !== null;
-  const openSuite = useCallback((scenarios: ScenarioListItem[]) => {
+  const qualityRequest = useRef(0);
+  const loadQuality = useCallback(async () => {
+    const request = ++qualityRequest.current;
+    try {
+      const response = await fetch(`/api/projects/${project.id}/scenarios/quality`, {
+        cache: 'no-store', signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok && response.status !== 403) throw new Error('No se pudieron consultar las pruebas de calidad.');
+      const list: ScenarioListItem[] = response.ok ? await response.json() : [];
+      if (!Array.isArray(list)) throw new Error('Listado de calidad no válido.');
+      if (request === qualityRequest.current) {
+        setQualityItems(list);
+        setQualityError(false);
+      }
+    } catch {
+      if (request === qualityRequest.current) setQualityError(true);
+    }
+  }, [project.id]);
+  useEffect(() => {
+    void loadQuality();
+    return () => { qualityRequest.current++; };
+  }, [loadQuality]);
+  useEffect(() => {
+    if (!qualityItems.some(item => item.quality?.status.tone === 'pending')) return;
+    const timer = setTimeout(() => void loadQuality(), 5000);
+    return () => clearTimeout(timer);
+  }, [loadQuality, qualityItems]);
+  const updateQualityAutomation = useCallback((id: string, automation: NonNullable<ScenarioListItem['quality']>['automation']) => {
+    qualityRequest.current++;
+    setQualityItems(items => items.map(item => item.id === id && item.quality
+      ? { ...item, quality: { ...item.quality, automation } }
+      : item));
+  }, []);
+  const scenarioQuality = useMemo(() => ({
+    items: qualityItems, error: qualityError, reload: loadQuality, updateAutomation: updateQualityAutomation,
+  }), [qualityItems, qualityError, loadQuality, updateQualityAutomation]);
+  const openSuite = useCallback((scenarios: ScenarioListItem[], qualityScenarios: ScenarioListItem[] = []) => {
     if (stopRequest.current) return;
-    setRunSelection(current => current ?? scenarios);
+    setRunSelection(current => current ?? { scenarios, qualityScenarios });
     setSuiteOpen(true);
   }, []);
   const stopSuite = useCallback(async () => {
@@ -157,6 +203,9 @@ export function ProjectTabs({
 
   function viewSuiteReport() {
     closeSuite();
+    const url = new URL(window.location.href);
+    url.searchParams.delete('resultados');
+    history.replaceState(window.history.state, '', url);
     select('reporte');
     requestAnimationFrame(() => document.getElementById(`${tabGroup}-reporte-tab`)?.focus());
   }
@@ -164,6 +213,7 @@ export function ProjectTabs({
   return (
     <ScenarioSuiteContext.Provider value={suiteContext}>
     <ScenarioHeaderContext.Provider value={scenarioHeader}>
+    <ScenarioQualityContext.Provider value={scenarioQuality}>
     <AutomationHeaderContext.Provider value={automationHeader}>
     <ReportHeaderContext.Provider value={reportHeader}>
     <QualityHeaderContext.Provider value={qualityHeader}>
@@ -207,7 +257,7 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
-      {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection} specs={specs}
+      {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection.scenarios} qualityScenarios={runSelection.qualityScenarios} specs={specs}
         control={suiteControl} open={suiteOpen} onHide={() => setSuiteOpen(false)}
         onClose={closeSuite} onViewReport={viewSuiteReport} onRunningChange={setSuiteRunning}
         onRunsChanged={() => setHistoryVersion(version => version + 1)}
@@ -216,6 +266,7 @@ export function ProjectTabs({
     </QualityHeaderContext.Provider>
     </ReportHeaderContext.Provider>
     </AutomationHeaderContext.Provider>
+    </ScenarioQualityContext.Provider>
     </ScenarioHeaderContext.Provider>
     </ScenarioSuiteContext.Provider>
   );

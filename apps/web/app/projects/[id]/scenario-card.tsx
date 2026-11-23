@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import type { QualityScenarioOrigin } from '../../../../api/src/scenarios/quality-scenarios';
 import { useState } from 'react';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
@@ -20,6 +21,7 @@ export type ScenarioListItem = {
   playwright?: { automationId: string; filename: string } | null;
   requirement?: { title: string; externalKey: string | null } | null;
   _count?: { results: number };
+  quality?: QualityScenarioOrigin;
 };
 
 // Tags reservados del flujo del caso. Son mutuamente excluyentes: un escenario

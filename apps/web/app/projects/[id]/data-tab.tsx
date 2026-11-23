@@ -144,7 +144,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
           </dd></div>}
         </dl> : <p className="muted">No hay entornos registrados.</p>}
       </DetailCard>
-      <DetailCard number="02" title="Documentos asociados y contratos técnicos" action={
+      <DetailCard number="02" title="Historias de usuario y Documentos asociados" action={
         <span className="detail-count">{documents ? `${documents.length} archivos registrados` : documentError ? 'Sin consultar' : 'Cargando…'}</span>
       }>
         {documentError ? <div role="alert"><p className="error">{documentError}</p>

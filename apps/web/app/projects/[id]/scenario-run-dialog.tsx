@@ -7,6 +7,7 @@ import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { EnvironmentsDialog } from './environments-dialog';
+import { SuiteQualityConfiguration } from './suite-quality-configuration';
 import type { ScenarioListItem } from './scenario-card';
 import type { GeneratedSpec } from './automation-export';
 import { runPresentation } from './scenario-presentation';
@@ -27,8 +28,9 @@ function resultLabel(state: SuiteState) {
 
 export type ScenarioSuiteControl = { stop: () => Promise<void> };
 
-export function ScenarioRunDialog({ project, role, scenarios, specs, control, open, onHide, onClose, onViewReport, onRunningChange, onRunsChanged, onProgress, onTrackingWarning }: {
+export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, specs, control, open, onHide, onClose, onViewReport, onRunningChange, onRunsChanged, onProgress, onTrackingWarning }: {
   project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
+  qualityScenarios: ScenarioListItem[];
   specs?: Record<string, GeneratedSpec>;
   control: Ref<ScenarioSuiteControl>;
   open: boolean; onHide: () => void; onClose: () => void; onViewReport: () => void;
@@ -44,6 +46,7 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
   const currentProject = savedProject && savedProject.revision > project.revision ? savedProject : project;
   const environments = currentProject.environments.filter(item => !scenarioRunEnvironmentError(item));
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '');
+  const [showQuality, setShowQuality] = useState(qualityScenarios.length > 0);
   const [confirmedScope, setConfirmedScope] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<SuiteResult[] | null>(null);
@@ -86,9 +89,15 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
     router.refresh();
   }
 
+  function changeStep(review: boolean) {
+    setShowQuality(review);
+    setConfirmedScope(null);
+    requestAnimationFrame(() => dialog.current?.querySelector('h2')?.focus());
+  }
+
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (suite.current || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
+    if (showQuality || !scenarios.length || suite.current || results || !confirmed || !environment || (allowsWrites && !environment.authorizedAt)) return;
     const controller = new AbortController();
     setBusy(true);
     onRunningChange(true);
@@ -121,8 +130,16 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
 
   return <><dialog ref={dialog} className="scenario-run-dialog" aria-labelledby="suite-title"
     onCancel={event => { event.preventDefault(); close(); }}>
-    <h2 id="suite-title">Ejecutar suite ({scenarios.length})</h2>
-    {!results ? <>
+    <h2 id="suite-title" tabIndex={-1}>Ejecutar suite ({scenarios.length + (showQuality ? qualityScenarios.length : 0)})</h2>
+    {showQuality ? <>
+      <SuiteQualityConfiguration project={currentProject} scenarios={qualityScenarios} />
+      <div className="actions">
+        {scenarios.length > 0 && <button type="button" onClick={() => changeStep(false)}>
+          Continuar con Playwright ({scenarios.length})
+        </button>}
+        <button type="button" className="secondary" onClick={onClose}>{scenarios.length ? 'Cancelar' : 'Cerrar'}</button>
+      </div>
+    </> : !results ? <>
       <p>Se solicitará una ejecución por escenario. La API comprobará autorización, alcance, plan y cuotas.</p>
       <ul className="scenario-run-targets">{scenarios.map(scenario => <li key={scenario.id}>{scenario.title}</li>)}</ul>
       <form onSubmit={queue}>
@@ -145,6 +162,8 @@ export function ScenarioRunDialog({ project, role, scenarios, specs, control, op
             : 'Confirmo ejecutar los escenarios seleccionados en solo lectura, dentro del alcance autorizado.'}
         </label>
         <div className="actions"><button type="submit" disabled={busy || !environment || !confirmed}>Confirmar ejecución</button>
+          {qualityScenarios.length > 0 && <button type="button" className="secondary" disabled={busy}
+            onClick={() => changeStep(true)}>Volver a configuración</button>}
           <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancelar</button></div>
       </form>
     </> : <>

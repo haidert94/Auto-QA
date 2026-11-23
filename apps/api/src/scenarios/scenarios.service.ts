@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma.service';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { ACTIVE_RUN_STATUSES } from '../runs/run-report-policy';
 import { CreateScenarioDto, ScenarioStepDto, UpdateScenarioDto } from './dto/scenario.dto';
-import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
+import { COMPATIBILITY_SCENARIO_TAG, COMPATIBILITY_SCENARIO_TAGS, isManualScenario, MANUAL_SCENARIO_MESSAGE } from './scenario-tags';
 import { automationSignature, currentAutomation, prepareWithAgent, type PreparedAutomation } from './automation-agent';
 import { findReusableAutomation } from './scenario-prelude';
 import { hasBlockingIssue, lintGeneratedCode, lintPreparedSteps, summarizeIssues } from './spec-linter';
@@ -14,6 +14,8 @@ import { ASSERTION_INSTRUCTION } from '../automation/agents/agent-types';
 import { generateSpec, hasPlaywrightAssertion, readGeneratorSteps, suggestedFilename } from './playwright-generator';
 import { buildTestSetPdf, buildTestSetXlsx, type ExportScenario } from './scenario-export';
 import { groupSimilarSteps, type StepOccurrence } from './step-similarity';
+import { readQualityScenarios } from './quality-scenarios';
+import { qualityAutomationFile } from './quality-automation';
 
 type ScenarioForAutomation = Parameters<typeof currentAutomation>[0] & { id: string };
 
@@ -68,9 +70,10 @@ function normalizeTags(tags: string[] | undefined): string[] {
   for (const raw of tags) {
     const trimmed = raw.trim();
     if (!trimmed) continue;
-    if (seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    result.push(trimmed);
+    const tag = COMPATIBILITY_SCENARIO_TAGS.some(value => value === trimmed.toLowerCase()) ? COMPATIBILITY_SCENARIO_TAG : trimmed;
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    result.push(tag);
   }
   return result;
 }
@@ -160,9 +163,22 @@ export class ScenariosService {
       const prepared = isManualScenario(scenario) ? null : currentAutomation({ ...scenario, automation });
       return {
         ...scenario,
+        tags: normalizeTags(scenario.tags),
         playwright: prepared ? { automationId: prepared.id, filename: suggestedFilename(scenario) } : null,
       };
     });
+  }
+
+  async listQuality(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    return readQualityScenarios(this.prisma, projectId);
+  }
+
+  async qualityAutomation(projectId: string, kind: string, id: string, workspace: Workspace, prepare: boolean) {
+    await this.ensureProject(projectId, workspace);
+    return qualityAutomationFile(this.prisma, projectId, kind, id, prepare
+      ? { ai: this.ai, organizationId: workspace.organizationId, projectId }
+      : undefined);
   }
 
   async get(projectId: string, scenarioId: string, workspace: Workspace) {
@@ -174,7 +190,7 @@ export class ScenariosService {
       },
     });
     if (!scenario) throw new NotFoundException('Escenario no encontrado.');
-    return scenario;
+    return { ...scenario, tags: normalizeTags(scenario.tags) };
   }
 
   async create(projectId: string, dto: CreateScenarioDto, workspace: Workspace) {
@@ -414,7 +430,7 @@ export class ScenariosService {
     const items: ExportScenario[] = scenarios.map(s => ({
       id: s.id,
       title: s.title,
-      tags: Array.isArray(s.tags) ? s.tags.filter((t): t is string => typeof t === 'string') : [],
+      tags: normalizeTags(s.tags),
       expectedResult: s.expectedResult,
       requirement: s.requirement,
       steps: readGeneratorSteps(s.steps).map(step => ({

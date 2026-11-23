@@ -418,6 +418,9 @@ model LoadTest {
   environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   name            String
   url             String
+  automationSignature String?
+  automationCode      String?
+  automationReview    String?
   stages          Json
   thresholds      Json?
   status          RunStatus    @default(QUEUED)
@@ -457,6 +460,9 @@ model UxAudit {
   environmentId   String?
   environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   url             String
+  automationSignature String?
+  automationCode      String?
+  automationReview    String?
   status          RunStatus    @default(QUEUED)
   startedAt       DateTime?
   completedAt     DateTime?
@@ -487,6 +493,9 @@ model Monitor {
   environment     Environment?  @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   name            String
   url             String
+  automationSignature String?
+  automationCode      String?
+  automationReview    String?
   intervalMinutes Int           @default(15)
   timeoutMs       Int           @default(10000)
   active          Boolean       @default(true)
@@ -527,6 +536,9 @@ model PerformanceAudit {
   environmentId   String?
   environment     Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   url             String
+  automationSignature String?
+  automationCode      String?
+  automationReview    String?
   status          RunStatus    @default(QUEUED)
   startedAt       DateTime?
   completedAt     DateTime?

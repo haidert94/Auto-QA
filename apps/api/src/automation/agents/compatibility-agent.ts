@@ -9,7 +9,7 @@
 
 import type { Prisma } from '@prisma/client';
 import { hasPlaywrightAssertion, readGeneratorSteps } from '../../scenarios/playwright-generator';
-import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
+import { COMPATIBILITY_SCENARIO_TAG, COMPATIBILITY_SCENARIO_TAGS, MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { type AgentContext, type AgentDeps, type AgentOutcome } from './agent-types';
 
 const BROWSERS = [
@@ -30,7 +30,7 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
       NOT: { OR: [
         { title: { startsWith: '[COMPAT]' } },
         { title: { startsWith: '[COMPAT:' } },
-        { tags: { hasSome: [MANUAL_SCENARIO_TAG, '@compatibility'] } },
+        { tags: { hasSome: [MANUAL_SCENARIO_TAG, ...COMPATIBILITY_SCENARIO_TAGS] } },
       ] },
     },
     take: 25,
@@ -52,10 +52,9 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
 
   for (const scenario of base) {
     for (const browser of BROWSERS) {
-      // Hereda los tags del escenario base + añade @compatibility y el tag
-      // del navegador. Deduplica preservando orden de llegada.
-      const inherited = Array.isArray(scenario.tags) ? scenario.tags : [];
-      const tags = Array.from(new Set([...inherited, '@compatibility', browser.tag])).slice(0, 20);
+      const required: string[] = [COMPATIBILITY_SCENARIO_TAG, browser.tag];
+      const inherited = [...new Set(scenario.tags)].filter(tag => !required.includes(tag));
+      const tags = [...inherited.slice(0, 20 - required.length), ...required];
       try {
         const title = ('[COMPAT:' + browser.enum + '] ' + scenario.title).slice(0, 300);
         if (ctx.documentTestTypesConfirmed && await deps.prisma.testScenario.findFirst({

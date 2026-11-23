@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { REQUIREMENT_KINDS } from '../documents/document-analysis';
 import { documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
-import { MANUAL_SCENARIO_TAG } from '../scenarios/scenario-tags';
+import { COMPATIBILITY_SCENARIO_TAGS, MANUAL_SCENARIO_TAG } from '../scenarios/scenario-tags';
 import { ALL_TEST_TYPES, isTestType, type AutomationTestType } from './test-types';
 
 type Source = { versionId: string; clarifiedAt: string | null };
@@ -28,7 +28,7 @@ export function readGenerationSources(value: unknown): DocumentGenerationSources
 
 export function scenarioTestType(tags: string[]): AutomationTestType {
   if (tags.includes(MANUAL_SCENARIO_TAG)) return 'manual';
-  if (tags.includes('@compatibility')) return 'compatibility';
+  if (COMPATIBILITY_SCENARIO_TAGS.some(tag => tags.includes(tag))) return 'compatibility';
   if (tags.includes('@mobile')) return 'mobile_emulated';
   return 'functional_web';
 }

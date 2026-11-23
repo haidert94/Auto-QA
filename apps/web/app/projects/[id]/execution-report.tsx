@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
 import { isReportableRunStatus, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
+import { QualityResultsReport } from './quality-results-report';
 import { ProjectHeading } from './project-heading';
 import { useReportHeader } from './project-tabs';
 import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
@@ -19,6 +20,7 @@ type ReportOverview = { latest: ReportRun[]; history: ReportRun[] };
 export function ExecutionReport({ project }: { project: Project }) {
   const header = useReportHeader();
   const activity = useReportActivity(project.id, !!header?.active);
+  const [displayQuality, setDisplayQuality] = useState(false);
   const [overview, setOverview] = useState<ReportOverview | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioListItem[] | null>(null);
   const [error, setError] = useState('');
@@ -43,7 +45,11 @@ export function ExecutionReport({ project }: { project: Project }) {
   const refreshOnActivity = waiting ? activity.counts : null;
 
   useEffect(() => {
-    if (!header?.active) return;
+    if (header?.active) setDisplayQuality(new URLSearchParams(window.location.search).get('resultados') === 'calidad');
+  }, [header?.active]);
+
+  useEffect(() => {
+    if (!header?.active || displayQuality) return;
     const controller = new AbortController();
     const options = { cache: 'no-store' as const, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) };
     setLoading(true); setError(''); setTagsWarning('');
@@ -73,7 +79,7 @@ export function ExecutionReport({ project }: { project: Project }) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No se pudo cargar el reporte.');
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [project.id, header?.active, refresh, activity.historyVersion, refreshOnActivity]);
+  }, [project.id, header?.active, displayQuality, refresh, activity.historyVersion, refreshOnActivity]);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
       if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== 'k' || !search.current?.getClientRects().length) return;
@@ -108,6 +114,14 @@ export function ExecutionReport({ project }: { project: Project }) {
       document.removeEventListener('keydown', closeOnEscape);
     };
   }, []);
+
+  function pickReport(quality: boolean) {
+    const url = new URL(window.location.href);
+    if (quality) url.searchParams.set('resultados', 'calidad');
+    else url.searchParams.delete('resultados');
+    window.history.replaceState(window.history.state, '', url);
+    setDisplayQuality(quality);
+  }
 
   function pickTag(next: string) {
     setTag(next);
@@ -166,12 +180,17 @@ export function ExecutionReport({ project }: { project: Project }) {
 
   return <section className="run-report" aria-label="Reporte de ejecuciones">
     {header?.element && createPortal(<ProjectHeading project={project}
-      summary="Consulta el estado más reciente de cada escenario y accede a sus ejecuciones anteriores."
-      actions={<details ref={exportMenu} className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
+      summary="Consulta las ejecuciones de escenarios y los resultados de Disponibilidad, Lighthouse, k6 y UX."
+      actions={!displayQuality && <details ref={exportMenu} className="run-report-export"><summary><Download size={14} />Exportar resultados</summary>
         <div><button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'xml')}>Exportar JUnit XML</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'json')}>Exportar JSON</button>
           <button type="button" disabled={downloadDisabled} onClick={event => void exportResults(event, 'zip')}>Reporte completo (.zip)</button>
           <small>{exportNotice || `Exporta las ${finalized.length} ejecuciones finalizadas visibles.`}</small></div></details>} />, header.element)}
+    <div className="run-report-filter-options quality-report-switch" role="group" aria-label="Tipo de resultados">
+      <button type="button" aria-pressed={!displayQuality} onClick={() => pickReport(false)}>Escenarios</button>
+      <button type="button" aria-pressed={displayQuality} onClick={() => pickReport(true)}>Calidad</button>
+    </div>
+    {displayQuality ? <QualityResultsReport projectId={project.id} active={!!header?.active} /> : <>
     {exportError && <p className="run-report-warning" role="alert">{exportError}</p>}
     {loading && !overview ? <p className="run-report-message" role="status">Consultando reporte de ejecuciones…</p>
       : error ? <div className="run-report-message" role="alert"><p className="error">{error}</p><button type="button" className="secondary" onClick={() => setRefresh(value => value + 1)}>Reintentar reporte</button></div>
@@ -243,5 +262,6 @@ export function ExecutionReport({ project }: { project: Project }) {
           </section>
         </aside></div>
       </>}
+    </>}
   </section>;
 }

@@ -7,6 +7,8 @@
 // Seguridad: todo string interpolado se escapa como literal JS para evitar
 // inyeccion de codigo. Nunca pegamos texto crudo del usuario en el spec.
 
+import { COMPATIBILITY_SCENARIO_TAGS } from './scenario-tags';
+
 export type GeneratorStep = {
   ordinal: number;
   action: string;
@@ -213,7 +215,7 @@ export function defaultScenarioBrowser(scenario: { title: string; tags?: readonl
   if (fromTitle) return fromTitle;
 
   const tags = (scenario.tags ?? []).map(tag => tag.toLowerCase());
-  if (tags.includes('@compatibility')) {
+  if (COMPATIBILITY_SCENARIO_TAGS.some(tag => tags.includes(tag))) {
     const matches = SUPPORTED_BROWSERS.filter(browser => tags.includes('@' + browser.toLowerCase()));
     if (matches.length === 1) return matches[0];
   }

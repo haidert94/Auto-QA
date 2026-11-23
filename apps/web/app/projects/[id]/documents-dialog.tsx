@@ -169,7 +169,7 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
   return <dialog ref={dialog} className="environments-dialog documents-dialog" aria-labelledby="documents-dialog-title"
     onCancel={event => { if (uploading) event.preventDefault(); else onClose(); }}>
     <header className="environments-dialog__head">
-      <h2 id="documents-dialog-title">Documentos asociados y contratos técnicos</h2>
+      <h2 id="documents-dialog-title">Historias de usuario y Documentos asociados</h2>
       <button type="button" className="secondary" onClick={close} disabled={uploading} aria-label="Cerrar">×</button>
     </header>
     <div className="environments-dialog__form documents-dialog__body">
