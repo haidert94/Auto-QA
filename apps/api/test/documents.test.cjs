@@ -357,6 +357,29 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   assert.deepEqual(saved.inputs.documentGenerationSources, {
     performance: [{ versionId: uploadPerf.data[0].currentVersion.id, clarifiedAt: null }],
   });
+  assert.equal(saved.stage, 'selection-done');
+  const environment = await prisma.environment.create({ data: {
+    projectId, baseUrl: 'https://example.test', allowedHosts: ['example.test'], authorizationConfirmed: true,
+  } });
+  const { runAutomation } = require('../dist/automation/pipeline-runner');
+  const prompts = [];
+  await runAutomation(prisma, {
+    id: saved.id, projectId, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
+  }, {
+    async dispatch({ prompt }) {
+      prompts.push(prompt);
+      return { model: 'test', text: '{"audits":[{"url":"https://example.test/catalogo"}],"loadTests":[]}' };
+    },
+  });
+  const finished = await read(base + '/' + saved.id);
+  assert.equal(finished.status, 200);
+  assert.equal(finished.data.stage, 'generated', JSON.stringify(finished.data));
+  assert.equal(finished.data.status, 'COMPLETED');
+  assert.equal(finished.data.errorCode, null);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /menos de dos segundos/);
+  assert.doesNotMatch(prompts[0], /Mostrar el catálogo/);
+  assert.equal(await prisma.performanceAudit.count({ where: { projectId, environmentId: environment.id } }), 1);
   assert.equal(await prisma.testScenario.count({ where: { projectId } }), 1);
   assert.equal((await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } })).requirementId, original.requirementId);
 });

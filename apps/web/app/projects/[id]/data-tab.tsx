@@ -203,7 +203,10 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
       onSaved={saved => { setProject(saved); setEnvDialogOpen(false); router.refresh(); }} />}
     {docDialogOpen && <DocumentsDialog projectId={project.id} role={role}
       onClose={() => setDocDialogOpen(false)}
-      onChanged={() => setReload(value => value + 1)} />}
+      onChanged={() => {
+        setReload(value => value + 1);
+        router.refresh();
+      }} />}
     {rolesDialogOpen && <RolesDialog project={project} onClose={() => setRolesDialogOpen(false)}
       onSaved={saved => { setProject(saved); setRolesDialogOpen(false); }} />}
   </div>;

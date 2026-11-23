@@ -49,6 +49,7 @@ const ipa = { score: 82, status: 'ASSESSED', signals: [
 const generationRequests = [];
 const generationJobId = '60400000-0000-4000-8000-000000000001';
 let generationSelectionBlocked = false;
+let generationErrorCode = null;
 const completedDocumentTypes = new Set();
 const pendingFinding = {
   id: 'aadd4574-f8ec-4fa7-aaaa-abc28d39b319', kind: 'USER_STORY', text: 'Como comprador quiero descargar el comprobante.',
@@ -199,6 +200,9 @@ const api = createServer(async (request, response) => {
     })));
   }
   if (path === base + '/automation/' + generationJobId && request.method === 'GET') {
+    if (generationErrorCode) return send({
+      id: generationJobId, status: 'FAILED', stage: 'generating', errorCode: generationErrorCode,
+    });
     const stage = generationRequests.at(-1)?.types ? 'generated' : 'review-ready';
     return send({ id: generationJobId, status: 'COMPLETED', stage });
   }
@@ -334,9 +338,18 @@ const api = createServer(async (request, response) => {
     return send(project);
   }
   if (path === base) return send(project);
-  if (path === base + '/ipa') return ipaFail ? send({ message: 'IPA no disponible' }, 503) : send({ ipa: qualityMode ? { ...ipa,
-    documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, verifiable: 7, ambiguous: 2, blockers: [], hints: ['Revisa el timeout.'] } : ipa,
-    generatedAt: '2026-11-18T12:00:00Z' });
+  if (path === base + '/ipa') {
+    if (ipaFail) return send({ message: 'IPA no disponible' }, 503);
+    const newDocument = documents.find(document => document.filename === 'requisitos-demo.md');
+    const points = newDocument?.state === 'VALIDATED' ? 40 : newDocument?.state === 'PROCESSED' ? 36 : newDocument ? 28 : 22;
+    const current = {
+      ...ipa, score: ipa.score + points - 22,
+      signals: ipa.signals.map(signal => signal.criterion === 'Documentación y requisitos' ? { ...signal, points } : signal),
+    };
+    return send({ ipa: qualityMode ? { ...current,
+      documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, verifiable: 7, ambiguous: 2, blockers: [], hints: ['Revisa el timeout.'] } : current,
+      generatedAt: '2026-11-18T12:00:00Z' });
+  }
   if (path === base + '/icsp') return qualityIcspFail ? send({ message: 'ICSP no disponible' }, 503) : send(qualityMalformed ? [] : qualityNoResults ? {
     ...qualityIcsp, score: 100, counts: { requirements: 0, scenarios: 0, runs: 0, results: 0, passed: 0, failed: 0 },
     dimensions: qualityIcsp.dimensions.map(dimension => ({ ...dimension, numerator: 0, denominator: 0 })),
@@ -410,6 +423,12 @@ const api = createServer(async (request, response) => {
     return send({ affectedScenarios: [{ id: scenarios[0].id, title: scenarios[0].title }], report: documentReport() });
   }
   if (path === base + '/documents/analysis') return send(documentReport());
+  if (path === base + '/documents/analyze' && request.method === 'POST') {
+    documents = documents.map(document => document.filename === 'requisitos-demo.md' && document.state === 'UPLOADED'
+      ? { ...document, state: 'PROCESSED', currentVersion: { ...document.currentVersion, hasText: true } }
+      : document);
+    return send(documentReport());
+  }
   if (path.startsWith(base + '/')) return send([]);
   return send({ message: 'No encontrado' }, 404);
 });
@@ -471,10 +490,19 @@ async function verifyDocumentGenerationConfirmation(page) {
       { url: project.environments[0].baseUrl, documentTestTypes: ['performance'] }, { types: ['performance'] },
     ]);
     console.log('PASS al agregar Performance solo confirma y encola el tipo pendiente.');
+
+    generationErrorCode = 'review-missing';
+    await generate.click();
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    const failure = page.getByRole('alert').filter({ hasText: 'Explorer no pudo usar el análisis' });
+    await expect(failure).toContainText('Referencia de generación ' + generationJobId.slice(0, 8));
+    console.log('PASS Escenarios indica la causa y la referencia cuando Explorer rechaza la generación.');
   } finally {
     documents = original;
     generationSelectionBlocked = false;
     completedDocumentTypes.clear();
+    generationErrorCode = null;
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
 }
@@ -507,6 +535,11 @@ async function verifyRequirementClarification(page) {
 }
 
 async function verifyDocumentUploads(page) {
+  const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+  const ipaCard = page.locator('.detail-ipa');
+  const ipaScore = ipaCard.locator('.ipa-score-value');
+  const documentation = ipaCard.getByRole('listitem').filter({ hasText: 'Documentación y requisitos' });
+  await expect(ipaScore).toHaveText('82');
   const original = [...documents];
   documents = documents.map(document => document.state === 'VALIDATED'
     ? { ...document, testTypes: ['functional_web', 'manual'], testTypesSource: 'AUTOMATIC' }
@@ -569,7 +602,26 @@ async function verifyDocumentUploads(page) {
     await expect(functional.getByText('Aplica a: Funcional web · UX', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    console.log('PASS selector único en General y una sola tarjeta por archivo con todos sus tipos de prueba.');
+    await expect(ipaScore).toHaveText('88');
+    await expect(documentation.getByText('70%', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
+    await dialog.getByRole('button', { name: 'Analizar documentación', exact: true }).click();
+    await expect(functional.getByText(/ · Procesado$/)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(ipaScore).toHaveText('96');
+    await expect(documentation.getByText('90%', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
+    await functional.getByRole('button', { name: 'Marcar como validado', exact: true }).click();
+    await expect(functional.getByText(/ · Validado$/)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(ipaScore).toHaveText('100');
+    await expect(documentation.getByText('100%', { exact: true })).toBeVisible();
+    assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin, 'El IPA se actualiza sin recargar la página.');
+    console.log('PASS la carga, el análisis y la validación actualizan el IPA sin recargar la página.');
   } finally {
     documents = original;
   }

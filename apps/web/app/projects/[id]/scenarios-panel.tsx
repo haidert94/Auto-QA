@@ -23,6 +23,13 @@ import { ScenarioWorkspace } from './scenario-workspace';
 type RequirementOption = { id: string; title: string; externalKey: string | null };
 
 type AutomationSummary = { id: string; status: string; stage: string | null; errorCode?: string | null; createdAt: string };
+const generationErrors: Record<string, string> = {
+  'document-analysis-changed': 'El análisis documental cambió. Vuelve a confirmar la generación.',
+  'review-missing': 'Explorer no pudo usar el análisis de la solicitud. Verifica que Explorer y la aplicación estén en la misma versión.',
+  'project-missing': 'El proyecto ya no está disponible para generar casos.',
+  'selection-empty': 'La solicitud quedó sin tipos de prueba. Abre de nuevo la confirmación.',
+  'automation-crashed': 'El servicio de generación encontró un error interno. Consulta su registro.',
+};
 
 export function ScenariosPanel({ project, role }: { project: Project; role?: OrgRole }) {
   const canCreate = can(role, 'scenario.create');
@@ -210,9 +217,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios irán apareciendo según termine cada agente.');
       } else if (done.status === 'FAILED' || done.status === 'CANCELED') {
         setGenerateNotice('');
-        setError(done.errorCode === 'document-analysis-changed'
-          ? 'El análisis documental cambió. Vuelve a confirmar la generación.'
-          : 'La generación no se completó. Revisa el estado antes de volver a intentarlo.');
+        const reason = done.status === 'CANCELED' ? 'La generación fue cancelada.'
+          : generationErrors[done.errorCode ?? ''] ?? 'El servicio no pudo completar la generación. Consulta su registro.';
+        setError(reason + ' Referencia de generación ' + done.id.slice(0, 8) + '.');
       } else {
         setGenerateNotice(documentTestTypes.length === 1 && documentTestTypes[0] === 'performance'
           ? 'Generación de Performance completada. Consulta el estado en Calidad.'

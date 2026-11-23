@@ -127,7 +127,7 @@ npm.cmd run test:commerce:e2e
 
 ## Documentación y requisitos
 
-En **Datos → Documentos asociados y contratos técnicos**, **General** ofrece un selector para subir archivos. Al subir un archivo, AutoQA lo convierte a Markdown para una revisión inicial local y marca en **Aplica a** los tipos de prueba que encuentra en su contenido. Cada archivo aparece una sola vez, con todos sus tipos visibles en **Aplica a**. Para modificar esas casillas en un documento validado, retira primero la validación. La asignación manual se conserva al subir otra versión. El formulario de registro también admite seleccionar o arrastrar archivos. El IPA muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
+En **Datos → Documentos asociados y contratos técnicos**, **General** ofrece un selector para subir archivos. Al subir un archivo, AutoQA lo convierte a Markdown para una revisión inicial local y marca en **Aplica a** los tipos de prueba que encuentra en su contenido. Cada archivo aparece una sola vez, con todos sus tipos visibles en **Aplica a**. Para modificar esas casillas en un documento validado, retira primero la validación. La asignación manual se conserva al subir otra versión. El formulario de registro también admite seleccionar o arrastrar archivos. La tarjeta de IPA en Datos se actualiza al cambiar la documentación y muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
 
 ## API de onboarding
 
@@ -219,4 +219,4 @@ En **Escenarios**, «Generar casos de prueba» muestra los tipos con documentos 
 
 En **Datos**, abre «Ambiguos o pendientes», selecciona un requisito e introduce la corrección o adjunta un TXT/Markdown con su texto. Añade un criterio observable y aprueba la aclaración. El IPA se recalcula sin procesar de nuevo el documento; el hallazgo conserva el texto, la versión y la ubicación originales. Si ya había escenarios vinculados, revísalos y confirma su cobertura desde el editor. Los resultados anteriores permanecen asociados al escenario.
 
-Para publicar esta función, aplica la migración `20261122120000_requirement_clarification` y compila la API, la web y Explorer con el cliente Prisma regenerado.
+Para publicar esta función, aplica la migración `20261122120000_requirement_clarification` y compila la API, la web y Explorer con el cliente Prisma regenerado. Si una generación termina con `review-missing`, comprueba la versión del proceso que consume la cola. Desde el flujo incremental, la solicitud usa el análisis documental persistido. Una versión anterior de Explorer espera el resultado del revisor dentro del trabajo. El aviso de Escenarios incluye una referencia del trabajo para consultar `AutomationJob.errorCode`.
