@@ -71,7 +71,17 @@ export class DocumentsController {
     @UploadedFiles() files: UploadedDocument[],
     @Body() dto: UploadDocumentDto,
   ) {
-    return this.documents.upload(projectId, files ?? [], dto?.type ?? 'AUTO', dto?.testTypes ?? []);
+    return this.documents.upload(projectId, files ?? [], dto?.type ?? 'AUTO', dto?.testTypes);
+  }
+
+  @Post(':documentId/test-types')
+  @HttpCode(200)
+  @RequiresRole('EDITOR')
+  suggestTestTypes(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('documentId', ParseUUIDPipe) documentId: string,
+  ) {
+    return this.documents.suggestTestTypes(projectId, documentId);
   }
 
   // Reclasifica un documento ya subido: actualiza su lista de tipos de

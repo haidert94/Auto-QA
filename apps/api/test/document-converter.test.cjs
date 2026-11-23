@@ -3,7 +3,8 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
-const { convertDocument, needsAiFallback } = require('../dist/automation/document-converter');
+const { convertDocument, needsAiFallback, sourceBlocksToMarkdown } = require('../dist/automation/document-converter');
+const { suggestDocumentTestTypes } = require('../dist/documents/document-test-type-review');
 
 test('convertDocument: markdown pasa tal cual', async () => {
   const result = await convertDocument({
@@ -70,4 +71,20 @@ test('needsAiFallback: warning específico fuerza fallback', () => {
     markdown: 'Texto larguísimo que supera los 80 caracteres y por sí solo no activaría fallback IA.',
     sourceBytes: 100, warnings: ['pdf-sin-texto-extraible'],
   }), true);
+});
+
+test('revisa el Markdown convertido y sugiere solo tipos con indicios en el contenido', () => {
+  const markdown = sourceBlocksToMarkdown([
+    { locator: 'página 1, línea 1', text: '# Especificación' },
+    { locator: 'página 1, línea 2', text: 'HU-1: iniciar sesión en el catálogo.' },
+    { locator: 'página 2, línea 1', text: 'La vista móvil requiere diseño adaptativo.' },
+    { locator: 'página 2, línea 2', text: 'Chrome, Firefox y Safari deben mostrar la misma página.' },
+    { locator: 'página 2, línea 3', text: 'Monitoreo HTTP y SLA de disponibilidad del servicio.' },
+    { locator: 'página 2, línea 4', text: 'Medir latencia p95 y cumplimiento de WCAG.' },
+    { locator: 'página 2, línea 5', text: 'La verificación manual requiere criterio humano.' },
+  ]);
+  assert.match(markdown, /^# Especificación\n\nHU-1/);
+  assert.deepEqual(suggestDocumentTestTypes(markdown), ['functional_web', 'mobile_emulated', 'compatibility', 'availability', 'performance', 'ux', 'manual']);
+  assert.deepEqual(suggestDocumentTestTypes('Manual de usuario. Datos de contacto y fechas.'), []);
+  assert.deepEqual(suggestDocumentTestTypes('La experiencia de usuario requiere navegación por teclado.'), ['ux']);
 });

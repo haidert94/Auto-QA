@@ -8,7 +8,7 @@ const versionSelect = {
 
 export const documentSelect = {
   id: true, filename: true, type: true, classificationSource: true, version: true, createdAt: true,
-  testTypes: true,
+  testTypes: true, testTypesSource: true,
   versions: { orderBy: { number: 'desc' }, select: versionSelect },
 } satisfies Prisma.DocumentSelect;
 

@@ -2,6 +2,12 @@
 // usando librerías (sin IA). El llamador decide si invoca el fallback IA
 // cuando la extracción sale vacía o rota. No persiste; devuelve strings.
 
+import type { SourceBlock } from '../documents/document-files';
+
+export function sourceBlocksToMarkdown(blocks: SourceBlock[]): string {
+  return blocks.map(block => sanitize(block.text).trim()).filter(Boolean).join('\n\n');
+}
+
 export type ConvertedDocument = {
   filename: string;
   mime: string;

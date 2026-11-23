@@ -38,6 +38,7 @@ let project = {
 let documents = ['PROCESSED', 'UPLOADED', 'VALIDATED', 'DECLARED'].map((state, i) => ({
   id: `20000000-0000-4000-8000-00000000000${i}`, filename: ['spec-checkout.yaml', 'requisitos-pagos.pdf', 'flujos-criticos.md', 'contrato-declarado.txt'][i],
   type: i === 0 ? 'API' : 'REQUIREMENTS', state, classificationSource: 'MANUAL', versions: [],
+  testTypes: [], testTypesSource: 'PENDING',
   currentVersion: state === 'DECLARED' ? null : { id: String(i), number: 1, format: ['yaml', 'pdf', 'md'][i], size: 2048, hasText: state !== 'UPLOADED' },
 }));
 const ipa = { score: 82, status: 'ASSESSED', signals: [
@@ -324,19 +325,27 @@ const api = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk);
     const form = await new Response(Buffer.concat(chunks), { headers: { 'Content-Type': request.headers['content-type'] } }).formData();
     const file = form.get('files');
-    const testTypes = JSON.parse(form.get('testTypes') ?? '[]');
+    const provided = form.get('testTypes');
+    const testTypes = provided ? JSON.parse(provided) : file.name === 'requisitos-demo.md' ? ['functional_web'] : [];
+    const testTypesSource = provided ? 'MANUAL' : 'AUTOMATIC';
     const version = { id: randomUUID(), number: 1, format: 'MD', size: file.size, hasText: false };
     const document = { id: randomUUID(), filename: file.name, type: 'OTHER', state: 'UPLOADED',
-      classificationSource: 'PENDING', testTypes, currentVersion: version, versions: [version] };
+      classificationSource: 'PENDING', testTypes, testTypesSource, currentVersion: version, versions: [version] };
     documents.push(document);
     return send([document], 201);
   }
-  if (path.startsWith(base + '/documents/') && path.endsWith('/test-types') && request.method === 'PATCH') {
+  if (path.startsWith(base + '/documents/') && path.endsWith('/test-types') && ['PATCH', 'POST'].includes(request.method)) {
     const document = documents.find(document => document.id === path.split('/').at(-2));
     if (!document) return send({ message: 'Documento no encontrado.' }, 404);
+    if (request.method === 'POST') {
+      const reviewed = { ...document, testTypes: ['compatibility'], testTypesSource: 'AUTOMATIC' };
+      documents = documents.map(item => item.id === document.id ? reviewed : item);
+      return send(reviewed);
+    }
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     document.testTypes = JSON.parse(Buffer.concat(chunks).toString()).testTypes;
+    document.testTypesSource = 'MANUAL';
     return send(document);
   }
   if (path === base + '/documents') return docsFail ? send({ message: 'Documentos temporalmente no disponibles.' }, 503) : send(documents);
@@ -361,23 +370,27 @@ async function verifyDocumentUploads(page) {
     await expect(picker).toBeEnabled();
     await expect(picker).toHaveAccessibleName('General');
     await expect(section('General').getByText('spec-checkout.yaml')).toBeVisible();
-    await picker.setInputFiles({ name: 'requisitos-demo.md', mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba') });
-    const uploaded = section('General').locator('li').filter({ hasText: 'requisitos-demo.md' });
-    await expect(uploaded.getByText('Clasificación por determinar')).toBeVisible();
-    assert.deepEqual(documents.find(doc => doc.filename === 'requisitos-demo.md').testTypes, []);
-    await uploaded.getByText('Aplica a: General').click();
-    for (const type of types) {
-      await expect(uploaded.getByRole('checkbox', { name: type, exact: true })).toBeVisible();
-    }
-    await uploaded.getByRole('checkbox', { name: 'Funcional web', exact: true }).click();
+    await picker.setInputFiles({ name: 'requisitos-demo.md', mimeType: 'text/markdown', buffer: Buffer.from('RF-1: Iniciar sesión.') });
     const functional = section('Funcional web').locator('li').filter({ hasText: 'requisitos-demo.md' });
-    await expect(functional).toBeVisible();
-    await expect(uploaded).toHaveCount(0);
+    await expect(functional.getByText('Clasificación por determinar')).toBeVisible();
     await functional.getByText('Aplica a: Funcional web').click();
+    await expect(functional.getByText(/Sugerencia automática/)).toBeVisible();
+    for (const type of types) {
+      await expect(functional.getByRole('checkbox', { name: type, exact: true })).toBeVisible();
+    }
     await expect(functional.getByRole('checkbox', { name: 'Funcional web', exact: true })).toBeChecked();
+    await expect(functional.getByRole('checkbox', { name: 'UX', exact: true })).not.toBeChecked();
     await functional.getByRole('checkbox', { name: 'UX', exact: true }).click();
     await expect(section('UX').getByText('requisitos-demo.md', { exact: true })).toBeVisible();
     assert.deepEqual(documents.find(doc => doc.filename === 'requisitos-demo.md').testTypes, ['functional_web', 'ux']);
+    const existing = section('General').locator('li').filter({ hasText: 'requisitos-pagos.pdf' });
+    await existing.getByText('Aplica a: General', { exact: true }).click();
+    await existing.getByRole('button', { name: 'Obtener sugerencias' }).click();
+    const reviewed = section('Compatibilidad').locator('li').filter({ hasText: 'requisitos-pagos.pdf' });
+    await expect(reviewed).toBeVisible();
+    await reviewed.getByText('Aplica a: Compatibilidad', { exact: true }).click();
+    await expect(reviewed.getByRole('checkbox', { name: 'Compatibilidad', exact: true })).toBeChecked();
+    await expect(reviewed.getByRole('button', { name: 'Obtener sugerencias' })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();

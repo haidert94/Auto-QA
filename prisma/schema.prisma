@@ -209,6 +209,7 @@ model Document {
   // plan). Cada agente del pipeline filtra por este campo para usar
   // solo la documentación relevante a su dominio.
   testTypes            String[]             @default([])
+  testTypesSource      ClassificationSource @default(PENDING)
 
   @@index([projectId, filename, removedAt])
 }

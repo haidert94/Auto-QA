@@ -36,6 +36,7 @@ export type SavedDocument = {
   versions: Version[];
   classificationSource: 'PENDING' | 'MANUAL' | 'AUTOMATIC';
   testTypes: TestTypeCode[];
+  testTypesSource?: 'PENDING' | 'MANUAL' | 'AUTOMATIC';
 };
 
 type Source = { version: number; filename: string; locator: string };

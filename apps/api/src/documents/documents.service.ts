@@ -11,6 +11,7 @@ import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-
 import { analysisSelect, describeAnalysis, documentAnalysisSignature, documentSelect, metadata, persistFindings, readDocumentSnapshot } from './document-records';
 import { DOCUMENT_STORAGE, type DocumentStorage } from './document-storage';
 import { readiness, type ReadinessFinding } from './readiness';
+import { reviewDocumentTestTypes } from './document-test-type-review';
 
 type AnalysisFindingRow = Prisma.RequirementTraceabilityGetPayload<{
   select: { id: true; kind: true; text: true; pendingConfirmation: true; pendingReason: true; requirementId: true; locator: true;
@@ -86,7 +87,7 @@ export class DocumentsService {
     }
   }
 
-  async upload(projectId: string, files: UploadedDocument[], type: DocumentType | 'AUTO', testTypes: string[] = []) {
+  async upload(projectId: string, files: UploadedDocument[], type: DocumentType | 'AUTO', testTypes?: string[]) {
     if (!files.length) throw new BadRequestException('Selecciona al menos un documento.');
     await this.project(projectId, true);
     const prepared = files.map(file => {
@@ -96,8 +97,13 @@ export class DocumentsService {
     if (new Set(prepared.map(file => file.name)).size !== prepared.length) {
       throw new BadRequestException('Sube las versiones del mismo documento una por una.');
     }
-    await this.parsing(async () => {
-      for (const file of prepared) await parseDocument(file.format, file.data);
+    const reviewed = await this.parsing(async () => {
+      const results = [];
+      for (const file of prepared) {
+        const suggestedTypes = await reviewDocumentTestTypes(file.format, file.data);
+        results.push({ ...file, suggestedTypes });
+      }
+      return results;
     });
 
     const written: string[] = [];
@@ -106,18 +112,24 @@ export class DocumentsService {
         await this.lockProject(tx, projectId);
         let count = await tx.documentVersion.count({ where: { document: { projectId } } });
         const uploads = [];
-        for (const file of prepared) {
+        for (const file of reviewed) {
           const current = await tx.document.findFirst({
             where: { projectId, filename: file.name, ...active },
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             include: { versions: { orderBy: { number: 'desc' }, take: 1 } },
           });
-          if (current?.versions[0]?.sha256 === file.hash) {
+          const sameVersion = current?.versions[0]?.sha256 === file.hash;
+          const keepTypes = current?.testTypesSource === 'MANUAL' ||
+            (sameVersion && current?.testTypesSource === 'AUTOMATIC');
+          const assignment = testTypes !== undefined
+            ? { testTypes, testTypesSource: 'MANUAL' as const }
+            : keepTypes ? {} : { testTypes: file.suggestedTypes, testTypesSource: 'AUTOMATIC' as const };
+          if (current && sameVersion) {
             const duplicates = await tx.document.update({
               where: { id: current.id }, select: documentSelect,
               data: {
                 ...(type === 'AUTO' ? {} : { type, classificationSource: 'MANUAL' }),
-                ...(testTypes.length ? { testTypes } : {}),
+                ...assignment,
               },
             });
             uploads.push(metadata(duplicates));
@@ -136,10 +148,10 @@ export class DocumentsService {
           const document = current
             ? await tx.document.update({
               where: { id: current.id }, select: documentSelect,
-              data: { ...classification, version: number, versions: { create: version }, ...(testTypes.length ? { testTypes } : {}) },
+              data: { ...classification, version: number, versions: { create: version }, ...assignment },
             })
             : await tx.document.create({
-              data: { ...classification, projectId, filename: file.name, versions: { create: version }, testTypes },
+              data: { ...classification, projectId, filename: file.name, versions: { create: version }, ...assignment },
               select: documentSelect,
             });
           uploads.push(metadata(document));
@@ -178,18 +190,51 @@ export class DocumentsService {
     return metadata(item);
   }
 
-  async reclassify(projectId: string, documentId: string, testTypes: string[]) {
+  async suggestTestTypes(projectId: string, documentId: string) {
     await this.project(projectId, true);
-    const existing = await this.prisma.document.findFirst({
-      where: { projectId, id: documentId, ...active }, select: { id: true },
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, projectId, ...active },
+      include: { versions: { orderBy: { number: 'desc' }, take: 1 } },
     });
-    if (!existing) throw new NotFoundException('Documento no encontrado.');
-    const updated = await this.prisma.document.update({
-      where: { id: documentId },
-      data: { testTypes },
-      select: documentSelect,
+    if (!document) throw new NotFoundException('Documento no encontrado.');
+    if (document.testTypesSource !== 'PENDING') return this.get(projectId, documentId);
+    const version = document.versions[0];
+    if (!version?.storageKey || !version.format || !version.uploadedAt) {
+      throw new BadRequestException('Carga un archivo antes de solicitar sugerencias.');
+    }
+    const { storageKey, format, sha256 } = version;
+    const testTypes = await this.parsing(async () => {
+      const content = await this.storage.get(storageKey).catch(() => {
+        throw new UnprocessableEntityException('No se pudo leer una versión almacenada.');
+      });
+      if (digest(content) !== sha256) throw new UnprocessableEntityException('Una versión no coincide con su huella.');
+      return reviewDocumentTestTypes(format, content);
     });
-    return metadata(updated);
+    return this.prisma.$transaction(async tx => {
+      await this.lockProject(tx, projectId);
+      await tx.document.updateMany({
+        where: { id: documentId, projectId, ...active, version: version.number, testTypesSource: 'PENDING' },
+        data: { testTypes, testTypesSource: 'AUTOMATIC' },
+      });
+      const updated = await tx.document.findFirst({ where: { id: documentId, projectId, ...active }, select: documentSelect });
+      if (!updated) throw new NotFoundException('Documento no encontrado.');
+      if (updated.testTypesSource === 'PENDING') throw new ConflictException('El documento cambió durante la revisión. Inténtalo de nuevo.');
+      return metadata(updated);
+    });
+  }
+
+  async reclassify(projectId: string, documentId: string, testTypes: string[]) {
+    return this.prisma.$transaction(async tx => {
+      await this.lockProject(tx, projectId);
+      const existing = await tx.document.findFirst({
+        where: { projectId, id: documentId, ...active }, select: { id: true },
+      });
+      if (!existing) throw new NotFoundException('Documento no encontrado.');
+      const updated = await tx.document.update({
+        where: { id: documentId }, data: { testTypes, testTypesSource: 'MANUAL' }, select: documentSelect,
+      });
+      return metadata(updated);
+    });
   }
 
   async review(projectId: string, documentId: string, input: { versionId: string; validated: boolean }) {

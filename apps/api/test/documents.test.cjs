@@ -99,6 +99,66 @@ test('protects metadata and enforces project ownership at every document endpoin
   assert.ok((await readdir(storage)).every(name => /^[0-9a-f]{32}$/.test(name)));
 });
 
+test('suggests test types by file and preserves a manual assignment when versions change', async () => {
+  const path = await project('Sugerencias por documento');
+  const uploadBatch = await upload(path, [
+    ['web.md', 'HU-1: Iniciar sesión en el catálogo.'],
+    ['mobile.txt', 'El diseño adaptativo requiere pantallas pequeñas.'],
+  ]);
+  assert.equal(uploadBatch.status, 201, JSON.stringify(uploadBatch.data));
+  const [web, mobile] = uploadBatch.data;
+  assert.deepEqual(web.testTypes, ['functional_web']);
+  assert.deepEqual(mobile.testTypes, ['mobile_emulated']);
+  assert.equal(web.testTypesSource, 'AUTOMATIC');
+  assert.equal(web.state, 'UPLOADED');
+  const revised = await upload(path, [['mobile.txt', 'Debe cumplir WCAG.']]);
+  assert.deepEqual(revised.data[0].testTypes, ['ux']);
+  const manual = await request(path + '/' + web.id + '/test-types', {
+    method: 'PATCH', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ testTypes: [] }),
+  });
+  assert.equal(manual.status, 200);
+  assert.equal(manual.data.testTypesSource, 'MANUAL');
+  const next = await upload(path, [['web.md', 'Medir la latencia del inicio de sesión.']]);
+  assert.equal(next.data[0].id, web.id);
+  assert.deepEqual(next.data[0].testTypes, []);
+  assert.equal(next.data[0].testTypesSource, 'MANUAL');
+  assert.deepEqual((await read(path + '/' + web.id)).data.testTypes, []);
+});
+
+test('reviews a stored PDF without uploading another version or changing a manual assignment', async () => {
+  const path = await project('Revisión del PDF existente');
+  const PDFDocument = require('pdfkit');
+  const pdf = new PDFDocument();
+  const buffer = await new Promise((resolve, reject) => {
+    const chunks = [];
+    pdf.on('data', chunk => chunks.push(chunk));
+    pdf.once('error', reject);
+    pdf.once('end', () => resolve(Buffer.concat(chunks)));
+    pdf.text('Se requiere compatibilidad entre navegadores Chrome y Firefox.');
+    pdf.end();
+  });
+  const created = await upload(path, [['software.pdf', buffer]]);
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  const [doc] = created.data;
+  assert.deepEqual(doc.testTypes, ['compatibility']);
+  await prisma.document.update({ where: { id: doc.id }, data: { testTypes: [], testTypesSource: 'PENDING' } });
+  const route = path + '/' + doc.id + '/test-types';
+  const reviewed = await request(route, { method: 'POST', headers: authorized });
+  assert.equal(reviewed.status, 200, JSON.stringify(reviewed.data));
+  assert.deepEqual(reviewed.data.testTypes, ['compatibility']);
+  assert.equal(reviewed.data.testTypesSource, 'AUTOMATIC');
+  assert.equal(reviewed.data.currentVersion.id, doc.currentVersion.id);
+  assert.equal(reviewed.data.versions.length, 1);
+  await request(route, {
+    method: 'PATCH', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ testTypes: ['ux'] }),
+  });
+  const retry = await request(route, { method: 'POST', headers: authorized });
+  assert.deepEqual(retry.data.testTypes, ['ux']);
+  assert.equal(retry.data.testTypesSource, 'MANUAL');
+});
+
 test('rejects unsupported contents and preserves all-or-nothing upload', async () => {
   const path = await project('Validación documental');
   assert.equal((await upload(path, [['vale.md', 'RF-1: Texto.'], ['falso.pdf', 'No es PDF.']])).status, 415);
