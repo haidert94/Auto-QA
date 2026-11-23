@@ -2,7 +2,7 @@
 // IA vincule con las historias y requisitos analizados.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, requestGeneration, scenarioAnalysisContext } from './agent-types';
 
 type Payload = { monitors?: Array<{ requirementId?: string; name?: string; url?: string; intervalMinutes?: number }> };
 
@@ -25,16 +25,15 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
     'intervalMinutes entre 5 y 60. Los URL deben estar dentro del mismo dominio de la URL base.',
   ].filter(Boolean).join('\n');
 
-  const response = await deps.router.dispatch({
+  const { response, parsed } = await requestGeneration<Payload>(deps.router, {
     operation: 'scenario-generation',
     organizationId: ctx.organizationId, projectId: ctx.projectId, runKey: ctx.runKey,
     prompt, systemPrompt: 'QA SRE. SOLO JSON.',
     maxOutputTokens: 800,
-  });
+  }, payload => Array.isArray(payload?.monitors));
 
-  const parsed = extractJson<Payload>(response.text) ?? {};
-  const monitors = Array.isArray(parsed.monitors) ? parsed.monitors.slice(0, 5) : [];
-  const errors = generationResponseErrors(response, Array.isArray(parsed.monitors));
+  const monitors = Array.isArray(parsed?.monitors) ? parsed.monitors.slice(0, 5) : [];
+  const errors = generationResponseErrors(response, parsed !== null);
   let created = 0;
 
   for (const [index, m] of monitors.entries()) {

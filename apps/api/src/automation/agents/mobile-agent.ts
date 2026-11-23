@@ -4,7 +4,7 @@
 
 import type { Prisma } from '@prisma/client';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -30,16 +30,15 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     'Responde SOLO JSON { "scenarios": [{ "title": "[MOBILE] Abrir menú", "expectedResult": "Se muestra la opción Productos", "flow": "basico", "mode": "playwright", "requirementId": "id del requisito", "regression": true, "tags": ["@menu"], "steps": [{ "action": "click: #menu" }, { "action": "expect-text: Productos" }] }] }.',
   ].filter(Boolean).join('\n');
 
-  const response = await deps.router.dispatch({
+  const { response, parsed } = await requestGeneration<ScenarioPayload>(deps.router, {
     operation: 'scenario-generation',
     organizationId: ctx.organizationId, projectId: ctx.projectId, runKey: ctx.runKey,
     prompt, systemPrompt: 'QA senior especialista en mobile web. SOLO JSON válido.',
     maxOutputTokens: 2000,
-  });
+  }, payload => Array.isArray(payload?.scenarios));
 
-  const parsed = extractJson<ScenarioPayload>(response.text) ?? {};
-  const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.slice(0, 8) : [];
-  const errors = generationResponseErrors(response, Array.isArray(parsed.scenarios));
+  const scenarios = Array.isArray(parsed?.scenarios) ? parsed.scenarios.slice(0, 8) : [];
+  const errors = generationResponseErrors(response, parsed !== null);
   let created = 0;
 
   for (const [index, s] of scenarios.entries()) {

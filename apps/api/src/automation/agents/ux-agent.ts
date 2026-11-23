@@ -3,7 +3,7 @@
 // el análisis real (Playwright + DOM a11y + IA) ocurre en ux-runner.ts.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, requestGeneration, scenarioAnalysisContext } from './agent-types';
 
 type Payload = { audits?: Array<{ requirementId?: string; url?: string }> };
 
@@ -26,16 +26,15 @@ export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<Ag
     'Responde SOLO JSON { "audits": [ { "requirementId": "id del requisito", "url": "https://..." } ] }.',
   ].filter(Boolean).join('\n');
 
-  const response = await deps.router.dispatch({
+  const { response, parsed } = await requestGeneration<Payload>(deps.router, {
     operation: 'ux-analysis',
     organizationId: ctx.organizationId, projectId: ctx.projectId, runKey: ctx.runKey,
     prompt, systemPrompt: 'Experto en usabilidad y accesibilidad. SOLO JSON.',
     maxOutputTokens: 500,
-  });
+  }, payload => Array.isArray(payload?.audits));
 
-  const parsed = extractJson<Payload>(response.text) ?? {};
-  const audits = Array.isArray(parsed.audits) ? parsed.audits.slice(0, 3) : [];
-  const errors = generationResponseErrors(response, Array.isArray(parsed.audits));
+  const audits = Array.isArray(parsed?.audits) ? parsed.audits.slice(0, 3) : [];
+  const errors = generationResponseErrors(response, parsed !== null);
   let created = 0;
 
   for (const [index, a] of audits.entries()) {

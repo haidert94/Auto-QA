@@ -3,12 +3,13 @@
 import type { Prisma } from '@prisma/client';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
   const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
   const prompt = [
     onlyManual ? MANUAL_ONLY_INSTRUCTION : 'Genera entre 3 y 8 escenarios automatizables de prueba funcional web para la aplicación descrita.',
+    onlyManual ? 'Genera hasta 5 casos manuales con pasos concisos.' : 'Describe solo los pasos necesarios y las aserciones de cada caso.',
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
@@ -42,19 +43,18 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
       : '{ "scenarios": [ { "title": "Consultar resumen", "expectedResult": "Se muestra Resumen", "flow": "basico", "mode": "playwright", "requirementId": "id del requisito", "regression": true, "tags": ["@resumen"], "steps": [ { "action": "navigate: /resumen" }, { "action": "expect-text: Resumen" } ] } ] }',
   ].filter(Boolean).join('\n');
 
-  const response = await deps.router.dispatch({
+  const { response, parsed } = await requestGeneration<ScenarioPayload>(deps.router, {
     operation: 'scenario-generation',
     organizationId: ctx.organizationId,
     projectId: ctx.projectId,
     runKey: ctx.runKey,
     prompt,
     systemPrompt: 'Eres un ingeniero QA senior. Responde SOLO con JSON válido.',
-    maxOutputTokens: 3000,
-  });
+    maxOutputTokens: 5000,
+  }, payload => Array.isArray(payload?.scenarios));
 
-  const parsed = extractJson<ScenarioPayload>(response.text) ?? {};
-  const scenarios = Array.isArray(parsed.scenarios) ? parsed.scenarios.slice(0, 10) : [];
-  const errors = generationResponseErrors(response, Array.isArray(parsed.scenarios));
+  const scenarios = Array.isArray(parsed?.scenarios) ? parsed.scenarios.slice(0, 10) : [];
+  const errors = generationResponseErrors(response, parsed !== null);
   let created = 0;
 
   for (const [index, s] of scenarios.entries()) {

@@ -2,7 +2,7 @@
 // un LoadTest (k6) sobre URLs clave detectadas por la IA.
 
 import type { Prisma } from '@prisma/client';
-import { type AgentContext, type AgentDeps, type AgentOutcome, extractJson, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, scenarioAnalysisContext } from './agent-types';
+import { type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, requestGeneration, scenarioAnalysisContext } from './agent-types';
 
 type Payload = {
   audits?: Array<{ requirementId?: string; url?: string }>;
@@ -35,17 +35,16 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
     'Máximo 3 audits y 2 loadTests. Si no estás seguro, deja loadTests vacío.',
   ].filter(Boolean).join('\n');
 
-  const response = await deps.router.dispatch({
+  const { response, parsed } = await requestGeneration<Payload>(deps.router, {
     operation: 'scenario-generation',
     organizationId: ctx.organizationId, projectId: ctx.projectId, runKey: ctx.runKey,
     prompt, systemPrompt: 'QA de performance. SOLO JSON.',
     maxOutputTokens: 800,
-  });
+  }, payload => Array.isArray(payload?.audits) || Array.isArray(payload?.loadTests));
 
-  const parsed = extractJson<Payload>(response.text) ?? {};
-  const audits = Array.isArray(parsed.audits) ? parsed.audits.slice(0, 3) : [];
-  const loadTests = Array.isArray(parsed.loadTests) ? parsed.loadTests.slice(0, 2) : [];
-  const errors = generationResponseErrors(response, Array.isArray(parsed.audits) || Array.isArray(parsed.loadTests));
+  const audits = Array.isArray(parsed?.audits) ? parsed.audits.slice(0, 3) : [];
+  const loadTests = Array.isArray(parsed?.loadTests) ? parsed.loadTests.slice(0, 2) : [];
+  const errors = generationResponseErrors(response, parsed !== null);
   let created = 0;
 
   for (const [index, a] of audits.entries()) {

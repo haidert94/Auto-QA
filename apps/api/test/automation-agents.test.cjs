@@ -333,3 +333,17 @@ test('el agente de Performance recibe solo requisitos de sus versiones pendiente
   assert.equal(audits[0].url, 'https://example.test/catalogo');
   assert.equal(audits[0].requirementId, 'perf');
 });
+
+test('la generación no reintenta cuando el proveedor informa un bloqueo de cuota', async () => {
+  let requests = 0;
+  const result = await runFunctionalWebAgent(context, {
+    router: { async dispatch() {
+      requests++;
+      return { text: 'Sin cuota', model: 'rule-based', usedFallback: true, fallbackReason: 'ai-budget-exhausted' };
+    } },
+    prisma: { testScenario: { async create() { assert.fail('No se esperaba guardar un caso'); } } },
+  });
+  assert.equal(requests, 1);
+  assert.equal(result.created, 0);
+  assert.deepEqual(result.errors, ['ai-budget-exhausted']);
+});

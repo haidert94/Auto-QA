@@ -553,3 +553,86 @@ test('reintenta Móvil y Manual sin repetir Funcional y usa la categoría de cad
   assert.equal(generated.find(item => item.tags.includes('@manual')).requirement.externalKey, 'HU-X01');
   assert.deepEqual((await read(base + '/types/pending')).data.types, []);
 });
+
+test('un proyecto nuevo procesa los siete tipos y recupera respuestas incompletas de Web y Manual', async () => {
+  const types = ['functional_web', 'mobile_emulated', 'compatibility', 'availability', 'performance', 'ux', 'manual'];
+  const source = [
+    'HU-1: Consultar el catálogo web.',
+    'Criterio de aceptación: [HU-1] La página muestra el título Catálogo.',
+    'HU-2: Consultar el catálogo en navegador móvil.',
+    'Criterio de aceptación: [HU-2] Se muestra Catálogo en pantalla móvil.',
+    'HU-3: Revisar el comprobante.',
+    'Criterio de aceptación: [HU-3] El comprobante contiene la fecha del pedido.',
+  ].join('\n');
+
+  async function prepare(name) {
+    const path = await project(name);
+    const id = path.split('/')[1];
+    await authorizeTestProject(id);
+    const file = await upload(path, [['historias.md', source]], 'REQUIREMENTS', authorized, types);
+    assert.equal(file.status, 201, JSON.stringify(file.data));
+    const analysis = await request(path + '/analyze', { method: 'POST', headers: authorized });
+    assert.equal(analysis.status, 200, JSON.stringify(analysis.data));
+    return { id, path, analysisId: analysis.data.analysis.id };
+  }
+  const existing = await prepare('Proyecto que ya generó');
+  const existingRequirement = await prisma.requirement.findFirstOrThrow({ where: { projectId: existing.id, externalKey: 'HU-1' } });
+  await prisma.testScenario.create({ data: {
+    projectId: existing.id, requirementId: existingRequirement.id, title: 'Catálogo del otro proyecto',
+    tags: ['@funcional'], steps: [{ ordinal: 1, action: 'expect-text: Catálogo' }],
+  } });
+  await prisma.automationJob.create({ data: {
+    projectId: existing.id, status: 'COMPLETED', stage: 'generated',
+    inputs: { documentAnalysisId: existing.analysisId },
+    result: { generation: { outcomes: types.map(type => ({ type, created: 1, errorCount: 0 })) } },
+  } });
+
+  const fresh = await prepare('Proyecto nuevo con la misma documentación');
+  const base = '/' + fresh.id + '/automation';
+  const pending = await read(base + '/types/pending');
+  assert.deepEqual(pending.data.types.map(type => type.code), types);
+  const headers = { ...authorized, 'Content-Type': 'application/json' };
+  const job = await request(base, {
+    method: 'POST', headers, body: JSON.stringify({ url: 'https://example.test', documentTestTypes: types }),
+  });
+  assert.equal(job.status, 201, JSON.stringify(job.data));
+  const selected = await request(base + '/' + job.data.id + '/select', {
+    method: 'POST', headers, body: JSON.stringify({ types }),
+  });
+  assert.equal(selected.status, 201, JSON.stringify(selected.data));
+  const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  const { runAutomation } = require('../dist/automation/pipeline-runner');
+  const retries = [];
+  const expectedSteps = [{ action: 'navigate: /' }, { action: 'expect-text: Catálogo' }];
+  await runAutomation(prisma, {
+    id: saved.id, projectId: fresh.id, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
+  }, {
+    async dispatch({ prompt, operation }) {
+      const url = 'https://example.test/';
+      const quality = { requirementId: 'HU-1', url };
+      const respond = json => ({ model: 'test', text: JSON.stringify(json) });
+      if (operation === 'ux-analysis') return respond({ audits: [quality] });
+      if (prompt.includes('"monitors"')) return respond({ monitors: [{ ...quality, name: 'Disponibilidad del catálogo' }] });
+      if (prompt.includes('"loadTests"')) return respond({ audits: [quality], loadTests: [{ ...quality, name: 'Carga del catálogo' }] });
+      if (prompt.includes('Traslada las historias seleccionadas a un navegador móvil')) {
+        return respond({ scenarios: [{ title: 'Mostrar catálogo en móvil', requirementId: 'HU-2', steps: expectedSteps }] });
+      }
+      const manual = prompt.includes('Genera hasta 5 casos manuales');
+      if (!prompt.includes('Segundo intento')) return { model: 'test', text: '{"scenarios":[{"title":"Respuesta cortada' };
+      retries.push(manual ? 'manual' : 'functional_web');
+      return manual ? respond({ scenarios: [{
+        title: 'Revisar comprobante', mode: 'manual', requirementId: 'HU-3',
+        expectedResult: 'El comprobante incluye la fecha del pedido.',
+        steps: [{ action: 'Abre el comprobante.', expected: 'Se ve la fecha del pedido.' }],
+      }] }) : respond({ scenarios: [{ title: 'Mostrar catálogo web', requirementId: 'HU-1', steps: expectedSteps }] });
+    },
+  });
+  assert.deepEqual(retries.sort(), ['functional_web', 'manual']);
+  const finished = await read(base + '/' + saved.id);
+  assert.equal(finished.data.status, 'COMPLETED');
+  assert.equal(finished.data.result.generation.totalCreated, 13);
+  assert.deepEqual(finished.data.result.generation.outcomes.map(({ type }) => type).sort(), [...types].sort());
+  assert.ok(finished.data.result.generation.outcomes.every(({ created, errorCount }) => created > 0 && errorCount === 0));
+  assert.deepEqual((await read(base + '/types/pending')).data.types, []);
+  assert.equal(await prisma.testScenario.count({ where: { projectId: existing.id } }), 1);
+});

@@ -4,7 +4,7 @@
 
 import type { PrismaClient } from '@prisma/client';
 import type { AiResponse } from '../../ai/ai-provider';
-import type { AiRouter } from '../../ai/ai-router';
+import type { AiRouter, AiRouterRequest } from '../../ai/ai-router';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import type { ReviewResult } from '../review-prompt';
 
@@ -97,6 +97,25 @@ export function linkedRequirementId(ctx: AgentContext, id: unknown) {
   if (direct) return direct.criteria.length ? direct.id : undefined;
   const matches = requirements.filter(requirement => requirement.externalKey?.toUpperCase() === reference.toUpperCase());
   return matches.length === 1 && matches[0].criteria.length ? matches[0].id : undefined;
+}
+
+export async function requestGeneration<T>(
+  router: Pick<AiRouter, 'dispatch'>,
+  request: AiRouterRequest,
+  hasExpectedList: (payload: T | null) => boolean,
+) {
+  let response = await router.dispatch(request);
+  let parsed = response.usedFallback ? null : extractJson<T>(response.text);
+  if (!response.usedFallback && !hasExpectedList(parsed)) {
+    response = await router.dispatch({
+      ...request,
+      prompt: request.prompt + '\n\nSegundo intento. Devuelve un único objeto JSON completo con hasta tres propuestas en total. '
+        + 'Usa texto breve y conserva el vínculo, los pasos necesarios y las comprobaciones de cada caso.',
+      maxOutputTokens: Math.max(request.maxOutputTokens ?? 2048, 2048),
+    });
+    parsed = response.usedFallback ? null : extractJson<T>(response.text);
+  }
+  return { response, parsed: hasExpectedList(parsed) ? parsed : null };
 }
 
 export function generationResponseErrors(response: AiResponse, hasExpectedList: boolean): string[] {
