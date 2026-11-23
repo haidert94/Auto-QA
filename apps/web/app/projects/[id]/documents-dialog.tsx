@@ -132,12 +132,12 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
 
   useEffect(() => { dialog.current?.showModal(); }, []);
 
-  async function uploadPending() {
-    if (!pending.length) return;
+  async function uploadPending(items: PendingDocument[]) {
+    if (!items.length) return;
     setUploading(true);
     let changed = false;
     try {
-      for (const item of pending) {
+      for (const item of items) {
         setPending(queue => queue.map(entry => entry.id === item.id
           ? { ...entry, state: 'UPLOADING', error: undefined } : entry));
         const data = new FormData();
@@ -242,7 +242,8 @@ export function DocumentsDialog({ projectId, role, onClose, onChanged }: {
         revision={revision}
         pending={pending}
         setPending={setPending}
-        upload={() => void uploadPending()}
+        upload={items => void uploadPending(items)}
+        uploadOnSelect
         role={role}
         onChanged={onChanged}
       />

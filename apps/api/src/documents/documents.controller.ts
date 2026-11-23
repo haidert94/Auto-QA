@@ -64,7 +64,7 @@ export class DocumentsController {
   @RequiresRole('EDITOR')
   @UseInterceptors(FilesInterceptor('files', MAX_FILES_PER_UPLOAD, {
     preservePath: true,
-    limits: { files: MAX_FILES_PER_UPLOAD, fileSize: MAX_FILE_BYTES, fields: 1, fieldSize: 64, parts: MAX_FILES_PER_UPLOAD + 2 },
+    limits: { files: MAX_FILES_PER_UPLOAD, fileSize: MAX_FILE_BYTES, fields: 2, fieldSize: 256, parts: MAX_FILES_PER_UPLOAD + 3 },
   }))
   upload(
     @Param('projectId', ParseUUIDPipe) projectId: string,

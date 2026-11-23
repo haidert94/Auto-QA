@@ -208,7 +208,6 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .badge-role-viewer { background: var(--quiet); color: var(--muted); }
 
 /* ---- Exploraciones / runs / lists ---- */
-.document-drop { border: 1px dashed var(--line); border-radius: 6px; padding: 14px 18px; background: var(--quiet); }
 .document-list { list-style: none; padding: 0; }
 .document-list > li { border-bottom: 1px solid var(--line); padding: 12px 0; overflow-wrap: anywhere; }
 .document-list p { margin: 6px 0; }
@@ -565,3 +564,23 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 .projects-filter-tabs a { display: inline-flex; align-items: center; padding: 8px 14px; border: 1px solid var(--line); border-radius: 2px; background: var(--surface); color: var(--ink); text-decoration: none; font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; transition: border-color .12s, background .12s, color .12s; }
 .projects-filter-tabs a:hover { border-color: var(--blue); color: var(--blue); }
 .projects-filter-tabs a.is-active { background: var(--blue); color: var(--surface); border-color: var(--blue); }
+
+/* Clasificación por tipo de prueba en documentos. */
+.document-test-types { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--line); border-radius: 2px; }
+.document-test-types legend { font-size: 10px; color: var(--muted); padding: 0 4px; line-height: 1.4; }
+.document-test-types label { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink); cursor: pointer; }
+.document-test-types label input { margin: 0; }
+.document-test-types-edit { margin: 6px 0; }
+.document-test-types-edit > summary { font: 400 11px/1.4 var(--sans); color: var(--muted); cursor: pointer; }
+.document-sections { display: flex; flex-direction: column; gap: 18px; margin-top: 10px; }
+.document-section { background: var(--surface); border: 1px solid var(--line); border-radius: 2px; padding: 12px; }
+.document-section > h4 { margin: 0; font: 500 10px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--blue); }
+.document-section > h4 .muted { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.document-uploads { border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+.document-upload { padding: 8px 12px; }
+.document-upload + .document-upload { border-top: 1px solid var(--line); }
+.document-upload__head { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; }
+.document-upload__head h4 { margin: 0; font-size: 13px; }
+.document-upload__head button { flex-shrink: 0; padding: 7px 12px; }
+.document-upload > button { margin-top: 8px; }
+.document-sections + button { margin-top: 14px; }

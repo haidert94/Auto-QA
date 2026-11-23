@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   ALL_TEST_TYPES, categoryLabels, documentRequest, extensions, fileFormat, fileLimit, fileSize,
   TEST_TYPE_LABELS,
@@ -22,7 +22,8 @@ type Props = {
   revision: number;
   pending: PendingDocument[];
   setPending: Dispatch<SetStateAction<PendingDocument[]>>;
-  upload: () => void;
+  upload: (items: PendingDocument[]) => void;
+  uploadOnSelect?: boolean;
   role?: OrgRole;
   // El padre (DocumentsDialog en el tab Datos) necesita enterarse cuando
   // validamos o borramos para recargar el card "Análisis documental". Si
@@ -31,7 +32,7 @@ type Props = {
   onChanged?: () => void;
 };
 
-export function DocumentPanel({ projectId, disabled, uploading, revision, pending, setPending, upload, role, onChanged }: Props) {
+export function DocumentPanel({ projectId, disabled, uploading, revision, pending, setPending, upload, uploadOnSelect = false, role, onChanged }: Props) {
   const canUpload = can(role, 'document.upload');
   const canAnalyze = can(role, 'document.analyze');
   const canValidate = can(role, 'document.validate');
@@ -39,28 +40,29 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
   const [documents, setDocuments] = useState<SavedDocument[]>([]);
   const [report, setReport] = useState<Report>();
   const [error, setError] = useState('');
-  const [selectionError, setSelectionError] = useState('');
+  const [selectionError, setSelectionError] = useState<{ testType?: TestTypeCode; message: string }>();
+  const sectionId = useId();
   const [busy, setBusy] = useState('');
   const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
     if (!projectId) return;
     const controller = new AbortController();
-    Promise.all([
+    Promise.allSettled([
       documentRequest<SavedDocument[]>(projectId, '', { signal: controller.signal }),
       documentRequest<Report>(projectId, '/analysis', { signal: controller.signal }),
     ]).then(([list, analysis]) => {
-      setDocuments(list);
-      setReport(analysis);
-      setError('');
-    }).catch((reason: unknown) => {
-      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No se pudo consultar la documentación.');
+      if (controller.signal.aborted) return;
+      if (list.status === 'fulfilled') setDocuments(list.value);
+      setReport(analysis.status === 'fulfilled' ? analysis.value : undefined);
+      const failure = list.status === 'rejected' ? list : analysis.status === 'rejected' ? analysis : null;
+      setError(failure ? failure.reason instanceof Error ? failure.reason.message : 'No se pudo consultar la documentación.' : '');
     });
     return () => controller.abort();
   }, [projectId, revision, refresh]);
 
-  function select(files: FileList) {
-    if (disabled || uploading || busy) return;
+  function select(files: FileList, testType?: TestTypeCode) {
+    if (locked) return;
     const selected: PendingDocument[] = [];
     const rejected: string[] = [];
     for (const file of files) {
@@ -68,14 +70,17 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
         rejected.push(file.name);
         continue;
       }
-      selected.push({ id: crypto.randomUUID(), file, type: 'AUTO', testTypes: [], state: 'DECLARED' });
+      selected.push({ id: crypto.randomUUID(), file, type: 'AUTO', testTypes: testType ? [testType] : [], state: 'DECLARED' });
     }
-    setPending(queue => [...queue, ...selected].slice(0, 30));
-    const overLimit = pending.length + selected.length > 30;
-    setSelectionError([
+    const accepted = selected.slice(0, Math.max(0, 30 - pending.length));
+    const message = [
       rejected.length ? 'Formato o tamaño no admitido: ' + rejected.join(', ') : '',
-      overLimit ? 'Puedes seleccionar hasta 30 documentos.' : '',
-    ].filter(Boolean).join(' '));
+      accepted.length < selected.length ? 'Puedes seleccionar hasta 30 documentos.' : '',
+    ].filter(Boolean).join(' ');
+    setSelectionError({ testType, message });
+    if (accepted.length === 0) return;
+    setPending(queue => [...queue, ...accepted]);
+    if (projectId && uploadOnSelect) upload(accepted);
   }
 
   async function operation(label: string, suffix: string, options: RequestInit) {
@@ -94,132 +99,139 @@ export function DocumentPanel({ projectId, disabled, uploading, revision, pendin
   }
 
   const locked = disabled || uploading || !!busy || !canUpload;
+
+  function renderDocument(document: SavedDocument) {
+    const version = document.currentVersion;
+    const testTypes = document.testTypes ?? [];
+    const validated = document.state === 'VALIDATED';
+    return <li key={document.id}>
+      <strong>{document.filename}</strong>
+      <p>{version?.format ?? 'Formato sin registrar'} · {fileSize(version?.size)} · {states[document.state]}</p>
+      <p>{document.classificationSource === 'PENDING' ? 'Clasificación por determinar'
+        : categoryLabels[document.type] + (document.classificationSource === 'AUTOMATIC' ? ' · Automática' : ' · Manual')}</p>
+      {canUpload && <details className="document-test-types-edit">
+        <summary>Aplica a: {testTypes.length === 0 ? 'General' : testTypes.map(t => TEST_TYPE_LABELS[t]).join(' · ')}</summary>
+        <fieldset className="document-test-types" disabled={disabled || uploading || !!busy}>
+          <legend>Marca los tipos de prueba a los que aplica este documento.</legend>
+          {ALL_TEST_TYPES.map(code => <label key={code}>
+            <input type="checkbox" checked={testTypes.includes(code)} onChange={event => {
+              const next = event.target.checked
+                ? [...testTypes, code]
+                : testTypes.filter(t => t !== code);
+              void operation('Actualizando tipos…', '/' + document.id + '/test-types', {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ testTypes: next }),
+              });
+            }} />{TEST_TYPE_LABELS[code]}
+          </label>)}
+        </fieldset>
+      </details>}
+      <details>
+        <summary>Versiones ({document.versions.length})</summary>
+        <ul>
+          {document.versions.map(item => <li key={item.id}>Versión {item.number} · {item.format ?? 'Sin formato'} · {fileSize(item.size)}</li>)}
+        </ul>
+      </details>
+      <div className="actions">
+        {canValidate && version?.hasText && (
+          <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
+            onClick={() => operation('Guardando revisión…', '/' + document.id + '/validation', {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ versionId: version.id, validated: !validated }),
+            })}>{validated ? 'Retirar validación' : 'Marcar como validado'}</button>
+        )}
+        {canDelete && <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
+          onClick={() => operation('Eliminando documento…', '/' + document.id, { method: 'DELETE' })}>
+          Eliminar documento y versiones
+        </button>}
+      </div>
+    </li>;
+  }
+
+  const sections = [
+    { label: 'General', testType: undefined },
+    ...ALL_TEST_TYPES.map(testType => ({ label: TEST_TYPE_LABELS[testType], testType })),
+  ];
+
   return (
     <section aria-labelledby="document-heading">
       <h2 id="document-heading">Documentación y requisitos</h2>
-      {canUpload && <div className="document-drop"
-        onDragOver={event => event.preventDefault()}
-        onDrop={event => { event.preventDefault(); select(event.dataTransfer.files); }}>
-        <label>Seleccionar archivos
-          <input type="file" multiple accept={extensions.map(ext => '.' + ext).join(',')} disabled={locked}
-            onChange={event => {
-              if (event.target.files) select(event.target.files);
-              event.target.value = '';
-            }} />
-        </label>
-        <p className="muted">También puedes arrastrar archivos aquí. PDF, DOCX, XLSX, CSV, TXT, MD, JSON, YAML o YML. Hasta 5 MiB por archivo.</p>
-      </div>}
-      {selectionError && <p className="error" role="alert">{selectionError}</p>}
-      {pending.length > 0 && (
-        <ul className="document-list">
-          {pending.map(item => (
-            <li key={item.id}>
-              <strong>{item.file.name}</strong>
-              <p>{fileFormat(item.file.name).toUpperCase()} · {fileSize(item.file.size)} · {states[item.state]}</p>
-              {item.error && <p className="error" role="alert">{item.error}</p>}
-              <label htmlFor={'document-category-' + item.id}>Clasificación</label>
-              <select id={'document-category-' + item.id} value={item.type} disabled={locked} onChange={event => {
-                const type = event.target.value as Category;
-                setPending(queue => queue.map(entry => entry.id === item.id ? { ...entry, type } : entry));
-              }}>
-                {Object.entries(categoryLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
-              </select>
-              <fieldset className="document-test-types" disabled={locked}>
-                <legend>Tipos de prueba (opcional · recomendado para que cada agente use solo la documentación relevante)</legend>
-                {ALL_TEST_TYPES.map(code => <label key={code}>
-                  <input type="checkbox" checked={item.testTypes.includes(code)} onChange={event => {
-                    setPending(queue => queue.map(entry => entry.id === item.id ? {
-                      ...entry,
-                      testTypes: event.target.checked ? [...entry.testTypes, code] : entry.testTypes.filter(t => t !== code),
-                    } : entry));
-                  }} />{TEST_TYPE_LABELS[code]}
-                </label>)}
-                {item.testTypes.length === 0 && <small className="muted">Si no marcas ninguno, quedará en General.</small>}
-              </fieldset>
-              <button type="button" className="secondary" disabled={locked}
-                onClick={() => setPending(queue => queue.filter(entry => entry.id !== item.id))}>Quitar archivo</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {projectId && pending.length > 0 && (
-        <button type="button" disabled={locked} onClick={upload}>Adjuntar archivos pendientes</button>
-      )}
+      {canUpload && <section aria-labelledby={sectionId + "-uploads"}>
+        <h3 id={sectionId + "-uploads"}>Carga de documentos</h3>
+        <p className="muted">PDF, DOCX, XLSX, CSV, TXT, MD, JSON, YAML o YML. Hasta 5 MiB por archivo.</p>
+        <div className="document-uploads">
+          {sections.map(({ label, testType }) => {
+            const key = testType ?? 'general';
+            const queued = pending.filter(item => item.testTypes[0] === testType);
+            return <section key={key} className="document-upload" aria-labelledby={sectionId + '-upload-' + key}
+              onDragOver={event => event.preventDefault()}
+              onDrop={event => { event.preventDefault(); select(event.dataTransfer.files, testType); }}>
+              <header className="document-upload__head">
+                <h4 id={sectionId + '-upload-' + key}>{label}</h4>
+                <DocumentPicker disabled={locked} label={uploadOnSelect ? 'Cargar archivo' : 'Seleccionar archivos'}
+                  onSelect={files => select(files, testType)} />
+              </header>
+              {selectionError?.testType === testType && selectionError?.message &&
+                <p className="error" role="alert">{selectionError.message}</p>}
+              {queued.length > 0 && <ul className="document-list">
+                {queued.map(item => <li key={item.id}>
+                  <strong>{item.file.name}</strong>
+                  <p>{fileFormat(item.file.name).toUpperCase()} · {fileSize(item.file.size)} · {states[item.state]}</p>
+                  {item.error && <p className="error" role="alert">{item.error}</p>}
+                  <label htmlFor={'document-category-' + item.id}>Clasificación</label>
+                  <select id={'document-category-' + item.id} value={item.type} disabled={locked} onChange={event => {
+                    const type = event.target.value as Category;
+                    setPending(queue => queue.map(entry => entry.id === item.id ? { ...entry, type } : entry));
+                  }}>
+                    {Object.entries(categoryLabels).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
+                  </select>
+                  <button type="button" className="secondary" disabled={locked}
+                    onClick={() => setPending(queue => queue.filter(entry => entry.id !== item.id))}>Quitar archivo</button>
+                </li>)}
+              </ul>}
+              {projectId && queued.length > 0 &&
+                <button type="button" disabled={locked} onClick={() => upload(queued)}>
+                  {uploadOnSelect ? 'Reintentar carga' : 'Subir archivos (' + queued.length + ')'}
+                </button>}
+            </section>;
+          })}
+        </div>
+      </section>}
       {error && <p className="error" role="alert">{error}</p>}
-      {documents.length > 0 && (
-        <>
-          <h3>Archivos del proyecto</h3>
-          {(() => {
-            // Agrupamos por tipo de prueba: cada sección muestra los docs
-            // que el analista marcó para ese tipo (o "General" si vacío).
-            // Un mismo doc puede aparecer en varias secciones.
-            const sections: Array<{ key: string; label: string; items: SavedDocument[] }> = [
-              { key: 'general', label: 'General', items: documents.filter(d => !d.testTypes || d.testTypes.length === 0) },
-              ...ALL_TEST_TYPES.map(code => ({
-                key: code,
-                label: TEST_TYPE_LABELS[code],
-                items: documents.filter(d => (d.testTypes ?? []).includes(code)),
-              })),
-            ];
-            const docList = (document: SavedDocument) => {
-              const version = document.currentVersion;
-              const validated = document.state === 'VALIDATED';
-              return <li key={document.id}>
-                <strong>{document.filename}</strong>
-                <p>{version?.format ?? 'Formato sin registrar'} · {fileSize(version?.size)} · {states[document.state]}</p>
-                <p>{document.classificationSource === 'PENDING' ? 'Clasificación por determinar'
-                  : categoryLabels[document.type] + (document.classificationSource === 'AUTOMATIC' ? ' · Automática' : ' · Manual')}</p>
-                {canUpload && <details className="document-test-types-edit">
-                  <summary>Aplica a: {document.testTypes.length === 0 ? 'General' : document.testTypes.map(t => TEST_TYPE_LABELS[t]).join(' · ')}</summary>
-                  <fieldset className="document-test-types" disabled={disabled || uploading || !!busy}>
-                    <legend>Marca los tipos de prueba a los que aplica este documento.</legend>
-                    {ALL_TEST_TYPES.map(code => <label key={code}>
-                      <input type="checkbox" checked={document.testTypes.includes(code)} onChange={event => {
-                        const next = event.target.checked
-                          ? [...document.testTypes, code]
-                          : document.testTypes.filter(t => t !== code);
-                        void operation('Actualizando tipos…', '/' + document.id + '/test-types', {
-                          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ testTypes: next }),
-                        });
-                      }} />{TEST_TYPE_LABELS[code]}
-                    </label>)}
-                  </fieldset>
-                </details>}
-                <details>
-                  <summary>Versiones ({document.versions.length})</summary>
-                  <ul>
-                    {document.versions.map(item => <li key={item.id}>Versión {item.number} · {item.format ?? 'Sin formato'} · {fileSize(item.size)}</li>)}
-                  </ul>
-                </details>
-                <div className="actions">
-                  {canValidate && version?.hasText && (
-                    <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
-                      onClick={() => operation('Guardando revisión…', '/' + document.id + '/validation', {
-                        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ versionId: version.id, validated: !validated }),
-                      })}>{validated ? 'Retirar validación' : 'Marcar como validado'}</button>
-                  )}
-                  {canDelete && <button type="button" className="secondary" disabled={disabled || uploading || !!busy}
-                    onClick={() => operation('Eliminando documento…', '/' + document.id, { method: 'DELETE' })}>
-                    Eliminar documento y versiones
-                  </button>}
-                </div>
-              </li>;
-            };
-            return <div className="document-sections">{sections.filter(s => s.items.length > 0).map(section => (
-              <section key={section.key} className="document-section">
-                <h4>{section.label} <span className="muted">({section.items.length})</span></h4>
-                <ul className="document-list">{section.items.map(docList)}</ul>
-              </section>
-            ))}</div>;
-          })()}
-          {canAnalyze && <button type="button" disabled={disabled || uploading || !!busy || !documents.some(document => document.state !== 'DECLARED')}
+      {documents.length > 0 && <section aria-labelledby={sectionId + "-saved"}>
+        <h3 id={sectionId + "-saved"}>Archivos del proyecto</h3>
+        <div className="document-sections">
+          {sections.map(({ label, testType }) => {
+            const key = testType ?? 'general';
+            const items = documents.filter(document => testType
+              ? (document.testTypes ?? []).includes(testType)
+              : !document.testTypes?.length);
+            return items.length > 0 && <section key={key} className="document-section" aria-labelledby={sectionId + key}>
+              <h4 id={sectionId + key}>{label} <span className="muted" aria-hidden="true">({items.length})</span></h4>
+              <ul className="document-list">{items.map(renderDocument)}</ul>
+            </section>;
+          })}
+        </div>
+        {canAnalyze &&
+          <button type="button" disabled={disabled || uploading || !!busy || !documents.some(document => document.state !== 'DECLARED')}
             onClick={() => operation('Analizando documentos…', '/analyze', { method: 'POST' })}>Analizar documentación</button>}
-        </>
-      )}
+      </section>}
       {busy && <p role="status">{busy}</p>}
       {report && <DocumentReport report={report} />}
     </section>
   );
+}
+
+function DocumentPicker({ disabled, label, onSelect }: { disabled: boolean; label: string; onSelect: (files: FileList) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  return <>
+    <input ref={input} type="file" multiple hidden accept={extensions.map(ext => '.' + ext).join(',')} disabled={disabled}
+      onChange={event => {
+        if (event.target.files) onSelect(event.target.files);
+        event.target.value = '';
+      }} />
+    <button type="button" className="secondary" disabled={disabled} onClick={() => input.current?.click()}>
+      {label}
+    </button>
+  </>;
 }

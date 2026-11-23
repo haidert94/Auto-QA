@@ -319,12 +319,79 @@ const api = createServer(async (request, response) => {
   if (path === base + '/report/export') return qualityExportFail ? send({ message: 'Exportación no disponible' }, 503) : send({
     project: { id: project.id, name: project.name, status: project.status }, ipa, icsp: qualityIcsp, traceability: [], generatedAt: '2026-11-18T12:00:00Z',
   });
+  if (path === base + '/documents' && request.method === 'POST') {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const form = await new Response(Buffer.concat(chunks), { headers: { 'Content-Type': request.headers['content-type'] } }).formData();
+    const file = form.get('files');
+    const testTypes = JSON.parse(form.get('testTypes') ?? '[]');
+    const version = { id: randomUUID(), number: 1, format: 'MD', size: file.size, hasText: false };
+    const document = { id: randomUUID(), filename: file.name, type: 'OTHER', state: 'UPLOADED',
+      classificationSource: 'PENDING', testTypes, currentVersion: version, versions: [version] };
+    documents.push(document);
+    return send([document], 201);
+  }
+  if (path.startsWith(base + '/documents/') && path.endsWith('/test-types') && request.method === 'PATCH') {
+    const document = documents.find(document => document.id === path.split('/').at(-2));
+    if (!document) return send({ message: 'Documento no encontrado.' }, 404);
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    document.testTypes = JSON.parse(Buffer.concat(chunks).toString()).testTypes;
+    return send(document);
+  }
   if (path === base + '/documents') return docsFail ? send({ message: 'Documentos temporalmente no disponibles.' }, 503) : send(documents);
   if (path === base + '/documents/analysis') return send({ analysis: null, ipa: { ...ipa, verifiable: 0, ambiguous: 0,
     documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, signals: [], recommendations: [] } });
   if (path.startsWith(base + '/')) return send([]);
   return send({ message: 'No encontrado' }, 404);
 });
+
+async function verifyDocumentUploads(page) {
+  const original = [...documents];
+  await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
+  const uploadPanel = dialog.getByRole('region', { name: 'Carga de documentos' });
+  const savedPanel = dialog.getByRole('region', { name: 'Archivos del proyecto' });
+  const row = name => uploadPanel.getByRole('region', { name, exact: true });
+  const section = name => savedPanel.getByRole('region', { name, exact: true });
+  const choose = async (type, filename) => {
+    const chooser = page.waitForEvent('filechooser');
+    await row(type).getByRole('button', { name: 'Cargar archivo' }).click();
+    await (await chooser).setFiles({ name: filename, mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba') });
+  };
+  try {
+    for (const type of ['General', 'Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX', 'Casos manuales']) {
+      await expect(row(type).getByRole('button', { name: 'Cargar archivo' })).toBeEnabled();
+    }
+    await expect(section('General').getByText('spec-checkout.yaml')).toBeVisible();
+    const uploads = await uploadPanel.boundingBox();
+    const saved = await savedPanel.boundingBox();
+    assert.ok(uploads.y + uploads.height <= saved.y, 'Todas las opciones de carga preceden a los archivos guardados.');
+    await choose('Performance', 'rendimiento.md');
+    await expect(section('Performance').getByText('Clasificación por determinar')).toBeVisible();
+    assert.deepEqual(documents.find(doc => doc.filename === 'rendimiento.md').testTypes, ['performance']);
+    assert.equal(documents.some(doc => doc.filename === 'manual.md'), false);
+    await choose('Casos manuales', 'manual.md');
+    await expect(section('Casos manuales').getByText('Clasificación por determinar')).toBeVisible();
+    assert.deepEqual(documents.find(doc => doc.filename === 'manual.md').testTypes, ['manual']);
+    await choose('UX', 'experiencia.md');
+    await expect(section('UX').getByText('experiencia.md')).toBeVisible();
+    assert.deepEqual(documents.find(doc => doc.filename === 'experiencia.md').testTypes, ['ux']);
+    await section('Performance').getByText('Aplica a: Performance').click();
+    await section('Performance').getByRole('checkbox', { name: 'UX', exact: true }).click();
+    await expect(section('UX').getByText('rendimiento.md')).toBeVisible();
+    assert.deepEqual(documents.find(doc => doc.filename === 'rendimiento.md').testTypes, ['performance', 'ux']);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
+    await expect(section('Casos manuales').getByText('manual.md')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    console.log('PASS carga documental por sección, persistencia simulada y reclasificación.');
+  } finally {
+    documents = original;
+  }
+}
 
 async function verifyScenarioPagination(page, automation = false) {
   const original = scenarios;
@@ -1566,6 +1633,7 @@ async function run() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(`${website}/projects/${projectId}`);
+    await verifyDocumentUploads(page);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);
     await verifySavedAutomationAfterReload(page);
@@ -1679,20 +1747,14 @@ async function run() {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).and(page.locator('[aria-selected="true"]')).waitFor();
     assert.equal(await page.getByRole('tab', { name: 'Automatización', exact: true }).getAttribute('aria-selected'), 'true');
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
-    await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
-    await page.getByRole('heading', { name: 'Documentación y requisitos', exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'document-heading');
-    await page.getByLabel('Seleccionar archivos').setInputFiles({ name: 'nuevo-requisito.md', mimeType: 'text/markdown', buffer: Buffer.from('# Requisito de prueba') });
-    await page.getByText('nuevo-requisito.md', { exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Quitar archivo', exact: true }).click();
-    await page.getByLabel('Propietario declarado').fill('Equipo actualizado');
-    await page.getByRole('button', { name: /Completar registro/ }).click();
-    await page.locator('.detail-fields').getByText('Equipo actualizado', { exact: true }).waitFor();
-    assert.equal(saveCount, 1, 'La edición sigue utilizando el formulario y el proxy existentes.');
+    const priorSaves = saveCount;
     await page.getByRole('button', { name: 'Editar roles y permisos' }).click();
-    await page.getByRole('heading', { name: 'Roles de la aplicación', exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => document.activeElement.id), 'role-heading');
-    await page.getByRole('button', { name: /Volver a la vista de resumen/ }).click();
+    const rolesDialog = page.getByRole('dialog', { name: 'Roles y matriz de autorización' });
+    await rolesDialog.getByLabel('Nombre del rol').fill('QA actualizado');
+    await rolesDialog.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(rolesDialog).toBeHidden();
+    await expect(page.locator('.detail-roles').getByText('QA actualizado', { exact: true })).toBeVisible();
+    assert.equal(saveCount, priorSaves + 1, 'El diálogo conserva el proxy de guardado.');
     await verifyScenarios(page, screenshots);
     await verifyAutomation(page, screenshots);
     await verifyManualScenario(page);

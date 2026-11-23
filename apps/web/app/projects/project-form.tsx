@@ -38,12 +38,12 @@ export function ProjectForm({ initial, onSaved, role }: { initial?: Project; onS
   const [documentRevision, setDocumentRevision] = useState(0);
   const [uploading, setUploading] = useState(false);
 
-  async function uploadPending(projectId: string) {
-    if (!pending.length) return true;
+  async function uploadPending(projectId: string, items = pending) {
+    if (!items.length) return true;
     setUploading(true);
     let complete = true;
     try {
-      for (const item of pending) {
+      for (const item of items) {
         setPending(queue => queue.map(entry => entry.id === item.id
           ? { ...entry, state: 'UPLOADING', error: undefined } : entry));
         const data = new FormData();
@@ -182,7 +182,7 @@ export function ProjectForm({ initial, onSaved, role }: { initial?: Project; onS
             revision={documentRevision + (saved?.revision ?? 0)}
             pending={pending}
             setPending={setPending}
-            upload={() => { if (saved) void uploadPending(saved.id); }}
+            upload={items => { if (saved) void uploadPending(saved.id, items); }}
             role={role}
           />
 

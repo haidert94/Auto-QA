@@ -59,9 +59,10 @@ async function project(name) {
   return '/' + result.data.id + '/documents';
 }
 
-function upload(path, files, type = 'AUTO', headers = authorized) {
+function upload(path, files, type = 'AUTO', headers = authorized, testTypes) {
   const body = new FormData();
   body.append('type', type);
+  if (testTypes) body.append('testTypes', JSON.stringify(testTypes));
   for (const [name, content] of files) body.append('files', new Blob([content]), name);
   return request(path, { method: 'POST', headers, body });
 }
@@ -75,14 +76,17 @@ test('protects metadata and enforces project ownership at every document endpoin
   const second = await project('Documentos B');
   assert.equal((await request(first)).status, 401);
   assert.equal((await upload(first, [['prueba.txt', 'RF-1: Mostrar estado.']], 'AUTO', {})).status, 401);
-  const created = await upload(first, [['Catálogo.md', 'RF-1: Mostrar estado.']], 'REQUIREMENTS');
+  const testTypes = ['functional_web', 'mobile_emulated', 'compatibility', 'availability', 'performance', 'ux', 'manual'];
+  const created = await upload(first, [['Catálogo.md', 'RF-1: Mostrar estado.']], 'REQUIREMENTS', authorized, testTypes);
   assert.equal(created.status, 201, JSON.stringify(created.data));
   const [doc] = created.data;
   assert.equal(doc.filename, 'Catálogo.md');
   assert.equal(doc.currentVersion.format, 'MD');
   assert.equal(doc.state, 'UPLOADED');
   assert.equal(doc.classificationSource, 'MANUAL');
-  assert.equal((await read(first + '/' + doc.id)).status, 200);
+  const saved = await read(first + '/' + doc.id);
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.data.testTypes, testTypes);
   assert.deepEqual((await read(second)).data, []);
   assert.equal((await read(second + '/' + doc.id)).status, 404);
   assert.equal((await request(second + '/' + doc.id, { method: 'DELETE', headers: authorized })).status, 404);

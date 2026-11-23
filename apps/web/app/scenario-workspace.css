@@ -203,7 +203,6 @@
 .environments-dialog__form fieldset.permission > legend { padding: 3px 8px; margin-left: 4px; background: var(--surface); border: 1px solid #e9e7e1; border-radius: 2px; color: var(--ink); font: 500 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: .07em; }
 .environments-dialog__form fieldset .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .documents-dialog__body > section > h2 { display: none; }
-.documents-dialog__body .document-drop { display: none; }
 .documents-dialog__body ul.document-list { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; }
 .documents-dialog__body ul.document-list li { border: 1px solid #e9e7e1; border-radius: 4px; padding: 12px 14px; background: var(--surface); display: grid; gap: 6px; font-size: 11px; }
 .documents-dialog__body ul.document-list li strong { font: 500 12px/1.4 var(--sans); color: var(--ink); }
@@ -214,15 +213,6 @@
 .documents-dialog__body details summary { font: 400 10px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .045em; color: var(--blue); cursor: pointer; }
 .documents-dialog__body h3 { font: 400 10px/1.6 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 10px; }
 .documents-dialog__body p[role="status"], .documents-dialog__body p[role="alert"] { font-size: 11px; margin: 10px 0 0; }
-/* Dentro del modal: ocultamos "Marcar como validado" y "Analizar
-   documentación" (esta última ya se encadena al subir módulos), pero
-   dejamos visible el botón de eliminar — es la única puerta para quitar
-   un documento cargado desde la UI en proyectos READY. */
-/* "Analizar documentación" sigue oculto: ya se dispara automáticamente
-   al subir un módulo. "Marcar como validado" y "Eliminar" quedan
-   visibles — la UI y el popup de guías dependen de ellos para cerrar
-   el pendiente "Valida un documento procesado". */
-.documents-dialog__body ul.document-list + button { display: none; }
 /* El reporte IPA ya se muestra en la tarjeta "Análisis documental" del
    tab Datos; dentro del modal sería info duplicada. */
 .documents-dialog__body section[aria-labelledby="ipa-heading"] { display: none; }

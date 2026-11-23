@@ -9,7 +9,7 @@ function permitted(method: string, path: string[]) {
     if (path[0] === 'analyze') return method === 'POST';
     return uuid.test(path[0]) && (method === 'GET' || method === 'DELETE');
   }
-  return path.length === 2 && uuid.test(path[0]) && path[1] === 'validation' && method === 'PATCH';
+  return path.length === 2 && uuid.test(path[0]) && ['validation', 'test-types'].includes(path[1]) && method === 'PATCH';
 }
 
 async function forward(request: Request, { params }: { params: Promise<{ projectId: string; path?: string[] }> }) {
