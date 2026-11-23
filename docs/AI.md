@@ -101,12 +101,7 @@ Cada mes, la organización tiene un límite de tokens que viene del plan:
 | Business | 15.000.000 | Sonnet (eligible Opus futuro) |
 | Enterprise | ilimitado | A elección + BYOK |
 
-El límite vive en `PlanCapability(code=AI_DOCUMENT_ANALYSIS).monthlyLimit`.
-Cuando se agota:
-
-- Las operaciones nuevas caen al `RuleBasedProvider` sin cobrar.
-- La UI muestra "Presupuesto IA del mes agotado. Actualiza de plan."
-- El consumo se reinicia el día 1 del mes siguiente.
+El límite vive en `PlanCapability(code=AI_DOCUMENT_ANALYSIS).monthlyLimit`. Enterprise usa `null` para representar un plan sin límite mensual de IA y mantiene el registro de consumo. Para un plan con límite, si la cuota estimada disponible es insuficiente, la generación informa ese motivo y deja los casos pendientes. El consumo se contabiliza por mes calendario UTC.
 
 El uso actual se consulta en `GET /ai/budget`:
 

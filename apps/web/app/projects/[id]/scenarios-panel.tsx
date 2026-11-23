@@ -27,6 +27,7 @@ type AutomationSummary = {
 };
 
 const generationIssues: Record<GenerationIssue, string> = {
+  'ai-budget-exhausted': 'La cuota mensual de IA disponible es insuficiente para generar estos casos.',
   'ai-unavailable': 'La IA no estuvo disponible para generar casos.',
   'invalid-agent-response': 'La respuesta del agente no tenía el formato esperado.',
   'no-base-scenarios': 'Falta un escenario base vinculado y con una aserción.',
@@ -38,11 +39,16 @@ const generationIssues: Record<GenerationIssue, string> = {
 };
 
 function generationOutcomeDetails(generation: GenerationSummary | undefined) {
-  return (generation?.outcomes ?? []).filter(outcome => outcome.created === 0).map(outcome => {
+  const typesByIssue = new Map<GenerationIssue, string[]>();
+  for (const outcome of generation?.outcomes ?? []) {
+    if (outcome.created !== 0) continue;
     const label = Object.hasOwn(TEST_TYPE_LABELS, outcome.type) ? TEST_TYPE_LABELS[outcome.type as TestTypeCode] : 'Tipo de prueba';
     const issue = outcome.issue ?? (outcome.usedFallback && outcome.type !== 'compatibility' ? 'ai-unavailable' : 'no-cases');
-    return label + ' · ' + generationIssues[issue];
-  }).join(' ');
+    const labels = typesByIssue.get(issue) ?? [];
+    labels.push(label);
+    typesByIssue.set(issue, labels);
+  }
+  return [...typesByIssue].map(([issue, labels]) => labels.join(', ') + ' · ' + generationIssues[issue]).join(' ');
 }
 const generationErrors: Record<string, string> = {
   'ipa-traceability-blocked': 'La generación está bloqueada por el IPA. Revisa la trazabilidad y los pendientes en Datos.',

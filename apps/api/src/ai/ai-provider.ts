@@ -37,6 +37,7 @@ export type AiResponse = {
   // Si el provider no está configurado o devuelve un fallback mecánico,
   // este flag deja que el caller sepa que "la IA no habló aquí".
   usedFallback?: boolean;
+  fallbackReason?: 'ai-budget-exhausted';
 };
 
 export interface AiProvider {

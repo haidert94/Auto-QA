@@ -4,7 +4,7 @@
 // de fallback: modelo primario → equivalente del otro proveedor →
 // rule-based.
 
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import type { CapabilityCode } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import type { AiModel, AiOperation, AiProvider, AiRequest, AiResponse } from './ai-provider';
@@ -107,7 +107,15 @@ export class AiRouter {
 
     const estimatedTokens = Math.ceil((request.prompt.length / 4) + (request.maxOutputTokens ?? 2048));
     try { await this.budget.ensureBudget(request.organizationId, estimatedTokens); }
-    catch { this.logger.log(`[router] ${tag} fallback: budget agotado (~${estimatedTokens} tokens)`); return this.fallback.complete(request); }
+    catch (error) {
+      const fallback = await this.fallback.complete(request);
+      if (error instanceof ForbiddenException) {
+        this.logger.log(`[router] ${tag} fallback: presupuesto mensual insuficiente`);
+        return { ...fallback, fallbackReason: 'ai-budget-exhausted' };
+      }
+      this.logger.warn(`[router] ${tag} fallback: no se pudo consultar el presupuesto de IA`);
+      return fallback;
+    }
 
     const primary = modelForOperation(request.operation);
     for (const provider of this.providerCascade(primary)) {

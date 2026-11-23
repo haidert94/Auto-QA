@@ -1,6 +1,7 @@
 import type { AgentOutcome } from './agents/agent-types';
 
 export type GenerationIssue =
+  | 'ai-budget-exhausted'
   | 'ai-unavailable'
   | 'invalid-agent-response'
   | 'no-base-scenarios'
@@ -16,6 +17,7 @@ export type GenerationSummary = {
 };
 
 function outcomeIssue(errors: string[]): GenerationIssue {
+  if (errors.includes('ai-budget-exhausted')) return 'ai-budget-exhausted';
   if (errors.includes('ai-unavailable')) return 'ai-unavailable';
   if (errors.includes('invalid-agent-response')) return 'invalid-agent-response';
   if (errors.includes('compatibility-no-linked-base')) return 'no-base-scenarios';

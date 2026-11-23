@@ -17,8 +17,8 @@ export class BudgetService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getBudget(organizationId: string): Promise<{
-    monthKey: string; aiTokensUsed: number; aiTokensLimit: number;
-    aiCostCop: number; remainingTokens: number;
+    monthKey: string; aiTokensUsed: number; aiTokensLimit: number | null;
+    aiCostCop: number; remainingTokens: number | null;
   }> {
     const key = monthKey();
     const [budget, limit] = await Promise.all([
@@ -34,13 +34,13 @@ export class BudgetService {
       aiTokensUsed: used,
       aiTokensLimit: limit,
       aiCostCop: costCop,
-      remainingTokens: Math.max(0, limit - used),
+      remainingTokens: limit === null ? null : Math.max(0, limit - used),
     };
   }
 
   async ensureBudget(organizationId: string, estimatedTokens: number): Promise<void> {
     const { aiTokensUsed, aiTokensLimit } = await this.getBudget(organizationId);
-    if (aiTokensUsed + estimatedTokens > aiTokensLimit) {
+    if (aiTokensLimit !== null && aiTokensUsed + estimatedTokens > aiTokensLimit) {
       throw new ForbiddenException('Presupuesto IA del mes agotado. Actualiza de plan o espera al próximo mes.');
     }
   }
@@ -70,17 +70,16 @@ export class BudgetService {
     ]);
   }
 
-  // Lee el límite del plan activo. Si no hay capability AI_TOKEN_BUDGET
-  // explícita (hoy no la modelamos como capability aparte), usa el
-  // monthlyLimit de AI_DOCUMENT_ANALYSIS como proxy; si tampoco existe,
-  // DEFAULT_MONTHLY_TOKENS.
-  private async resolveLimit(organizationId: string): Promise<number> {
+  private async resolveLimit(organizationId: string): Promise<number | null> {
     const subscription = await this.prisma.subscription.findUnique({
       where: { organizationId },
       include: { plan: { include: { capabilities: true } } },
     });
-    const caps = subscription?.plan?.capabilities ?? [];
-    const aiCap = caps.find(c => c.code === 'AI_DOCUMENT_ANALYSIS' && c.monthlyLimit != null);
-    return aiCap?.monthlyLimit ?? DEFAULT_MONTHLY_TOKENS;
+    const plan = subscription?.plan;
+    const capability = plan?.capabilities.find(item => item.code === 'AI_DOCUMENT_ANALYSIS');
+    if (plan?.code === 'enterprise' && capability?.availability === 'OPERATIONAL' && capability.monthlyLimit === null) {
+      return null;
+    }
+    return capability?.monthlyLimit ?? DEFAULT_MONTHLY_TOKENS;
   }
 }

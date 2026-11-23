@@ -100,7 +100,7 @@ export function linkedRequirementId(ctx: AgentContext, id: unknown) {
 }
 
 export function generationResponseErrors(response: AiResponse, hasExpectedList: boolean): string[] {
-  if (response.usedFallback) return ['ai-unavailable'];
+  if (response.usedFallback) return [response.fallbackReason ?? 'ai-unavailable'];
   return hasExpectedList ? [] : ['invalid-agent-response'];
 }
 

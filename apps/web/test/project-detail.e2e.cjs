@@ -216,7 +216,7 @@ const api = createServer(async (request, response) => {
     return send({ id: generationJobId, status: 'COMPLETED', stage: 'generated', result: {
       generation: { totalCreated: generationTotal * types.length, outcomes: types.map(type => ({
         type, created: generationTotal, usedFallback: generationTotal === 0,
-        issue: generationTotal === 0 ? 'ai-unavailable' : undefined,
+        issue: generationTotal === 0 ? 'ai-budget-exhausted' : undefined,
       })) },
     } });
   }
@@ -623,7 +623,7 @@ async function verifyDocumentGenerationConfirmation(page) {
     generationTotal = 0;
     await confirm.click();
     const emptyResult = page.getByRole('alert').filter({ hasText: 'No se guardó ningún escenario.' });
-    await expect(emptyResult).toContainText('Performance · La IA no estuvo disponible para generar casos.');
+    await expect(emptyResult).toContainText('Performance · La cuota mensual de IA disponible es insuficiente para generar estos casos.');
     await expect(emptyResult).toContainText('Referencia de generación ' + generationJobId.slice(0, 8));
     await expect(page.getByText('Se guardaron 2 escenarios.', { exact: true })).toBeHidden();
     assert.deepEqual(generationRequests.slice(initialRequests + 2), [
