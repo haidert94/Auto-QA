@@ -1,38 +1,45 @@
 // Genera escenarios web con pasos de Playwright o instrucciones de ejecución manual.
 
 import type { Prisma } from '@prisma/client';
+import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, extractJson, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
-export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
+export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
+  const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
   const prompt = [
-    'Genera entre 3 y 8 escenarios automatizables de prueba funcional web para la aplicación descrita.',
+    onlyManual ? MANUAL_ONLY_INSTRUCTION : 'Genera entre 3 y 8 escenarios automatizables de prueba funcional web para la aplicación descrita.',
     `URL base: ${ctx.url}`,
     ctx.description ? `Descripción: ${ctx.description}` : '',
     '',
     'Historias y requisitos analizados:',
     scenarioAnalysisContext(ctx),
+    ctx.documentTestTypesConfirmed ? 'Cada caso debe incluir requirementId con uno de los identificadores listados. Genera solo casos sustentados por esos requisitos; si no aplica, devuelve una lista vacía.' : '',
     '',
-    'Vocabulario de pasos para los casos automatizables:',
-    '- navigate: <ruta relativa o URL>',
-    '- click: <selector css>',
-    '- fill: <selector css>   (+ "data": valor a escribir)',
-    '- press: <tecla>',
-    '- expect-text: <texto visible>',
-    '- expect-url: <ruta exacta>',
+    ...(!onlyManual ? [
+      'Vocabulario de pasos para los casos automatizables:',
+      '- navigate: <ruta relativa o URL>',
+      '- click: <selector css>',
+      '- fill: <selector css>   (+ "data": valor a escribir)',
+      '- press: <tecla>',
+      '- expect-text: <texto visible>',
+      '- expect-url: <ruta exacta>',
+    ] : []),
     '',
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" cuando sea el camino feliz principal de una historia.',
     '- "flow": "alterno" para variantes, validaciones, errores o caminos secundarios.',
     'Mezcla básicos y alternos: un flujo alterno suele acompañar a uno básico de la misma historia.',
     '',
-    ASSERTION_INSTRUCTION,
-    MANUAL_SCENARIO_INSTRUCTION,
+    onlyManual ? '' : ASSERTION_INSTRUCTION,
+    allowMixed ? MANUAL_SCENARIO_INSTRUCTION : '',
     REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ y sin espacios (ej: @smoke, @critico, @login).',
     '',
     'Responde SOLO JSON válido con la estructura:',
-    '{ "scenarios": [ { "title": "Consultar resumen", "expectedResult": "Se muestra Resumen", "flow": "basico", "mode": "playwright", "regression": true, "tags": ["@resumen"], "steps": [ { "action": "navigate: /resumen" }, { "action": "expect-text: Resumen" } ] } ] }',
+    onlyManual
+      ? '{ "scenarios": [{ "title": "Revisar legibilidad del resumen", "mode": "manual", "requirementId": "id del requisito", "expectedResult": "El resumen se comprende sin ayuda.", "steps": [{ "action": "Lee las instrucciones del resumen.", "expected": "Se entiende cómo continuar." }] }] }'
+      : '{ "scenarios": [ { "title": "Consultar resumen", "expectedResult": "Se muestra Resumen", "flow": "basico", "mode": "playwright", "requirementId": "id del requisito", "regression": true, "tags": ["@resumen"], "steps": [ { "action": "navigate: /resumen" }, { "action": "expect-text: Resumen" } ] } ] }',
   ].filter(Boolean).join('\n');
 
   const response = await deps.router.dispatch({
@@ -65,12 +72,17 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
       }));
     if (!normalized.length) { errors.push('scenario-' + index + '-sin-pasos'); continue; }
     const manual = s.mode === 'manual';
+    if (!allowMixed && manual !== onlyManual) continue;
     const expectedResult = typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null;
     if (manual && !expectedResult?.trim()) { errors.push('scenario-' + index + '-sin-resultado-esperado'); continue; }
     const hasAssertion = manual ? normalized.some(step => step.expected?.trim()) : hasPlaywrightAssertion(normalized);
     if (!hasAssertion) { errors.push('scenario-' + index + '-sin-asercion'); continue; }
     const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
-    const tags = buildTags('@funcional', s.flow, s.tags, s.regression, manual);
+    if (ctx.documentTestTypesConfirmed && !requirementId) {
+      errors.push('scenario-' + index + '-sin-requisito-verificable');
+      continue;
+    }
+    const tags = buildTags(onlyManual ? MANUAL_SCENARIO_TAG : '@funcional', s.flow, s.tags, s.regression, manual);
     try {
       await deps.prisma.testScenario.create({
         data: {
@@ -88,5 +100,5 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps):
     }
   }
 
-  return { type: 'functional_web', created, usedFallback: response.usedFallback ?? false, model: response.model, errors };
+  return { type: onlyManual ? 'manual' : 'functional_web', created, usedFallback: response.usedFallback ?? false, model: response.model, errors };
 }

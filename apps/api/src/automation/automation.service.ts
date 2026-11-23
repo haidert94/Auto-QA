@@ -1,12 +1,13 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DOCUMENT_STORAGE, type DocumentStorage } from '../documents/document-storage';
+import { currentScenarioRequirements } from '../documents/document-records';
 import { PrismaService } from '../prisma.service';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
-import { TEST_TYPE_META, type AutomationTestType } from './test-types';
+import { ALL_TEST_TYPES, TEST_TYPE_META, type AutomationTestType } from './test-types';
 
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
@@ -26,8 +27,25 @@ export class AutomationService {
       throw new BadRequestException('La URL debe ser http(s).');
     }
 
+    let analysisId: string | undefined;
+    if (dto.documentTestTypes) {
+      if (dto.documents?.length) throw new BadRequestException('Usa los documentos guardados en Datos para esta selección.');
+      const marked = await this.documentTestTypes(projectId);
+      if (marked.size !== dto.documentTestTypes.length || !dto.documentTestTypes.every(type => marked.has(type))) {
+        throw new ConflictException('Los tipos marcados en Datos cambiaron. Abre de nuevo la confirmación.');
+      }
+      await this.checkPlanTypes(dto.documentTestTypes, workspace.organizationId);
+      const analysis = await currentScenarioRequirements(this.prisma, projectId);
+      if (!analysis?.requirements.length) {
+        throw new ConflictException('Analiza los documentos y confirma al menos un requisito verificable.');
+      }
+      analysisId = analysis.id;
+    }
+
     let docs: Array<{ filename: string; base64: string }>;
-    if (dto.documents && dto.documents.length > 0) {
+    if (analysisId) {
+      docs = [];
+    } else if (dto.documents && dto.documents.length > 0) {
       // El wizard puede inyectar los documentos como base64 (compatibilidad
       // con el flujo original del Automate).
       docs = dto.documents.map((doc, index) => {
@@ -39,10 +57,6 @@ export class AutomationService {
         return { filename: doc.filename, base64: bytes.toString('base64') };
       });
     } else {
-      // CTA "Generar casos de prueba": leemos los documentos ya cargados del
-      // proyecto desde el storage y los embebemos como base64 en el job.
-      // Esto permite que un worker remoto (p.ej. en VPS) no necesite acceso
-      // al disco donde vive el storage de Hostinger: todo viaja por DB.
       docs = await this.loadProjectDocuments(projectId);
     }
 
@@ -53,13 +67,16 @@ export class AutomationService {
       ownerLabel: dto.ownerLabel?.trim() || null,
       hasCredentials: !!dto.credentialsHint?.trim(),
       documents: docs,
+      ...(analysisId ? { documentAnalysisId: analysisId } : {}),
+      ...(dto.documentTestTypes ? { documentTestTypes: dto.documentTestTypes } : {}),
     };
 
     return this.prisma.automationJob.create({
       data: {
         projectId,
-        status: 'QUEUED',
-        stage: 'pending',
+        status: analysisId ? 'COMPLETED' : 'QUEUED',
+        stage: analysisId ? 'review-ready' : 'pending',
+        completedAt: analysisId ? new Date() : undefined,
         inputs: inputs as unknown as Prisma.InputJsonValue,
         runKey,
         createdByUserId: workspace.userId ?? null,
@@ -115,52 +132,75 @@ export class AutomationService {
       throw new BadRequestException('La automatización no está en estado "review-ready".');
     }
 
-    if (workspace.organizationId) {
-      const { available } = await this.capabilitiesForOrg(workspace.organizationId);
-      const blocked = dto.types.filter(t => !available.has(TEST_TYPE_META[t].capability));
-      if (blocked.length) {
-        throw new ForbiddenException({
-          message: 'Tu plan no incluye uno o más tipos seleccionados.',
-          blocked,
-        });
-      }
+    const currentInputs = job.inputs as Record<string, unknown>;
+    const confirmed = currentInputs.documentTestTypes;
+    if (Array.isArray(confirmed) && (confirmed.length !== dto.types.length || !dto.types.every(type => confirmed.includes(type)))) {
+      throw new ConflictException('La selección debe coincidir con los tipos confirmados.');
     }
+    await this.checkPlanTypes(dto.types, workspace.organizationId);
 
-    const inputs = { ...(job.inputs as Record<string, unknown>), selection: dto.types };
-    await this.prisma.automationJob.update({
-      where: { id: jobId },
-      data: {
-        inputs: inputs as unknown as Prisma.InputJsonValue,
-        status: 'QUEUED',
-        stage: 'selection-done',
-        completedAt: null,
-      },
-    });
+    const inputs = { ...currentInputs, selection: dto.types };
+    const queue = async (tx: Prisma.TransactionClient) => {
+      const result = await tx.automationJob.updateMany({
+        where: { id: jobId, projectId, stage: 'review-ready' },
+        data: {
+          inputs: inputs as unknown as Prisma.InputJsonValue,
+          status: 'QUEUED',
+          stage: 'selection-done',
+          completedAt: null,
+        },
+      });
+      if (result.count !== 1) throw new ConflictException('La automatización ya fue enviada.');
+    };
+
+    if (Array.isArray(confirmed)) {
+      await this.prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
+        const active = await tx.automationJob.findFirst({
+          where: { projectId, status: { in: ['QUEUED', 'RUNNING'] }, stage: { in: ['selection-done', 'generating'] } },
+          select: { id: true },
+        });
+        if (active) throw new ConflictException('Ya se están generando casos para este proyecto.');
+        await queue(tx);
+      });
+    } else {
+      await queue(this.prisma);
+    }
     return { message: 'Selección guardada. Los agentes comenzarán la generación.' };
   }
 
-  // Devuelve los tipos de prueba y si el plan del workspace los incluye.
-  // La UI lo usa para pintar los checkboxes bloqueados.
-  async availableTypes(workspace: Workspace) {
-    if (!workspace.organizationId) {
-      // Legacy sin org: se habilita todo para no bloquear flujos sueltos.
-      return Object.entries(TEST_TYPE_META).map(([code, meta]) => ({
-        code: code as AutomationTestType, label: meta.label, description: meta.description, available: true,
-      }));
-    }
-    const { available, planCode } = await this.capabilitiesForOrg(workspace.organizationId);
-    // El planCode ayuda al cliente a explicar POR QUÉ ningún tipo está
-    // habilitado cuando pasa (ej. "org sin suscripción").
-    console.log(`[automation] availableTypes org=${workspace.organizationId} plan=${planCode ?? 'none'} caps=${available.size}`);
-    return Object.entries(TEST_TYPE_META).map(([code, meta]) => ({
-      code: code as AutomationTestType,
-      label: meta.label,
-      description: meta.description,
-      available: available.has(meta.capability),
+  async availableTypes(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const [selected, plan] = await Promise.all([
+      this.documentTestTypes(projectId),
+      workspace.organizationId ? this.capabilitiesForOrg(workspace.organizationId) : null,
+    ]);
+    return ALL_TEST_TYPES.map(code => ({
+      code, label: TEST_TYPE_META[code].label, description: TEST_TYPE_META[code].description,
+      available: !plan || plan.available.has(TEST_TYPE_META[code].capability),
+      selectedInDocuments: selected.has(code),
     }));
   }
 
-  private async capabilitiesForOrg(organizationId: string): Promise<{ available: Set<string>; planCode: string | null }> {
+  private async documentTestTypes(projectId: string) {
+    const docs = await this.prisma.document.findMany({
+      where: { projectId, removedAt: null, versions: { some: { uploadedAt: { not: null }, storageKey: { not: null } } } },
+      select: { testTypes: true },
+    });
+    const codes = new Set(docs.flatMap(doc => doc.testTypes));
+    return new Set(ALL_TEST_TYPES.filter(type => codes.has(type)));
+  }
+
+  private async checkPlanTypes(types: AutomationTestType[], organizationId: string | null) {
+    if (!organizationId) return;
+    const { available } = await this.capabilitiesForOrg(organizationId);
+    const blocked = types.filter(type => !available.has(TEST_TYPE_META[type].capability));
+    if (blocked.length) {
+      throw new ForbiddenException({ message: 'Tu plan no incluye uno o más tipos seleccionados.', blocked });
+    }
+  }
+
+  private async capabilitiesForOrg(organizationId: string): Promise<{ available: Set<string> }> {
     const subscription = await this.prisma.subscription.findUnique({
       where: { organizationId },
       include: { plan: { include: { capabilities: true } } },
@@ -168,7 +208,6 @@ export class AutomationService {
     const caps = subscription?.plan?.capabilities ?? [];
     return {
       available: new Set(caps.filter(c => c.availability !== 'NOT_INCLUDED').map(c => c.code as string)),
-      planCode: subscription?.plan?.code ?? null,
     };
   }
 

@@ -151,6 +151,7 @@ export class ScenariosService {
       orderBy: { title: 'asc' },
       select: {
         id: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true, automation: true,
+        requirementReviewRequiredAt: true,
         requirement: { select: { title: true, externalKey: true } },
         _count: { select: { results: true } },
       },
@@ -169,7 +170,7 @@ export class ScenariosService {
     const scenario = await this.prisma.testScenario.findFirst({
       where: { id: scenarioId, projectId, archivedAt: null },
       include: {
-        requirement: { select: { id: true, title: true, externalKey: true } },
+        requirement: { select: { id: true, title: true, externalKey: true, criteria: { select: { text: true } } } },
       },
     });
     if (!scenario) throw new NotFoundException('Escenario no encontrado.');
@@ -226,14 +227,17 @@ export class ScenariosService {
     if (dto.tags !== undefined) {
       data.tags = { set: normalizeTags(dto.tags) };
     }
+    const reviewedAt = dto.reviewedRequirementAt ? new Date(dto.reviewedRequirementAt) : undefined;
+    if (reviewedAt) data.requirementReviewRequiredAt = null;
     try {
       return await this.prisma.testScenario.update({
-        where: { id: scenarioId, projectId, archivedAt: null },
+        where: { id: scenarioId, projectId, archivedAt: null, requirementReviewRequiredAt: reviewedAt },
         data,
-        select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true },
+        select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true, requirementReviewRequiredAt: true },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        if (reviewedAt) throw new ConflictException('El estado de revisión cambió. Vuelve a abrir el escenario.');
         throw new NotFoundException('Escenario no encontrado.');
       }
       throw error;

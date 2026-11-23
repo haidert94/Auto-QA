@@ -14,6 +14,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     '',
     'Historias y requisitos analizados:',
     scenarioAnalysisContext(ctx),
+    ctx.documentTestTypesConfirmed ? 'Cada caso debe incluir requirementId con uno de los identificadores listados. Genera solo casos sustentados por esos requisitos; si no aplica, devuelve una lista vacía.' : '',
     '',
     'Enfócate en: menús hamburguesa, formularios, scroll, botones grandes, gestos táctiles.',
     'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
@@ -22,7 +23,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     '- "flow": "basico" para el camino feliz de la historia en móvil.',
     '- "flow": "alterno" para errores, validaciones o variantes.',
     ASSERTION_INSTRUCTION,
-    MANUAL_SCENARIO_INSTRUCTION,
+    ctx.documentTestTypesConfirmed ? '' : MANUAL_SCENARIO_INSTRUCTION,
     REGRESSION_INSTRUCTION,
     'Opcionalmente añade "tags" extra con prefijo @ (ej: @menu, @formulario).',
     '',
@@ -55,11 +56,16 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
       }));
     if (!steps.length) { errors.push('mobile-' + index + '-sin-pasos'); continue; }
     const manual = s.mode === 'manual';
+    if (manual && ctx.documentTestTypesConfirmed) continue;
     const expectedResult = typeof s.expectedResult === 'string' ? s.expectedResult.slice(0, 2000) : null;
     if (manual && !expectedResult?.trim()) { errors.push('mobile-' + index + '-sin-resultado-esperado'); continue; }
     const hasAssertion = manual ? steps.some(step => step.expected?.trim()) : hasPlaywrightAssertion(steps);
     if (!hasAssertion) { errors.push('mobile-' + index + '-sin-asercion'); continue; }
     const requirementId = ctx.requirements?.find(requirement => requirement.id === s.requirementId)?.id;
+    if (ctx.documentTestTypesConfirmed && !requirementId) {
+      errors.push('scenario-' + index + '-sin-requisito-verificable');
+      continue;
+    }
     const tags = buildTags('@mobile', s.flow, s.tags, s.regression, manual);
     try {
       await deps.prisma.testScenario.create({

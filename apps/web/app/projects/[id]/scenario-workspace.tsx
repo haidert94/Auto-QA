@@ -106,6 +106,10 @@ export function ScenarioWorkspace({ items, runs, runsAvailable, checked, setChec
               <div>{scenarioStepText(step)}{step.expected && <p><span>Esperado:</span> {step.expected}</p>}</div>
             </li>)}</ol>{!active.steps?.length && <p>No hay pasos registrados.</p>}</div>
             <p className="scenario-derived-note">Palabras clave inferidas de las acciones. Revisa esta vista antes de utilizarla como especificación.</p>
+            {active.requirementReviewRequiredAt && <p className="muted">
+              El requisito asociado fue aclarado.{' '}
+              <a href={'/projects/' + projectId + '/scenarios/' + active.id}>Revisar escenario</a>
+            </p>}
             <section className="scenario-expected"><h4>Resultado esperado registrado</h4><p>{active.expectedResult ?? 'No declarado. Pendiente de definir.'}</p></section>
             {canEdit && <div className="scenario-detail__actions">
               <button type="button" className="secondary" onClick={() => setEditing(true)}><Pencil size={13} />Editar escenario</button>

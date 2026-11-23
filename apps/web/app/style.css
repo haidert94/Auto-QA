@@ -584,3 +584,14 @@ main:has(> .app-shell) { max-width: none; margin: 0; padding: 0; }
 }
 .document-upload > button { margin-top: 8px; }
 .document-list--saved + button { margin-top: 14px; }
+
+.finding-clarification {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+}
+
+.finding-clarification label {
+  display: grid;
+  gap: 0.3rem;
+}

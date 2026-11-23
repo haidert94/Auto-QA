@@ -9,6 +9,9 @@ function permitted(method: string, path: string[]) {
     if (path[0] === 'analyze') return method === 'POST';
     return uuid.test(path[0]) && (method === 'GET' || method === 'DELETE');
   }
+  if (path.length === 3) {
+    return method === 'PATCH' && path[0] === 'analysis' && uuid.test(path[1]) && path[2] === 'clarification';
+  }
   if (path.length !== 2 || !uuid.test(path[0])) return false;
   if (path[1] === 'test-types') return method === 'POST' || method === 'PATCH';
   return path[1] === 'validation' && method === 'PATCH';

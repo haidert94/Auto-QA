@@ -17,7 +17,8 @@ export type Scenario = {
   expectedResult: string | null;
   steps: ScenarioStep[];
   tags?: string[];
-  requirement: { id: string; title: string; externalKey: string | null } | null;
+  requirementReviewRequiredAt?: string | null;
+  requirement: { id: string; title: string; externalKey: string | null; criteria?: Array<{ text: string }> } | null;
 };
 
 export type RequirementOption = { id: string; title: string; externalKey: string | null };
@@ -37,6 +38,7 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
   const [steps, setSteps] = useState(() => scenarioStepDrafts(initial.steps));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [reviewedAt, setReviewedAt] = useState<string>();
   const [notice, setNotice] = useState('');
   const [playwrightCode, setPlaywrightCode] = useState<{ filename: string; code: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -76,12 +78,14 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
           requirementId: requirementId || null,
           expectedResult: expectedResult.trim() || null,
           steps: stepPayload.steps,
+          reviewedRequirementAt: reviewedAt,
         }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) { setError(payload.message ?? 'No se pudo guardar el escenario.'); return; }
       setSteps(scenarioStepDrafts(payload.steps ?? stepPayload.steps));
       setPlaywrightCode(null);
+      setReviewedAt(undefined);
       setNotice('Escenario guardado.');
       router.refresh();
     } catch { setError('No se pudo guardar el escenario.'); }
@@ -108,6 +112,18 @@ export function ScenarioEditor({ initial, requirements, scenarios, role }: {
   }
 
   return <form onSubmit={save} className="scenario-editor">
+    {initial.requirementReviewRequiredAt && <fieldset>
+      <legend>Revisión por aclaración del requisito</legend>
+      <p>{initial.requirement?.title}</p>
+      {!!initial.requirement?.criteria?.length && <ul>
+        {initial.requirement.criteria.map((criterion, index) => <li key={index}>{criterion.text}</li>)}
+      </ul>}
+      {canEdit && <label className="actions">
+        <input type="checkbox" checked={reviewedAt === initial.requirementReviewRequiredAt}
+          onChange={event => setReviewedAt(event.target.checked ? initial.requirementReviewRequiredAt ?? undefined : undefined)} />
+        Confirmo que el escenario cubre el requisito aclarado.
+      </label>}
+    </fieldset>}
     <label>Título
       <input value={title} onChange={e => setTitle(e.target.value)} required maxLength={300}/>
     </label>

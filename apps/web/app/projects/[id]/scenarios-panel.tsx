@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { ArrowRight, Plus, Sparkles } from 'lucide-react';
+import { ArrowRight, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ScenarioListItem } from './scenario-card';
@@ -14,14 +14,15 @@ import { IPA_AUTOMATION_THRESHOLD } from './ipa-hero';
 import { ProjectHeading } from './project-heading';
 import { useScenarioHeader, useScenarioSuite } from './project-tabs';
 import { ScenarioExport } from './scenario-export';
+import { ScenarioGenerationConfirmation } from './scenario-generation-confirmation';
+import type { TestTypeCode } from '../document-client';
 import { normalizeStepText } from './scenario-insights';
 import { isManualScenario, type ScenarioRun } from './scenario-presentation';
 import { ScenarioWorkspace } from './scenario-workspace';
 
 type RequirementOption = { id: string; title: string; externalKey: string | null };
 
-type TestType = { code: string; label: string; description: string; available: boolean };
-type AutomationSummary = { id: string; status: string; stage: string | null; createdAt: string };
+type AutomationSummary = { id: string; status: string; stage: string | null; errorCode?: string | null; createdAt: string };
 
 export function ScenariosPanel({ project, role }: { project: Project; role?: OrgRole }) {
   const canCreate = can(role, 'scenario.create');
@@ -53,12 +54,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [suggesting, setSuggesting] = useState(false);
   const [suggestions, setSuggestions] = useState<Array<{ title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }> | null>(null);
   const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
-  const [types, setTypes] = useState<TestType[] | null>(null);
-  const [typesError, setTypesError] = useState('');
   const [ipaScore, setIpaScore] = useState<number | null>(null);
   const [ipaStatus, setIpaStatus] = useState<'ASSESSED' | 'BLOCKED' | null>(null);
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
-  const [latestJob, setLatestJob] = useState<AutomationSummary | null>(null);
+  const [showGenerationConfirmation, setShowGenerationConfirmation] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateNotice, setGenerateNotice] = useState('');
   const deletionDisabled = busy || generating || !!listError || !!runner?.suiteRunning || !!runner?.stopping;
@@ -149,77 +147,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     return () => { active = false; };
   }, [projectId]);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const [typesRes, jobsRes] = await Promise.all([
-          fetch(`/api/projects/${projectId}/automation/types`, { cache: 'no-store' }),
-          fetch(`/api/projects/${projectId}/automation`, { cache: 'no-store' }),
-        ]);
-        if (!active) return;
-        if (typesRes.ok) {
-          const list: TestType[] = await typesRes.json();
-          setTypes(list);
-          // Preseleccionamos todos los disponibles para que el botón funcione
-          // al primer intento sin obligar al usuario a marcar uno por uno.
-          setSelectedTypes(new Set(list.filter(t => t.available).map(t => t.code)));
-        } else {
-          // Render explícito: antes el panel se quedaba en "cargando…" para
-          // siempre si el plan no incluye AI_DOCUMENT_ANALYSIS (403) o si la
-          // API caía. Muestra el motivo real que devuelve el backend.
-          const payload = await typesRes.json().catch(() => ({}));
-          const message = typesRes.status === 403
-            ? 'Tu plan no incluye generación de escenarios con IA. Actualiza para habilitar los agentes.'
-            : (payload.message ?? `No se pudo cargar los tipos (HTTP ${typesRes.status}).`);
-          setTypesError(Array.isArray(message) ? message.join(' · ') : message);
-          setTypes([]);
-        }
-        if (jobsRes.ok) {
-          const jobs: AutomationSummary[] = await jobsRes.json();
-          setLatestJob(jobs[0] ?? null);
-        }
-      } catch (error) {
-        if (!active) return;
-        setTypesError(error instanceof Error ? error.message : 'No se pudo comunicar con la API de AutoQA.');
-        setTypes([]);
-      }
-    })();
-    return () => { active = false; };
-  }, [projectId]);
-
-  function toggleType(code: string) {
-    setSelectedTypes(previous => {
-      const next = new Set(previous);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
-  }
-
-  // Espera a que el job llegue a stage="review-ready". Hace polling cada 3s
-  // con un timeout duro: si el worker no está corriendo, la UI no se queda
-  // girando indefinidamente.
-  async function waitForReview(jobId: string, timeoutMs = 120_000): Promise<AutomationSummary | null> {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      try {
-        const response = await fetch(`/api/projects/${projectId}/automation/${jobId}`, { cache: 'no-store' });
-        if (response.ok) {
-          const job: AutomationSummary = await response.json();
-          if (job.stage === 'review-ready') return job;
-          if (job.status === 'FAILED' || job.status === 'CANCELED') return null;
-        }
-      } catch {/* sigue reintentando hasta el timeout */}
-      await new Promise(resolve => setTimeout(resolve, 3000));
-    }
-    return null;
-  }
-
-  async function selectTypesOnJob(jobId: string) {
+  async function selectTypesOnJob(jobId: string, types: TestTypeCode[]) {
     const response = await fetch(`/api/projects/${projectId}/automation/${jobId}/select`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ types: Array.from(selectedTypes) }),
+      body: JSON.stringify({ types }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.message ?? 'No se pudo lanzar la generación.');
@@ -237,7 +168,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         if (response.ok) {
           const job: AutomationSummary = await response.json();
           if (job.stage === 'generated') return job;
-          if (job.status === 'FAILED' || job.status === 'CANCELED') return null;
+          if (job.status === 'FAILED' || job.status === 'CANCELED') return job;
         }
       } catch {/* sigue reintentando hasta el timeout */}
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -245,12 +176,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     return null;
   }
 
-  async function generate() {
+  async function generate(documentTestTypes: TestTypeCode[]) {
+    if (generating || !documentTestTypes.length) return;
     setGenerateNotice(''); setError('');
-    if (selectedTypes.size === 0) {
-      setGenerateNotice('Selecciona al menos un tipo de prueba.');
-      return;
-    }
     setGenerating(true);
     try {
       // Siempre arrancamos un job fresco al clickear "Generar casos de
@@ -261,45 +189,36 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         setGenerateNotice('Primero registra un entorno con URL base para que el agente sepa qué analizar.');
         return;
       }
-      setGenerateNotice('Analizando documentos y preparando el proyecto…');
+      setGenerateNotice('Preparando generación con los requisitos verificables…');
       const create = await fetch(`/api/projects/${projectId}/automation`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: projectBaseUrl }),
+        body: JSON.stringify({ url: projectBaseUrl, documentTestTypes }),
       });
       if (!create.ok) {
         const payload = await create.json().catch(() => ({}));
+        setGenerateNotice('');
         setError(payload.message ?? 'No se pudo iniciar el análisis.');
         return;
       }
       const newJob: AutomationSummary = await create.json();
-      setLatestJob(newJob);
-      let job = newJob;
 
-      // Esperar a que el worker termine el análisis.
-      const ready = await waitForReview(newJob.id);
-      if (!ready) {
-        setGenerateNotice('El worker no respondió a tiempo. Verifica que el Explorer esté desplegado y vuelve a intentar.');
-        return;
-      }
-      job = ready;
-      setLatestJob(ready);
+      await selectTypesOnJob(newJob.id, documentTestTypes);
 
-      // Paso 3: con el job en review-ready, encolamos los tipos marcados.
-      setGenerateNotice('Análisis listo. Encolando agentes de generación…');
-      await selectTypesOnJob(job.id);
-
-      // Paso 4: esperar que los 6 agentes terminen. Durante este tiempo el
-      // botón sigue deshabilitado con "Procesando…" para que el usuario no
-      // dispare un nuevo job sobre uno todavía corriendo.
       setGenerateNotice('Procesando: los agentes están generando los casos…');
-      const done = await waitForGeneration(job.id);
+      const done = await waitForGeneration(newJob.id);
       if (!done) {
         setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios irán apareciendo según termine cada agente.');
+      } else if (done.status === 'FAILED' || done.status === 'CANCELED') {
+        setGenerateNotice('');
+        setError(done.errorCode === 'document-analysis-changed'
+          ? 'El análisis documental cambió. Vuelve a confirmar la generación.'
+          : 'La generación no se completó. Revisa el estado antes de volver a intentarlo.');
       } else {
         setGenerateNotice('Generación completada. Revisa los escenarios abajo.');
       }
       await load();
     } catch (err) {
+      setGenerateNotice('');
       setError(err instanceof Error ? err.message : 'No se pudo comunicar con la API.');
     } finally { setGenerating(false); }
   }
@@ -388,11 +307,13 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       status={ipaStatus}
       projectStatus={project.status}
       canGenerate={canGenerate}
-      availableTypes={types?.filter(t => t.available).length ?? 0}
       threshold={IPA_AUTOMATION_THRESHOLD}
       generating={generating}
-      onGenerate={() => void generate()}
+      onGenerate={() => setShowGenerationConfirmation(true)}
     />
+    {showGenerationConfirmation && <ScenarioGenerationConfirmation projectId={projectId}
+      onClose={() => setShowGenerationConfirmation(false)}
+      onConfirm={types => { setShowGenerationConfirmation(false); void generate(types); }} />}
     {generateNotice && <p className="muted scenario-message" role="status">{generateNotice}</p>}
     {showForm && <form onSubmit={create} className="scenario-form scenario-create-form" aria-label="Nuevo escenario manual">
       <header><h2>Nuevo escenario manual</h2><p>Registra únicamente pasos y resultados definidos para tu aplicación.</p></header>
@@ -431,21 +352,14 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {runsWarning && <p className="scenario-history-warning" role="status">{runsWarning} <button type="button" className="secondary" onClick={() => void loadRuns()}>Reintentar historial</button></p>}
     {!runnable && <p className="scenario-history-warning">Para ejecutar necesitas un registro completo y un entorno autorizado.</p>}
 
-    {/* El bloque "Generar y sugerir escenarios con IA" se removió: ahora
-       el CTA de arriba dispara la generación con todos los tipos del plan
-       y no requiere marcar cada uno. El selector de "Sugerir desde
-       requisito" también sale: duplicaba una ruta IA parcial que el
-       pipeline del CTA ya cubre. Si en el futuro hace falta un modo
-       avanzado, se reintroduce como vista aparte. */}
   </section>;
 }
 
-function GenerateCta({ score, status, projectStatus, canGenerate, availableTypes, threshold, generating, onGenerate }: {
+function GenerateCta({ score, status, projectStatus, canGenerate, threshold, generating, onGenerate }: {
   score: number | null;
   status: 'ASSESSED' | 'BLOCKED' | null;
   projectStatus: Project['status'];
   canGenerate: boolean;
-  availableTypes: number;
   threshold: number;
   generating: boolean;
   onGenerate: () => void;
@@ -456,7 +370,6 @@ function GenerateCta({ score, status, projectStatus, canGenerate, availableTypes
   if (status === 'BLOCKED') reasons.push('Hay bloqueos de autorización o alcance por resolver.');
   if (score === null) reasons.push('Todavía no hay una evaluación IPA consolidada.');
   else if (score < threshold) reasons.push(`Preparación actual: ${score}/100. Hace falta llegar al menos a ${threshold} aclarando los pendientes en Datos.`);
-  if (availableTypes === 0) reasons.push('Tu plan no habilita tipos de prueba para generar.');
   const disabled = reasons.length > 0 || generating;
   const pctLabel = score === null ? '—' : `${score}/100`;
 
@@ -470,7 +383,7 @@ function GenerateCta({ score, status, projectStatus, canGenerate, availableTypes
     </ul>}
   </>}>
     <p className="muted">
-      Un solo clic crea los casos para los <strong>{availableTypes}</strong> tipos habilitados por tu plan, usando los requisitos ya analizados.
+      Revisa los tipos marcados en los documentos de Datos antes de generar los casos.
     </p>
     <p className="generate-cta__score">
       Preparación · <strong>{pctLabel}</strong> · umbral mínimo {threshold}

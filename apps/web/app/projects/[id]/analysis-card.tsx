@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { Report, SavedDocument } from '../document-client';
+import { documentRequest, type Report, type SavedDocument } from '../document-client';
 
 export type AnalysisDialogTarget = 'environments' | 'documents' | 'roles';
 
@@ -44,8 +44,7 @@ const HELP_GUIDES: Record<string, HelpGuide> = {
     steps: [
       'Click en el tile "Ambiguos o pendientes" para ver la lista exacta.',
       'Por cada requisito ambiguo, volvé a la fuente (el documento origen) y aclará: actor específico, acción puntual, resultado esperado, criterios de aceptación medibles.',
-      'Actualizá el documento en origen y volvé a subir la versión corregida desde el modal de documentos.',
-      'El análisis se recorre de nuevo al subir una versión nueva.',
+      'Abre el hallazgo y aprueba una aclaración del requisito y su criterio de aceptación.',
     ],
     action: { label: 'Abrir documentos', target: 'documents' },
   },
@@ -105,8 +104,10 @@ type FindingItem = NonNullable<Report['analysis']>['findings'][number];
 // endpoint /documents/analysis y la presenta con el chrome de las tarjetas
 // de la pestaña Datos (cabecera cream, labels mono en mayúsculas, bloques
 // colapsables para el detalle largo).
-export function AnalysisCard({ report, documents = [], number = '04', pending, onOpenDialog }: {
+export function AnalysisCard({ report, documents = [], number = '04', pending, onOpenDialog, projectId, onClarified }: {
   report: Report | null;
+  projectId?: string;
+  onClarified?: (report: Report) => void;
   documents?: SavedDocument[];
   number?: string;
   pending?: string;
@@ -175,7 +176,7 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
         onFindingClick={finding => setPendingFinding(finding)} />}
       {helpItem && <PendingHelpDialog item={helpItem} onClose={() => setHelpItem(null)}
         onOpenDialog={target => { setHelpItem(null); onOpenDialog?.(target); }} />}
-      {pendingFinding && <FindingDetailDialog finding={pendingFinding} onClose={() => setPendingFinding(null)} />}
+      {pendingFinding && <FindingDetailDialog finding={pendingFinding} projectId={projectId} onClarified={onClarified} onClose={() => setPendingFinding(null)} />}
 
       <details className="detail-analysis__section">
         <summary>
@@ -223,7 +224,7 @@ export function AnalysisCard({ report, documents = [], number = '04', pending, o
                 <span className="detail-analysis__kind">{kindLabels[finding.kind] ?? finding.kind}</span>
                 {finding.pendingConfirmation && <span className="detail-analysis__pending">Pendiente de confirmación</span>}
               </header>
-              <p>{finding.text}</p>
+              <p>{finding.clarification?.text ?? finding.text}</p>
               <p className="muted">
                 {finding.source.filename} · versión {finding.source.version} · {finding.source.locator}
               </p>
@@ -299,7 +300,7 @@ function MetricDrawer({ metric, documents, analysis, onFindingClick }: {
               <span className="detail-analysis__kind">{kindLabels[finding.kind] ?? finding.kind}</span>
               {finding.pendingConfirmation && <span className="detail-analysis__pending">Pendiente</span>}
             </header>
-            <p>{finding.text}</p>
+            <p>{finding.clarification?.text ?? finding.text}</p>
             <p className="muted">
               {finding.source.filename} · versión {finding.source.version} · {finding.source.locator}
             </p>
@@ -315,13 +316,71 @@ function MetricDrawer({ metric, documents, analysis, onFindingClick }: {
 
 // Popup con el detalle del finding: tipo, texto, fuente y, cuando la IA la
 // entregó, la explicación de qué le faltó para no marcarlo como pendiente.
-function FindingDetailDialog({ finding, onClose }: {
+function FindingDetailDialog({ finding, onClose, projectId, onClarified }: {
   finding: FindingItem;
+  projectId?: string;
+  onClarified?: (report: Report) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialog.current?.showModal(); }, []);
   const reason = finding.pendingReason?.trim();
+  const [text, setText] = useState('');
+  const [criterion, setCriterion] = useState('');
+  const [filename, setFilename] = useState('');
+  const [reading, setReading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [affected, setAffected] = useState<Array<{ id: string; title: string }> | null>(null);
+
+  async function readCorrection(file?: File) {
+    setFilename('');
+    setError('');
+    if (!file) return;
+    if (!/\.(txt|md)$/i.test(file.name) || file.size > 16000) {
+      setError('Selecciona un archivo TXT o Markdown de hasta 16 KB.');
+      return;
+    }
+    setReading(true);
+    try {
+      const contents = (await file.text()).trim();
+      if (!contents || contents.length > 4000 || contents.includes('\u0000')) {
+        setError('El archivo debe contener entre 1 y 4000 caracteres de texto.');
+        return;
+      }
+      setText(contents);
+      setFilename(file.name);
+    } catch {
+      setError('No se pudo leer el archivo de aclaración.');
+    } finally {
+      setReading(false);
+    }
+  }
+
+  async function approve() {
+    if (!projectId || busy || reading || !text.trim() || !criterion.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await documentRequest<{
+        affectedScenarios: Array<{ id: string; title: string }>;
+        report: Report;
+      }>(
+        projectId, '/analysis/' + finding.id + '/clarification', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, criterion, filename: filename || undefined }),
+        },
+      );
+      setAffected(result.affectedScenarios);
+      onClarified?.(result.report);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'No se pudo aprobar la aclaración.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  const canClarify = !!projectId && finding.pendingConfirmation && requirementKinds.has(finding.kind) && affected === null;
+
   return <dialog ref={dialog} className="pending-help-dialog finding-dialog" aria-labelledby="finding-dialog-title"
     onCancel={onClose}>
     <header className="pending-help-dialog__head">
@@ -336,19 +395,42 @@ function FindingDetailDialog({ finding, onClose }: {
         <p className="pending-help-dialog__lead">
           {reason || 'La IA no entregó una razón específica. Revisá la fuente: típicamente falta definir el actor, el resultado esperado o el criterio de aceptación.'}
         </p>
-        <p className="pending-help-dialog__eyebrow">Qué corregir</p>
-        <ol className="pending-help-dialog__steps">
-          <li>Abrí el documento fuente en el renglón citado abajo.</li>
-          <li>Reescribí el requisito aclarando lo que la IA señaló arriba.</li>
-          <li>Re-subí la nueva versión; el análisis se dispara de nuevo.</li>
-        </ol>
       </>}
       <p className="pending-help-dialog__eyebrow">Fuente</p>
       <p className="pending-help-dialog__lead muted">
         {finding.source.filename} · versión {finding.source.version} · locator <code>{finding.source.locator}</code>
       </p>
+      {finding.clarification && <>
+        <p className="pending-help-dialog__eyebrow">Aclaración aprobada</p>
+        <p>{finding.clarification.text}</p>
+        <p>{finding.clarification.criterion}</p>
+      </>}
+      {canClarify && <fieldset className="finding-clarification" disabled={busy}>
+        <legend>Aclarar requisito</legend>
+        <label>Adjuntar corrección (.txt o .md)
+          <input type="file" accept=".txt,.md" disabled={reading} onChange={event => void readCorrection(event.target.files?.[0])} />
+        </label>
+        <label>Requisito aclarado
+          <textarea rows={4} maxLength={4000} value={text} onChange={event => setText(event.target.value)} />
+        </label>
+        <label>Criterio de aceptación observable
+          <textarea rows={3} maxLength={2000} value={criterion} onChange={event => setCriterion(event.target.value)} />
+        </label>
+      </fieldset>}
+      {affected !== null && <div role="status">
+        <p className="success">Aclaración aprobada. El requisito ya está disponible para generar casos.</p>
+        {affected.length > 0 && <>
+          <p>Escenarios que requieren revisión</p>
+          <ul>{affected.map(scenario => <li key={scenario.id}>
+            <a href={'/projects/' + projectId + '/scenarios/' + scenario.id}>{scenario.title}</a>
+          </li>)}</ul>
+        </>}
+      </div>}
+      {error && <p className="error" role="alert">{error}</p>}
     </div>
     <div className="pending-help-dialog__actions">
+      {canClarify && <button type="button" disabled={busy || reading || !text.trim() || !criterion.trim()}
+        onClick={() => void approve()}>{busy ? 'Aprobando…' : 'Aprobar aclaración'}</button>}
       <button type="button" className="secondary" onClick={onClose}>Cerrar</button>
     </div>
   </dialog>;

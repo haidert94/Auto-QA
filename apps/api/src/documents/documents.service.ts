@@ -6,7 +6,7 @@ import { type DocumentType, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { convertDocument } from '../automation/document-converter';
-import { analyzeFindings, classifyDocument, type DocumentAnalysisProvider, type Finding } from './document-analysis';
+import { analyzeFindings, classifyDocument, isRequirement, type DocumentAnalysisProvider, type Finding } from './document-analysis';
 import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-files';
 import { analysisSelect, describeAnalysis, documentAnalysisSignature, documentSelect, metadata, persistFindings, readDocumentSnapshot } from './document-records';
 import { DOCUMENT_STORAGE, type DocumentStorage } from './document-storage';
@@ -284,6 +284,62 @@ export class DocumentsService {
       const findings = (record?.findings ?? []).map(toReadinessFinding);
       return { analysis: describeAnalysis(record), ipa: readiness(project, documents, findings) };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
+
+  async clarify(
+    projectId: string,
+    findingId: string,
+    correction: { text: string; criterion: string; filename?: string },
+    userId: string | null,
+  ) {
+    const text = correction.text.trim();
+    const criterion = correction.criterion.trim();
+    const filename = correction.filename?.trim() || null;
+    if (!text || !criterion) {
+      throw new BadRequestException('Escribe el requisito aclarado y un criterio de aceptación observable.');
+    }
+    if (filename && (!/\.(txt|md)$/i.test(filename) || /[\\/]/.test(filename))) {
+      throw new BadRequestException('Adjunta una aclaración en formato TXT o Markdown.');
+    }
+
+    return this.prisma.$transaction(async tx => {
+      await this.lockProject(tx, projectId);
+      const signature = documentAnalysisSignature(await readDocumentSnapshot(tx, projectId));
+      const finding = await tx.requirementTraceability.findFirst({
+        where: { id: findingId, analysis: { projectId, signature } },
+        select: { id: true, analysisId: true, pendingConfirmation: true, requirementId: true, kind: true },
+      });
+      if (!finding) throw new NotFoundException('El hallazgo no pertenece al análisis vigente.');
+      if (!finding.pendingConfirmation || !finding.requirementId || !isRequirement(finding.kind)) {
+        throw new ConflictException('Este requisito ya está confirmado o el hallazgo no es un requisito.');
+      }
+      const now = new Date();
+      const clarification = { text, criterion, filename, approvedAt: now.toISOString(), approvedBy: userId };
+      await tx.requirementTraceability.update({
+        where: { id: finding.id }, data: { pendingConfirmation: false, clarification },
+      });
+      await tx.requirement.update({
+        where: { id: finding.requirementId }, data: { title: text },
+      });
+      await tx.acceptanceCriterion.create({
+        data: { analysisId: finding.analysisId, requirementId: finding.requirementId, text: criterion },
+      });
+
+      const affectedScenarios = await tx.testScenario.updateManyAndReturn({
+        where: { projectId, requirementId: finding.requirementId, archivedAt: null },
+        data: { requirementReviewRequiredAt: now },
+        select: { id: true, title: true },
+      });
+      const record = await tx.documentAnalysis.findUniqueOrThrow({
+        where: { id: finding.analysisId }, select: analysisSelect,
+      });
+      const ipa = readiness(await this.project(projectId, false, tx), await this.rows(projectId, tx), record.findings.map(toReadinessFinding));
+      await tx.qualityAssessment.updateMany({
+        where: { projectId, analysisId: finding.analysisId, type: 'READINESS' },
+        data: { score: ipa.score, details: ipa },
+      });
+      return { affectedScenarios, report: { analysis: describeAnalysis(record), ipa } };
+    });
   }
 
   async analyze(projectId: string) {

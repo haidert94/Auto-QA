@@ -14,7 +14,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { convertDocument, needsAiFallback, type ConvertedDocument } from './document-converter';
 import { buildReviewPrompt, parseReviewResponse, type ReviewResult } from './review-prompt';
-import { documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
+import { currentScenarioRequirements, documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
 import { runSelectedAgents } from './agents';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
 
@@ -35,10 +35,12 @@ type Inputs = {
   ownerLabel: string | null;
   documents: InputDoc[];
   selection?: string[];
+  documentTestTypesConfirmed: boolean;
+  documentAnalysisId?: string;
 };
 
 function readInputs(raw: unknown): Inputs {
-  const safe = (raw ?? {}) as Partial<Inputs> & { documents?: InputDoc[]; selection?: string[] };
+  const safe = (raw ?? {}) as Partial<Inputs> & { documentTestTypes?: unknown };
   return {
     url: typeof safe.url === 'string' ? safe.url : '',
     description: typeof safe.description === 'string' ? safe.description : null,
@@ -47,6 +49,8 @@ function readInputs(raw: unknown): Inputs {
       ? safe.documents.filter(d => d && typeof d.filename === 'string' && typeof d.base64 === 'string')
       : [],
     selection: Array.isArray(safe.selection) ? safe.selection.filter(s => typeof s === 'string') : undefined,
+    documentTestTypesConfirmed: Array.isArray(safe.documentTestTypes),
+    documentAnalysisId: typeof safe.documentAnalysisId === 'string' ? safe.documentAnalysisId : undefined,
   };
 }
 
@@ -148,15 +152,25 @@ async function runGenerationPhase(
   const previous = await prisma.automationJob.findUnique({
     where: { id: claim.id }, select: { result: true },
   });
-  const review = (previous?.result as { review?: ReviewResult } | null)?.review;
+  const analysis = inputs.documentTestTypesConfirmed
+    ? await currentScenarioRequirements(prisma, claim.projectId, true)
+    : null;
+  if (inputs.documentTestTypesConfirmed && (!analysis?.requirements.length
+    || (inputs.documentAnalysisId && analysis.id !== inputs.documentAnalysisId))) {
+    await fail(prisma, claim, 'document-analysis-changed');
+    return;
+  }
+
+  const review = analysis ? { stories: [] } : (previous?.result as { review?: ReviewResult } | null)?.review;
   if (!review) {
     await fail(prisma, claim, 'review-missing');
     return;
   }
 
-  const requirements = selection.includes('functional_web') || selection.includes('mobile_emulated')
+  const prioritized = analysis?.requirements.sort((a, b) => Number(!!b.sources.length) - Number(!!a.sources.length));
+  const requirements = prioritized ?? (selection.some(type => ['functional_web', 'mobile_emulated', 'manual'].includes(type))
     ? await readScenarioRequirements(prisma, claim.projectId)
-    : [];
+    : []);
   const environmentId = project.environments[0]?.id ?? null;
   const outcomes = await runSelectedAgents(selection, {
     projectId: claim.projectId,
@@ -168,6 +182,7 @@ async function runGenerationPhase(
     description: inputs.description,
     review,
     requirements,
+    documentTestTypesConfirmed: inputs.documentTestTypesConfirmed,
   }, { prisma, router });
 
   await mergeStep(prisma, claim.id, 'generating', {

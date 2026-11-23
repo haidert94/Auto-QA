@@ -13,6 +13,7 @@ export type ScenarioListItem = {
   id: string;
   title: string;
   requirementId: string | null;
+  requirementReviewRequiredAt?: string | null;
   expectedResult: string | null;
   steps: ScenarioStep[] | null;
   tags?: string[];

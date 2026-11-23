@@ -184,6 +184,8 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
               <Link href={`/projects/${project.id}/ipa`}>Consultar IPA →</Link></div></>}
       </section>
       <AnalysisCard report={report} documents={documents ?? []}
+        projectId={can(role, 'document.upload') ? project.id : undefined}
+        onClarified={updated => { setReport(updated); router.refresh(); }}
         onOpenDialog={target => {
           if (target === 'environments') setEnvDialogOpen(true);
           if (target === 'documents') setDocDialogOpen(true);

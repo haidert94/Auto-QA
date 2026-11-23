@@ -213,6 +213,55 @@ test('analyzes, reviews, versions and removes documents with their source-derive
   assert.ok((await read(path + '/analysis')).data.ipa.score > ipa.score);
   assert.equal((await read(path + '/' + rules.id)).data.classificationSource, 'AUTOMATIC');
 
+  const pending = analysis.findings.find(item => item.pendingConfirmation && item.requirementId && item.text.includes('búsqueda'));
+  assert.ok(pending);
+  const { currentScenarioRequirements } = require('../dist/documents/document-records');
+  const projectId = path.split('/')[1];
+  const beforeCorrection = await currentScenarioRequirements(prisma, projectId, true);
+  assert.ok(beforeCorrection.requirements.length > 0);
+  assert.ok(!beforeCorrection.requirements.some(item => item.id === pending.requirementId));
+  const scenario = await prisma.testScenario.create({ data: {
+    projectId, requirementId: pending.requirementId, title: 'Búsqueda existente', steps: [{ ordinal: 1, action: 'navigate: /' }],
+  } });
+  const run = await prisma.testRun.create({ data: { projectId, scenarioId: scenario.id, status: 'COMPLETED' } });
+  const clarify = (body, docsPath = path) => request(docsPath + '/analysis/' + pending.id + '/clarification', {
+    method: 'PATCH', headers: { ...authorized, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const correction = { text: 'La búsqueda devuelve resultados en menos de 2 segundos.',
+    criterion: 'Dados diez productos, al buscar una coincidencia, aparece en menos de 2 segundos.',
+    filename: 'correccion.md' };
+  assert.equal((await clarify({ ...correction, criterion: ' ' })).status, 400);
+  const otherProject = await project('Aclaración de otro proyecto');
+  assert.equal((await clarify(correction, otherProject)).status, 404);
+  const clarified = await clarify(correction);
+  assert.equal(clarified.status, 200, JSON.stringify(clarified.data));
+  assert.deepEqual(clarified.data.affectedScenarios, [{ id: scenario.id, title: scenario.title }]);
+  const { data: current } = await read(path + '/analysis');
+  assert.equal(current.analysis.id, analysis.id);
+  assert.equal(current.ipa.verifiable, ipa.verifiable + 1);
+  assert.equal(current.ipa.ambiguous, ipa.ambiguous - 1);
+  const finding = current.analysis.findings.find(item => item.id === pending.id);
+  assert.equal(finding.text, pending.text);
+  assert.deepEqual(finding.source, pending.source);
+  assert.equal(finding.clarification.text, correction.text);
+  const confirmed = (await currentScenarioRequirements(prisma, projectId, true)).requirements
+    .find(item => item.id === pending.requirementId);
+  assert.equal(confirmed.title, correction.text);
+  assert.ok(confirmed.criteria.some(item => item.text === correction.criterion));
+  assert.equal(confirmed.sources[0].clarification.filename, 'correccion.md');
+  assert.deepEqual(confirmed.scenarios, [{ tags: [] }]);
+  assert.equal((await clarify(correction)).status, 409);
+  const reviewedScenario = await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } });
+  assert.ok(reviewedScenario.requirementReviewRequiredAt);
+  const acknowledgement = reviewedRequirementAt => request('/' + projectId + '/scenarios/' + scenario.id, {
+    method: 'PATCH', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reviewedRequirementAt }),
+  });
+  assert.equal((await acknowledgement(new Date(0).toISOString())).status, 409);
+  assert.equal((await acknowledgement(reviewedScenario.requirementReviewRequiredAt.toISOString())).status, 200);
+  assert.equal((await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } })).requirementReviewRequiredAt, null);
+  assert.equal((await prisma.testRun.findUniqueOrThrow({ where: { id: run.id } })).scenarioId, scenario.id);
+
   const same = await upload(path, [['análisis.md', text]]);
   assert.equal(same.data[0].currentVersion.id, doc.currentVersion.id);
   const next = await upload(path, [['análisis.md', 'RF-5: Mostrar la moneda.']]);

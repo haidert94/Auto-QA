@@ -23,6 +23,10 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
     where: {
       projectId: ctx.projectId,
       archivedAt: null,
+      ...(ctx.documentTestTypesConfirmed ? {
+        requirementId: { in: (ctx.requirements ?? []).map(item => item.id) },
+        requirementReviewRequiredAt: null,
+      } : {}),
       NOT: { OR: [
         { title: { startsWith: '[COMPAT]' } },
         { title: { startsWith: '[COMPAT:' } },
@@ -31,11 +35,12 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
     },
     take: 25,
     orderBy: { title: 'asc' },
-    select: { title: true, steps: true, expectedResult: true, tags: true } as const,
+    select: { title: true, requirementId: true, steps: true, expectedResult: true, tags: true } as const,
   });
 
   const verified = existing.filter(scenario => hasPlaywrightAssertion(readGeneratorSteps(scenario.steps))).slice(0, 5);
-  const base = verified.length ? verified : [{
+  const base = verified.length || ctx.documentTestTypesConfirmed ? verified : [{
+    requirementId: null,
     title: 'Página de inicio accesible',
     steps: [{ ordinal: 1, action: 'expect-http-ok: ' + ctx.url }],
     expectedResult: 'La página de inicio responde con un estado HTTP exitoso (2xx).',
@@ -52,10 +57,16 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
       const inherited = Array.isArray(scenario.tags) ? scenario.tags : [];
       const tags = Array.from(new Set([...inherited, '@compatibility', browser.tag])).slice(0, 20);
       try {
+        const title = ('[COMPAT:' + browser.enum + '] ' + scenario.title).slice(0, 300);
+        if (ctx.documentTestTypesConfirmed && await deps.prisma.testScenario.findFirst({
+          where: { projectId: ctx.projectId, archivedAt: null, title, requirementId: scenario.requirementId },
+          select: { id: true },
+        })) continue;
         await deps.prisma.testScenario.create({
           data: {
             projectId: ctx.projectId,
-            title: ('[COMPAT:' + browser.enum + '] ' + scenario.title).slice(0, 300),
+            title,
+            requirementId: scenario.requirementId,
             expectedResult: scenario.expectedResult,
             tags,
             steps: scenario.steps as Prisma.InputJsonValue,

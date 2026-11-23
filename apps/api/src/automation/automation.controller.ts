@@ -38,8 +38,8 @@ export class AutomationController {
 
   @Get('types/available')
   @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
-  availableTypes(@Param('projectId', ParseUUIDPipe) _projectId: string, @CurrentWorkspace() workspace: Workspace) {
-    return this.service.availableTypes(workspace);
+  availableTypes(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.availableTypes(projectId, workspace);
   }
 
   @Post(':id/select')

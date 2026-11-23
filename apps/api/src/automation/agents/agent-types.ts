@@ -15,8 +15,9 @@ export type AgentContext = {
   environmentId: string | null;
   url: string;
   description: string | null;
-  review: ReviewResult;
-  requirements?: Array<{ id: string; title: string; criteria: Array<{ text: string }> }>;
+  review: Pick<ReviewResult, 'stories'>;
+  documentTestTypesConfirmed?: boolean;
+  requirements?: Array<{ id: string; title: string; criteria: Array<{ text: string }>; scenarios?: Array<{ tags: string[] }> }>;
 };
 
 export type ScenarioPayload = {
@@ -62,7 +63,7 @@ export function extractJson<T = unknown>(text: string): T | null {
   }
 }
 
-export function storiesContext(review: ReviewResult): string {
+export function storiesContext(review: AgentContext['review']): string {
   if (!review.stories.length) return '(sin historias detectadas)';
   return review.stories
     .filter(s => s.coverage !== 'no-cubierta')
@@ -78,7 +79,8 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
     '- ' + requirement.id + ' · ' + requirement.title.slice(0, 350)
     + requirement.criteria.map(criterion => '\n  - ' + criterion.text.slice(0, 250)).join(''),
   );
-  return [...stories, ...requirements].join('\n') || '(sin historias ni requisitos analizados)';
+  const context = ctx.documentTestTypesConfirmed ? requirements : [...stories, ...requirements];
+  return context.join('\n') || '(sin historias ni requisitos analizados)';
 }
 
 export const MANUAL_SCENARIO_INSTRUCTION = [
@@ -86,6 +88,12 @@ export const MANUAL_SCENARIO_INSTRUCTION = [
   'Añade hasta 2 casos con "mode": "manual" si el análisis identifica verificaciones que requieren criterio humano, un dispositivo físico o una acción externa al navegador.',
   'Para el modo manual escribe cada "action" en español natural e incluye un "expectedResult" observable. Añade un paso de comprobación manual con su resultado observable en "expected".',
   'Genera casos manuales solo si el análisis aporta una base concreta. Usa "requirementId" si puedes asociar el escenario a uno de los requisitos analizados con identificador.',
+].join('\n');
+
+export const MANUAL_ONLY_INSTRUCTION = [
+  'Genera únicamente casos manuales sustentados que requieren criterio humano, un dispositivo físico o una acción externa al navegador.',
+  'Usa mode: manual y redacta los pasos en español natural con un resultado esperado observable.',
+  'Incluye al menos un paso de comprobación con el valor expected. Si no hay casos sustentados, devuelve la lista vacía.',
 ].join('\n');
 
 export const ASSERTION_INSTRUCTION = [

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsOptional, IsString, Length, MaxLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsIn, IsOptional, IsString, Length, MaxLength, ValidateNested } from 'class-validator';
+import { ALL_TEST_TYPES, type AutomationTestType } from '../test-types';
 
 export class AutomationDocumentDto {
   @IsString() @Length(1, 255) filename!: string;
@@ -16,4 +17,6 @@ export class CreateAutomationDto {
   @IsOptional() @IsString() @Length(0, 120) credentialsHint?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => AutomationDocumentDto)
   documents?: AutomationDocumentDto[];
+  @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(ALL_TEST_TYPES.length) @ArrayUnique() @IsIn(ALL_TEST_TYPES, { each: true })
+  documentTestTypes?: AutomationTestType[];
 }

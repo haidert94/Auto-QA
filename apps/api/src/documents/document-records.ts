@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import { type Finding, isRequirement } from './document-analysis';
+import { type Finding, isRequirement, REQUIREMENT_KINDS } from './document-analysis';
 
 const versionSelect = {
   id: true, number: true, format: true, size: true, uploadedAt: true, processedAt: true, validatedAt: true, hasText: true,
@@ -40,7 +40,7 @@ export const analysisSelect = {
   findings: {
     orderBy: { ordinal: 'asc' },
     select: {
-      id: true, kind: true, text: true, pendingConfirmation: true, pendingReason: true, requirementId: true,
+      id: true, kind: true, text: true, pendingConfirmation: true, pendingReason: true, requirementId: true, clarification: true,
       locator: true, relatedLocator: true, version: { select: sourceSelect }, relatedVersion: { select: sourceSelect },
     },
   },
@@ -107,5 +107,25 @@ export async function persistFindings(
       versionId: fact.source.versionId, locator: fact.source.locator,
       relatedVersionId: fact.relatedSource?.versionId, relatedLocator: fact.relatedSource?.locator, ...linkIds.get(fact),
     })),
+  });
+}
+
+export async function currentScenarioRequirements(tx: Prisma.TransactionClient, projectId: string, includeCoverage = false) {
+  const snapshot = await readDocumentSnapshot(tx, projectId);
+  return tx.documentAnalysis.findUnique({
+    where: { projectId_signature: { projectId, signature: documentAnalysisSignature(snapshot) } },
+    select: {
+      id: true,
+      requirements: {
+        where: { sources: { some: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false } } },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true, title: true,
+          criteria: { take: 6, orderBy: { id: 'asc' }, select: { text: true } },
+          sources: includeCoverage && { where: { clarification: { not: Prisma.DbNull } }, select: { clarification: true } },
+          scenarios: includeCoverage && { where: { archivedAt: null }, select: { tags: true } },
+        },
+      },
+    },
   });
 }

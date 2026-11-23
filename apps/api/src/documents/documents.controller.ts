@@ -4,11 +4,11 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { DocumentType } from '@prisma/client';
-import { ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUUID, MaxLength, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ALL_TEST_TYPES } from '../automation/test-types';
 import { DocumentErrorsFilter } from './document-errors.filter';
-import { RequiresPlanCapability, RequiresRole, WorkspaceGuard } from '../commerce/workspace.guard';
+import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace, WorkspaceGuard } from '../commerce/workspace.guard';
 import { MAX_FILES_PER_UPLOAD, MAX_FILE_BYTES } from './document-files';
 import { DocumentsService, type UploadedDocument } from './documents.service';
 
@@ -52,6 +52,21 @@ class ReviewDocumentDto {
 
   @IsBoolean()
   validated!: boolean;
+}
+
+class ClarificationDto {
+  @IsString()
+  @MaxLength(4000)
+  text!: string;
+
+  @IsString()
+  @MaxLength(2000)
+  criterion!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  filename?: string;
 }
 
 @Controller('projects/:projectId/documents')
@@ -113,6 +128,18 @@ export class DocumentsController {
   @HttpCode(200)
   analyze(@Param('projectId', ParseUUIDPipe) projectId: string) {
     return this.documents.analyze(projectId);
+  }
+
+  @Patch('analysis/:findingId/clarification')
+  @RequiresRole('EDITOR')
+  @RequiresPlanCapability('DOCUMENT_ANALYSIS')
+  clarify(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('findingId', ParseUUIDPipe) findingId: string,
+    @Body() dto: ClarificationDto,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.documents.clarify(projectId, findingId, dto, workspace.userId ?? null);
   }
 
   @Get(':documentId')

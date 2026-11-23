@@ -46,6 +46,7 @@ export type Report = {
     findings: {
       id: string; kind: string; text: string; pendingConfirmation: boolean; pendingReason?: string | null;
       source: Source; relatedSource: Source | null;
+      clarification?: { text: string; criterion: string; filename: string | null; approvedAt: string } | null;
     }[];
   };
   ipa: {

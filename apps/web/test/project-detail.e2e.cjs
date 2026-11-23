@@ -46,6 +46,15 @@ const ipa = { score: 82, status: 'ASSESSED', signals: [
   { criterion: 'Documentación y requisitos', weight: 40, points: 22, missing: ['Confirmar requisitos ambiguos.'], blocking: false },
   { criterion: 'Roles y credenciales', weight: 30, points: 30, missing: [], blocking: false },
 ] };
+const generationRequests = [];
+const generationJobId = '60400000-0000-4000-8000-000000000001';
+let generationSelectionBlocked = false;
+const pendingFinding = {
+  id: 'aadd4574-f8ec-4fa7-aaaa-abc28d39b319', kind: 'USER_STORY', text: 'Como comprador quiero descargar el comprobante.',
+  pendingConfirmation: true, pendingReason: 'Falta definir el formato del comprobante.',
+  source: { filename: 'requisitos-pagos.pdf', version: 1, locator: 'página 2' }, relatedSource: null,
+};
+let clarification = null;
 let docsFail = false;
 let ipaFail = false;
 let saveCount = 0;
@@ -171,6 +180,22 @@ const api = createServer(async (request, response) => {
   if (path === '/api/commerce/me') return send(account);
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
+  if (path === base + '/automation/types/available') {
+    const assigned = new Set(documents.flatMap(doc => doc.testTypes ?? []));
+    return send(['functional_web', 'ux', 'manual'].map(code => ({
+      code, available: !generationSelectionBlocked || code !== 'manual', selectedInDocuments: assigned.has(code),
+    })));
+  }
+  if (path === base + '/automation/' + generationJobId && request.method === 'GET') {
+    const stage = generationRequests.at(-1)?.types ? 'generated' : 'review-ready';
+    return send({ id: generationJobId, status: 'COMPLETED', stage });
+  }
+  if (request.method === 'POST' && (path === base + '/automation' || path === base + '/automation/' + generationJobId + '/select')) {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    generationRequests.push(JSON.parse(Buffer.concat(chunks).toString()));
+    return send({ id: generationJobId, status: 'QUEUED', stage: 'pending' }, 201);
+  }
   if (path === base + '/scenarios/requirements') return send([requirement]);
   if (path === base + '/scenarios/insights') {
     return send({ scenarios: scenarios.length, steps: 0, duplicateGroups: 0, duplicatedSteps: 0, groups: [] });
@@ -349,11 +374,100 @@ const api = createServer(async (request, response) => {
     return send(document);
   }
   if (path === base + '/documents') return docsFail ? send({ message: 'Documentos temporalmente no disponibles.' }, 503) : send(documents);
-  if (path === base + '/documents/analysis') return send({ analysis: null, ipa: { ...ipa, verifiable: 0, ambiguous: 0,
-    documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, signals: [], recommendations: [] } });
+  const documentReport = () => ({
+    analysis: { warnings: [], findings: [{
+      ...pendingFinding, pendingConfirmation: !clarification, clarification,
+    }] },
+    ipa: { ...ipa, verifiable: clarification ? 5 : 4, ambiguous: clarification ? 0 : 1,
+      documents: { declared: 1, uploaded: 3, processed: 2, validated: 1 }, signals: [], recommendations: [] },
+  });
+  if (path === base + '/documents/analysis/' + pendingFinding.id + '/clarification' && request.method === 'PATCH') {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    clarification = JSON.parse(Buffer.concat(chunks).toString());
+    return send({ affectedScenarios: [{ id: scenarios[0].id, title: scenarios[0].title }], report: documentReport() });
+  }
+  if (path === base + '/documents/analysis') return send(documentReport());
   if (path.startsWith(base + '/')) return send([]);
   return send({ message: 'No encontrado' }, 404);
 });
+
+async function verifyDocumentGenerationConfirmation(page) {
+  const original = structuredClone(documents);
+  const initialRequests = generationRequests.length;
+  const scenariosTab = page.getByRole('tab', { name: /^Escenarios/ });
+  const generate = page.getByRole('button', { name: 'Generar casos de prueba', exact: true });
+  const modal = page.getByRole('dialog', { name: 'Confirmar generación de casos' });
+  const confirm = modal.getByRole('button', { name: 'Confirmar generación', exact: true });
+  const cancel = modal.getByRole('button', { name: 'Cancelar', exact: true });
+  try {
+    await scenariosTab.click();
+    await generate.click();
+    await expect(modal.getByText(/marca al menos un tipo/)).toBeVisible();
+    await expect(confirm).toBeDisabled();
+    await cancel.click();
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
+    const documentsDialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
+    const doc = documentsDialog.locator('ul.document-list--saved > li').filter({ hasText: 'requisitos-pagos.pdf' });
+    await doc.getByText('Aplica a: General', { exact: true }).click();
+    await doc.getByRole('checkbox', { name: 'Funcional web', exact: true }).click();
+    await expect(doc.getByRole('checkbox', { name: 'Funcional web', exact: true })).toBeChecked();
+    await doc.getByRole('checkbox', { name: 'Casos manuales', exact: true }).click();
+    await expect(doc.getByRole('checkbox', { name: 'Casos manuales', exact: true })).toBeChecked();
+    await page.keyboard.press('Escape');
+    await expect(documentsDialog).toBeHidden();
+    await scenariosTab.click();
+    generationSelectionBlocked = true;
+    await generate.click();
+    await expect(modal.getByText('Fuera de tu plan', { exact: false })).toBeVisible();
+    await expect(confirm).toBeDisabled();
+    await cancel.click();
+    generationSelectionBlocked = false;
+    await generate.click();
+    await expect(modal.getByRole('listitem')).toHaveText(['Funcional web', 'Casos manuales']);
+    await expect(modal.getByText(/4 requisitos verificables · 1 pendiente/)).toBeVisible();
+    assert.equal(generationRequests.length, initialRequests, 'Abrir o cancelar no genera casos.');
+    await confirm.click();
+    await expect(page.getByText('Generación completada. Revisa los escenarios abajo.')).toBeVisible();
+    const expected = ['functional_web', 'manual'];
+    assert.deepEqual(generationRequests.slice(initialRequests), [
+      { url: project.environments[0].baseUrl, documentTestTypes: expected }, { types: expected },
+    ]);
+    console.log('PASS confirma los tipos guardados en Datos antes de crear casos.');
+  } finally {
+    documents = original;
+    generationSelectionBlocked = false;
+  }
+  await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+}
+
+async function verifyRequirementClarification(page) {
+  try {
+    await page.getByRole('button', { name: /Ambiguos o pendientes/i }).click();
+    await page.getByRole('button', { name: 'Ver detalle del hallazgo ' + pendingFinding.id }).click();
+    const modal = page.getByRole('dialog', { name: 'Historia de usuario' });
+    await expect(modal.getByText(pendingFinding.pendingReason)).toBeVisible();
+    const approve = modal.getByRole('button', { name: 'Aprobar aclaración', exact: true });
+    await expect(approve).toBeDisabled();
+    const correctedText = 'Como comprador quiero descargar el comprobante en PDF.';
+    await modal.getByLabel('Adjuntar corrección (.txt o .md)').setInputFiles({
+      name: 'correccion.md', mimeType: 'text/markdown', buffer: Buffer.from(correctedText),
+    });
+    await expect(modal.getByLabel('Requisito aclarado')).toHaveValue(correctedText);
+    const criterion = 'Al pulsar Descargar se guarda un archivo PDF.';
+    await modal.getByLabel('Criterio de aceptación observable').fill(criterion);
+    await approve.click();
+    await expect(modal.getByText(/Aclaración aprobada/)).toBeVisible();
+    await expect(modal.getByRole('link', { name: scenarios[0].title })).toBeVisible();
+    assert.deepEqual(clarification, { text: correctedText, criterion, filename: 'correccion.md' });
+    await modal.getByRole('button', { name: 'Cerrar', exact: true }).last().click();
+    await expect(page.getByRole('button', { name: /Ambiguos o pendientes/i })).toBeDisabled();
+  } finally {
+    clarification = null;
+  }
+  console.log('PASS permite adjuntar y aprobar una aclaración, y muestra el escenario afectado.');
+}
 
 async function verifyDocumentUploads(page) {
   const original = [...documents];
@@ -1646,6 +1760,8 @@ async function run() {
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(`${website}/projects/${projectId}`);
     await verifyDocumentUploads(page);
+    await verifyDocumentGenerationConfirmation(page);
+    await verifyRequirementClarification(page);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);
     await verifySavedAutomationAfterReload(page);

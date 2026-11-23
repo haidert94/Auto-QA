@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsDateString, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from 'class-validator';
 
 // Formato de tag: '@' seguido de 1-60 chars alfanuméricos / guiones / underscore.
 // Cubre tanto los reservados @flujoBasico / @flujoAlterno como tags custom.
@@ -32,6 +32,7 @@ export class ScenarioSelectionDto {
 }
 
 export class UpdateScenarioDto {
+  @IsOptional() @IsDateString({ strict: true }) reviewedRequirementAt?: string;
   @IsOptional() @IsString() @MaxLength(300) title?: string;
   @IsOptional() @IsUUID() requirementId?: string | null;
   @IsOptional() @IsString() @MaxLength(2000) expectedResult?: string | null;

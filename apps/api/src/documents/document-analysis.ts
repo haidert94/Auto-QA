@@ -40,8 +40,10 @@ export interface DocumentAnalysisProvider {
   extract(evidence: Evidence, context: AnalyzeContext): Promise<Finding[]>;
 }
 
+export const REQUIREMENT_KINDS: FindingKind[] = ['USER_STORY', 'REQUIREMENT', 'FUNCTIONAL', 'NON_FUNCTIONAL'];
+
 export function isRequirement(kind: FindingKind) {
-  return kind === 'USER_STORY' || kind === 'REQUIREMENT' || kind === 'FUNCTIONAL' || kind === 'NON_FUNCTIONAL';
+  return REQUIREMENT_KINDS.includes(kind);
 }
 
 function normalized(text: string) {

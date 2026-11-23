@@ -5,6 +5,8 @@ const { createHash } = require('node:crypto');
 const { runCompatibilityAgent } = require('../dist/automation/agents/compatibility-agent');
 const { runFunctionalWebAgent } = require('../dist/automation/agents/functional-web-agent');
 const { runMobileAgent } = require('../dist/automation/agents/mobile-agent');
+const { runSelectedAgents } = require('../dist/automation/agents');
+const { AutomationService } = require('../dist/automation/automation.service');
 const { runAutomation } = require('../dist/automation/pipeline-runner');
 const { RunsService } = require('../dist/runs/runs.service');
 const { ScenariosService } = require('../dist/scenarios/scenarios.service');
@@ -206,4 +208,62 @@ test('las variantes de compatibilidad heredan la regresión de su escenario base
     assert.deepEqual(created[index].steps, steps);
     assert.deepEqual(created[index + 3].tags, ['@funcional', '@compatibility', browser]);
   }
+});
+
+test('la generación respeta los tipos documentales confirmados y separa los casos manuales', async () => {
+  const saved = [];
+  const outcomes = await runSelectedAgents(['functional_web', 'manual'], {
+    ...context, documentTestTypesConfirmed: true,
+    requirements: [
+      { id: 'verifiable', title: 'Pantalla de acceso', criteria: [] },
+      { id: 'covered', title: 'Caso ya cubierto', criteria: [],
+        scenarios: [{ tags: ['@funcional'] }, { tags: ['@manual'] }] },
+    ],
+  }, {
+    prisma: { testScenario: { async create({ data }) { saved.push(data); } } },
+    router: { async dispatch({ prompt }) {
+      assert.match(prompt, /Pantalla de acceso/);
+      assert.doesNotMatch(prompt, /Caso ya cubierto/);
+      return { model: "test", text: JSON.stringify({ scenarios: [
+      { title: 'Escenario web', mode: 'playwright', requirementId: 'verifiable', steps },
+      { title: 'Requisito pendiente', mode: 'playwright', requirementId: 'pending', steps },
+      { title: 'Requisito cubierto', mode: 'playwright', requirementId: 'covered', steps },
+      { title: 'Revisión humana', mode: 'manual', requirementId: 'verifiable', expectedResult: 'El texto es comprensible.',
+        steps: [{ action: 'Lee el texto de ayuda.', expected: 'Se entiende sin ayuda.' }] },
+    ] }) }; } },
+  });
+  assert.deepEqual(outcomes.map(({ type, created }) => [type, created]), [['functional_web', 1], ['manual', 1]]);
+  assert.equal(saved.filter(item => item.tags.includes('@manual')).length, 1);
+});
+
+test('la API confirma la unión de las casillas de Datos y rechaza selecciones desactualizadas', async () => {
+  const marked = [
+    { testTypes: ['functional_web', 'manual'] }, { testTypes: ['manual'] }, { testTypes: [] },
+  ];
+  const writes = [];
+  let job;
+  const service = new AutomationService({
+    async $transaction(fn) { return fn(this); },
+    async $queryRaw() {},
+    project: { async findFirst() { return { id: 'project' }; } },
+    document: { async findMany({ select }) { return select?.testTypes ? marked : []; } },
+    documentAnalysis: { async findUnique() { return { id: 'analysis', requirements: [{ id: 'verified' }] }; } },
+    automationJob: {
+      async create({ data }) { job = { ...data, stage: 'review-ready' }; writes.push(data); return job; },
+      async findFirst({ where }) { return where.id ? job : null; },
+      async updateMany({ data }) { writes.push(data); return { count: 1 }; },
+    },
+  }, {});
+  const workspace = { organizationId: null, userId: null };
+  const available = await service.availableTypes('project', workspace);
+  assert.deepEqual(available.filter(type => type.selectedInDocuments).map(type => type.code), ['functional_web', 'manual']);
+  await assert.rejects(service.create('project', { url: context.url, documentTestTypes: ['functional_web'] }, workspace), /tipos marcados en Datos cambiaron/);
+  assert.equal(writes.length, 0);
+  const created = await service.create('project', { url: context.url, documentTestTypes: ['functional_web', 'manual'] }, workspace);
+  assert.equal(created.stage, 'review-ready');
+  assert.deepEqual(writes[0].inputs.documents, []);
+  assert.equal(writes[0].inputs.documentAnalysisId, 'analysis');
+  await assert.rejects(service.select('project', 'job', { types: ['functional_web', 'ux'] }, workspace), /tipos confirmados/);
+  await service.select('project', 'job', { types: ['functional_web', 'manual'] }, workspace);
+  assert.deepEqual(writes[1].inputs.selection, ['functional_web', 'manual']);
 });

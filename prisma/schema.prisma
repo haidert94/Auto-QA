@@ -303,6 +303,7 @@ model RequirementTraceability {
   // Null cuando el finding vino del analizador por reglas o cuando la IA no
   // justificó la ambigüedad.
   pendingReason       String?
+  clarification       Json?
   versionId           String
   version             DocumentVersion      @relation("PrimarySource", fields: [versionId], references: [id], onDelete: Cascade)
   locator             String
@@ -331,6 +332,7 @@ model TestScenario {
   expectedResult String?
   automation     Json?
   archivedAt     DateTime?
+  requirementReviewRequiredAt DateTime?
   results        TestResult[]
   runs           TestRun[]
 
