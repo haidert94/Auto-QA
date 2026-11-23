@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DOCUMENT_STORAGE, type DocumentStorage } from '../documents/document-storage';
-import { currentScenarioRequirements } from '../documents/document-records';
 import { PrismaService } from '../prisma.service';
+import { documentGenerationScope, readGenerationSources, type DocumentGenerationSources } from './document-generation';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
 import { ALL_TEST_TYPES, TEST_TYPE_META, type AutomationTestType } from './test-types';
@@ -28,18 +28,17 @@ export class AutomationService {
     }
 
     let analysisId: string | undefined;
+    let documentGenerationSources: DocumentGenerationSources | undefined;
     if (dto.documentTestTypes) {
       if (dto.documents?.length) throw new BadRequestException('Usa los documentos guardados en Datos para esta selección.');
-      const marked = await this.documentTestTypes(projectId);
-      if (marked.size !== dto.documentTestTypes.length || !dto.documentTestTypes.every(type => marked.has(type))) {
-        throw new ConflictException('Los tipos marcados en Datos cambiaron. Abre de nuevo la confirmación.');
+      const scope = await documentGenerationScope(this.prisma, projectId);
+      const pending = Object.keys(scope.sources);
+      if (!pending.length || pending.length !== dto.documentTestTypes.length || !dto.documentTestTypes.every(type => pending.includes(type))) {
+        throw new ConflictException('Los tipos pendientes de generación cambiaron. Abre de nuevo la confirmación.');
       }
       await this.checkPlanTypes(dto.documentTestTypes, workspace.organizationId);
-      const analysis = await currentScenarioRequirements(this.prisma, projectId);
-      if (!analysis?.requirements.length) {
-        throw new ConflictException('Analiza los documentos y confirma al menos un requisito verificable.');
-      }
-      analysisId = analysis.id;
+      analysisId = scope.analysisId ?? undefined;
+      documentGenerationSources = scope.sources;
     }
 
     let docs: Array<{ filename: string; base64: string }>;
@@ -67,7 +66,7 @@ export class AutomationService {
       ownerLabel: dto.ownerLabel?.trim() || null,
       hasCredentials: !!dto.credentialsHint?.trim(),
       documents: docs,
-      ...(analysisId ? { documentAnalysisId: analysisId } : {}),
+      ...(analysisId ? { documentAnalysisId: analysisId, documentGenerationSources } : {}),
       ...(dto.documentTestTypes ? { documentTestTypes: dto.documentTestTypes } : {}),
     };
 
@@ -161,12 +160,39 @@ export class AutomationService {
           select: { id: true },
         });
         if (active) throw new ConflictException('Ya se están generando casos para este proyecto.');
+        if (currentInputs.documentGenerationSources) {
+          const scope = await documentGenerationScope(tx, projectId);
+          if (scope.analysisId !== currentInputs.documentAnalysisId
+            || JSON.stringify(scope.sources) !== JSON.stringify(readGenerationSources(currentInputs.documentGenerationSources))) {
+            throw new ConflictException('El alcance pendiente cambió. Abre de nuevo la confirmación.');
+          }
+        }
         await queue(tx);
       });
     } else {
       await queue(this.prisma);
     }
     return { message: 'Selección guardada. Los agentes comenzarán la generación.' };
+  }
+
+  async pendingDocumentTypes(projectId: string, workspace: Workspace) {
+    await this.ensureProject(projectId, workspace);
+    const [scope, plan] = await Promise.all([
+      this.prisma.$transaction(tx => documentGenerationScope(tx, projectId), {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      }),
+      workspace.organizationId ? this.capabilitiesForOrg(workspace.organizationId) : null,
+    ]);
+    return {
+      types: ALL_TEST_TYPES.filter(type => scope.sources[type]?.length).map(code => ({
+        code, available: !plan || plan.available.has(TEST_TYPE_META[code].capability),
+      })),
+      verifiable: scope.verifiable,
+      ambiguous: scope.ambiguous,
+      hasAssignedDocuments: scope.hasAssignedDocuments,
+      hasCurrentAnalysis: !!scope.analysisId,
+      hasUnverifiedTypes: scope.hasUnverifiedTypes,
+    };
   }
 
   async availableTypes(projectId: string, workspace: Workspace) {

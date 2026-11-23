@@ -213,6 +213,24 @@ test('analyzes, reviews, versions and removes documents with their source-derive
   assert.ok((await read(path + '/analysis')).data.ipa.score > ipa.score);
   assert.equal((await read(path + '/' + rules.id)).data.classificationSource, 'AUTOMATIC');
 
+  const typesPath = path + '/' + doc.id + '/test-types';
+  const setTypes = testTypes => request(typesPath, {
+    method: 'PATCH', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ testTypes }),
+  });
+  assert.equal((await setTypes(['performance'])).status, 409);
+  const duplicate = await upload(path, [['análisis.md', text]], 'AUTO', authorized, ['performance']);
+  assert.equal(duplicate.data[0].state, 'VALIDATED');
+  assert.deepEqual(duplicate.data[0].testTypes, reviewed.data.testTypes);
+  await prisma.document.update({ where: { id: doc.id }, data: { testTypesSource: 'PENDING' } });
+  assert.equal((await request(typesPath, { method: 'POST', headers: authorized })).status, 409);
+  assert.deepEqual((await read(path + '/' + doc.id)).data.testTypes, reviewed.data.testTypes);
+  assert.equal((await review(doc.currentVersion.id, false)).data.state, 'PROCESSED');
+  const reclassified = await setTypes(['performance']);
+  assert.equal(reclassified.status, 200, JSON.stringify(reclassified.data));
+  assert.deepEqual(reclassified.data.testTypes, ['performance']);
+  assert.equal((await review(doc.currentVersion.id, true)).data.state, 'VALIDATED');
+
   const pending = analysis.findings.find(item => item.pendingConfirmation && item.requirementId && item.text.includes('búsqueda'));
   assert.ok(pending);
   const { currentScenarioRequirements } = require('../dist/documents/document-records');
@@ -278,4 +296,67 @@ test('analyzes, reviews, versions and removes documents with their source-derive
   const remaining = await readdir(storage);
   for (const row of keys) assert.ok(!remaining.includes(row.storageKey));
   assert.equal((await read(path)).data.length, 1);
+});
+
+test('al agregar un documento de Performance se excluyen los tipos ya generados', async () => {
+  const path = await project('Generación de documentación complementaria');
+  const projectId = path.split('/')[1];
+  const base = '/' + projectId + '/automation';
+  const uploadWeb = await upload(path, [['web.md', [
+    'RF-1: Mostrar el catálogo.',
+    'Criterio de aceptación: [RF-1] Aparece el título del catálogo.',
+  ].join('\n')]], 'REQUIREMENTS', authorized, ['functional_web', 'manual']);
+  assert.equal(uploadWeb.status, 201, JSON.stringify(uploadWeb.data));
+  const analyze = () => request(path + '/analyze', { method: 'POST', headers: authorized });
+  const first = await analyze();
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  const original = first.data.analysis.findings.find(item => item.requirementId && item.text.includes('Mostrar el catálogo'));
+  assert.ok(original?.requirementId);
+  const scenario = await prisma.testScenario.create({ data: {
+    projectId, requirementId: original.requirementId, title: 'Consultar el catálogo',
+    steps: [{ ordinal: 1, action: 'expect-text: Catálogo' }], tags: ['@funcional'],
+  } });
+  await prisma.automationJob.create({ data: {
+    projectId, status: 'COMPLETED', stage: 'generated',
+    inputs: { documentAnalysisId: first.data.analysis.id },
+    result: { generation: { outcomes: [
+      { type: 'functional_web', created: 1, errorCount: 0 }, { type: 'manual', created: 0, errorCount: 0 },
+    ] } },
+  } });
+
+  const uploadPerf = await upload(path, [['performance.md', [
+    'RNF-2: La carga del catálogo tarda menos de dos segundos.',
+    'Criterio de aceptación: [RNF-2] El catálogo carga en menos de dos segundos.',
+  ].join('\n')]], 'REQUIREMENTS', authorized, ['performance']);
+  assert.equal(uploadPerf.status, 201, JSON.stringify(uploadPerf.data));
+  const beforeAnalysis = await read(base + '/types/pending');
+  assert.equal(beforeAnalysis.status, 200, JSON.stringify(beforeAnalysis.data));
+  assert.equal(beforeAnalysis.data.hasCurrentAnalysis, false);
+  const second = await analyze();
+  assert.equal(second.status, 200, JSON.stringify(second.data));
+  assert.notEqual(first.data.analysis.id, second.data.analysis.id);
+
+  const pending = await read(base + '/types/pending');
+  assert.equal(pending.status, 200, JSON.stringify(pending.data));
+  assert.deepEqual(pending.data.types, [{ code: 'performance', available: true }]);
+  assert.equal(pending.data.verifiable, 1);
+  const createJob = documentTestTypes => request(base, {
+    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.test', documentTestTypes }),
+  });
+  assert.equal((await createJob(['functional_web', 'manual', 'performance'])).status, 409);
+  const job = await createJob(['performance']);
+  assert.equal(job.status, 201, JSON.stringify(job.data));
+  const selection = await request(base + '/' + job.data.id + '/select', {
+    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ types: ['performance'] }),
+  });
+  assert.equal(selection.status, 201, JSON.stringify(selection.data));
+  const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  assert.deepEqual(saved.inputs.selection, ['performance']);
+  assert.deepEqual(saved.inputs.documentGenerationSources, {
+    performance: [{ versionId: uploadPerf.data[0].currentVersion.id, clarifiedAt: null }],
+  });
+  assert.equal(await prisma.testScenario.count({ where: { projectId } }), 1);
+  assert.equal((await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } })).requirementId, original.requirementId);
 });

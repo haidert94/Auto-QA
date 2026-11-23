@@ -236,34 +236,90 @@ test('la generación respeta los tipos documentales confirmados y separa los cas
   assert.equal(saved.filter(item => item.tags.includes('@manual')).length, 1);
 });
 
-test('la API confirma la unión de las casillas de Datos y rechaza selecciones desactualizadas', async () => {
-  const marked = [
-    { testTypes: ['functional_web', 'manual'] }, { testTypes: ['manual'] }, { testTypes: [] },
+test('la API solo confirma tipos con documentos pendientes y comprueba que el alcance siga vigente', async () => {
+  const uploadedAt = new Date('2026-11-19T00:00:00Z');
+  const docs = [
+    { id: 'old', filename: 'web.md', testTypes: ['functional_web', 'manual'], versions: [{ id: 'web-version', storageKey: 'old', uploadedAt }] },
+    { id: 'new', filename: 'performance.md', testTypes: ['performance'], versions: [{ id: 'perf-version', storageKey: 'new', uploadedAt }] },
   ];
+  const completed = ['functional_web', 'manual'].map(type => ({ type, created: 1, errorCount: 0 }));
+  const historical = {
+    inputs: { documentAnalysisId: 'old-analysis' },
+    createdAt: new Date('2026-11-20T00:00:00Z'),
+    result: { generation: { outcomes: completed } },
+  };
+  const jobs = [historical];
   const writes = [];
   let job;
+  let approvedAt;
   const service = new AutomationService({
     async $transaction(fn) { return fn(this); },
     async $queryRaw() {},
     project: { async findFirst() { return { id: 'project' }; } },
-    document: { async findMany({ select }) { return select?.testTypes ? marked : []; } },
-    documentAnalysis: { async findUnique() { return { id: 'analysis', requirements: [{ id: 'verified' }] }; } },
+    document: { async findMany() { return docs; } },
+    documentAnalysis: {
+      async findUnique() {
+        return { id: 'analysis', findings: [
+          { versionId: 'web-version', pendingConfirmation: false, clarification: approvedAt ? { approvedAt } : null },
+          { versionId: 'perf-version', pendingConfirmation: false, clarification: null },
+        ] };
+      },
+      async findMany() { return [{ id: 'old-analysis', versions: [{ id: 'web-version' }] }]; },
+    },
+    testScenario: { async findMany() { return [{ tags: ['@funcional'] }, { tags: ['@manual'] }]; } },
     automationJob: {
-      async create({ data }) { job = { ...data, stage: 'review-ready' }; writes.push(data); return job; },
+      async findMany() { return jobs; },
+      async create({ data }) { job = data; writes.push(data); return job; },
       async findFirst({ where }) { return where.id ? job : null; },
       async updateMany({ data }) { writes.push(data); return { count: 1 }; },
     },
   }, {});
   const workspace = { organizationId: null, userId: null };
   const available = await service.availableTypes('project', workspace);
-  assert.deepEqual(available.filter(type => type.selectedInDocuments).map(type => type.code), ['functional_web', 'manual']);
-  await assert.rejects(service.create('project', { url: context.url, documentTestTypes: ['functional_web'] }, workspace), /tipos marcados en Datos cambiaron/);
+  assert.deepEqual(available.filter(type => type.selectedInDocuments).map(type => type.code), ['functional_web', 'performance', 'manual']);
+  const pending = await service.pendingDocumentTypes('project', workspace);
+  assert.deepEqual(pending.types, [{ code: 'performance', available: true }]);
+  assert.equal(pending.verifiable, 1);
+  const create = documentTestTypes => service.create('project', { url: context.url, documentTestTypes }, workspace);
+  await assert.rejects(create(['functional_web', 'performance', 'manual']), /tipos pendientes de generación cambiaron/);
   assert.equal(writes.length, 0);
-  const created = await service.create('project', { url: context.url, documentTestTypes: ['functional_web', 'manual'] }, workspace);
+  const created = await create(['performance']);
   assert.equal(created.stage, 'review-ready');
-  assert.deepEqual(writes[0].inputs.documents, []);
-  assert.equal(writes[0].inputs.documentAnalysisId, 'analysis');
-  await assert.rejects(service.select('project', 'job', { types: ['functional_web', 'ux'] }, workspace), /tipos confirmados/);
-  await service.select('project', 'job', { types: ['functional_web', 'manual'] }, workspace);
-  assert.deepEqual(writes[1].inputs.selection, ['functional_web', 'manual']);
+  assert.deepEqual(writes[0].inputs.documentGenerationSources, {
+    performance: [{ versionId: 'perf-version', clarifiedAt: null }],
+  });
+  await assert.rejects(service.select('project', 'job', { types: ['functional_web'] }, workspace), /tipos confirmados/);
+  await service.select('project', 'job', { types: ['performance'] }, workspace);
+  assert.deepEqual(writes[1].inputs.selection, ['performance']);
+
+  jobs.push({ inputs: writes[1].inputs, createdAt: new Date('2026-11-21T00:00:00Z'),
+    result: { generation: { outcomes: [{ type: 'performance', created: 1, errorCount: 0 }] } } });
+  assert.deepEqual((await service.pendingDocumentTypes('project', workspace)).types, []);
+  await assert.rejects(service.select('project', 'job', { types: ['performance'] }, workspace), /alcance pendiente cambió/);
+  approvedAt = '2026-11-22T00:00:00.000Z';
+  assert.deepEqual((await service.pendingDocumentTypes('project', workspace)).types.map(type => type.code), ['functional_web', 'manual']);
+});
+
+test('el agente de Performance recibe solo requisitos de sus versiones pendientes', async () => {
+  const audits = [];
+  const outcomes = await runSelectedAgents(['performance'], {
+    ...context,
+    environmentId: 'environment',
+    documentTestTypesConfirmed: true,
+    documentGenerationSources: { performance: [{ versionId: 'perf-version', clarifiedAt: null }] },
+    requirements: [
+      { id: 'web', title: 'Autenticación existente', criteria: [], documentVersionIds: ['web-version'] },
+      { id: 'perf', title: 'Latencia del catálogo', criteria: [{ text: 'Mide el p95 en el entorno QA' }], documentVersionIds: ['perf-version'] },
+    ],
+  }, {
+    prisma: { performanceAudit: { async create({ data }) { audits.push(data); } } },
+    router: { async dispatch({ prompt }) {
+      assert.match(prompt, /Latencia del catálogo/);
+      assert.match(prompt, /p95 en el entorno QA/);
+      assert.doesNotMatch(prompt, /Autenticación existente/);
+      return { model: 'test', text: '{"audits":[{"url":"https://example.test/catalogo"}]}' };
+    } },
+  });
+  assert.deepEqual(outcomes.map(({ type, created }) => [type, created]), [['performance', 1]]);
+  assert.equal(audits[0].url, 'https://example.test/catalogo');
 });

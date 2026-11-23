@@ -2,7 +2,8 @@
 // devuelve los outcomes para que el worker persista el resultado en
 // AutomationJob.result.
 
-import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
+import { scenarioTestType } from '../document-generation';
+import { isTestType } from '../test-types';
 import type { AgentContext, AgentDeps, AgentOutcome } from './agent-types';
 import { runAvailabilityAgent } from './availability-agent';
 import { runCompatibilityAgent } from './compatibility-agent';
@@ -21,18 +22,16 @@ const AGENTS: Record<string, (ctx: AgentContext, deps: AgentDeps) => Promise<Age
   manual: (ctx, deps) => runFunctionalWebAgent(ctx, deps, true),
 };
 
-function scenarioType(tags: string[]) {
-  if (tags.includes(MANUAL_SCENARIO_TAG)) return 'manual';
-  if (tags.includes('@compatibility')) return 'compatibility';
-  if (tags.includes('@mobile')) return 'mobile_emulated';
-  return 'functional_web';
-}
-
 function agentContext(ctx: AgentContext, type: string): AgentContext {
   if (!ctx.documentTestTypesConfirmed) return ctx;
-  const requirements = ctx.requirements ?? [];
+  const versionIds = ctx.documentGenerationSources && isTestType(type)
+    ? new Set(ctx.documentGenerationSources[type]?.map(source => source.versionId))
+    : null;
+  const requirements = (ctx.requirements ?? []).filter(requirement =>
+    !versionIds || requirement.documentVersionIds?.some(id => versionIds.has(id)),
+  );
   const missing = ['functional_web', 'mobile_emulated', 'manual'].includes(type)
-    ? requirements.filter(requirement => !requirement.scenarios?.some(scenario => scenarioType(scenario.tags) === type)).slice(0, 20)
+    ? requirements.filter(requirement => !requirement.scenarios?.some(scenario => scenarioTestType(scenario.tags) === type)).slice(0, 20)
     : requirements;
   return {
     ...ctx,

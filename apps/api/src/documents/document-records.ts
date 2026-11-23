@@ -122,7 +122,10 @@ export async function currentScenarioRequirements(tx: Prisma.TransactionClient, 
         select: {
           id: true, title: true,
           criteria: { take: 6, orderBy: { id: 'asc' }, select: { text: true } },
-          sources: includeCoverage && { where: { clarification: { not: Prisma.DbNull } }, select: { clarification: true } },
+          sources: includeCoverage && {
+            where: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false },
+            select: { versionId: true, clarification: true },
+          },
           scenarios: includeCoverage && { where: { archivedAt: null }, select: { tags: true } },
         },
       },

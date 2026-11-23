@@ -214,7 +214,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           ? 'El análisis documental cambió. Vuelve a confirmar la generación.'
           : 'La generación no se completó. Revisa el estado antes de volver a intentarlo.');
       } else {
-        setGenerateNotice('Generación completada. Revisa los escenarios abajo.');
+        setGenerateNotice(documentTestTypes.length === 1 && documentTestTypes[0] === 'performance'
+          ? 'Generación de Performance completada. Consulta el estado en Calidad.'
+          : 'Generación completada. Revisa los escenarios abajo.');
       }
       await load();
     } catch (err) {
@@ -383,7 +385,7 @@ function GenerateCta({ score, status, projectStatus, canGenerate, threshold, gen
     </ul>}
   </>}>
     <p className="muted">
-      Revisa los tipos marcados en los documentos de Datos antes de generar los casos.
+      Revisa los tipos pendientes según la documentación marcada en Datos.
     </p>
     <p className="generate-cta__score">
       Preparación · <strong>{pctLabel}</strong> · umbral mínimo {threshold}

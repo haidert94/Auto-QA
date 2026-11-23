@@ -49,6 +49,7 @@ const ipa = { score: 82, status: 'ASSESSED', signals: [
 const generationRequests = [];
 const generationJobId = '60400000-0000-4000-8000-000000000001';
 let generationSelectionBlocked = false;
+const completedDocumentTypes = new Set();
 const pendingFinding = {
   id: 'aadd4574-f8ec-4fa7-aaaa-abc28d39b319', kind: 'USER_STORY', text: 'Como comprador quiero descargar el comprobante.',
   pendingConfirmation: true, pendingReason: 'Falta definir el formato del comprobante.',
@@ -180,6 +181,17 @@ const api = createServer(async (request, response) => {
   if (path === '/api/commerce/me') return send(account);
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   const base = `/api/projects/${projectId}`;
+  if (path === base + '/automation/types/pending') {
+    const assigned = new Set(documents.flatMap(doc => doc.testTypes ?? []));
+    const codes = ['functional_web', 'ux', 'performance', 'manual'].filter(code =>
+      assigned.has(code) && !completedDocumentTypes.has(code));
+    return send({
+      types: codes.map(code => ({ code, available: !generationSelectionBlocked || code !== 'manual' })),
+      hasAssignedDocuments: assigned.size > 0, hasCurrentAnalysis: true, hasUnverifiedTypes: false,
+      verifiable: codes.includes('performance') ? 1 : 4,
+      ambiguous: codes.includes('performance') ? 0 : 1,
+    });
+  }
   if (path === base + '/automation/types/available') {
     const assigned = new Set(documents.flatMap(doc => doc.testTypes ?? []));
     return send(['functional_web', 'ux', 'manual'].map(code => ({
@@ -359,6 +371,16 @@ const api = createServer(async (request, response) => {
     documents.push(document);
     return send([document], 201);
   }
+  if (path.startsWith(base + '/documents/') && path.endsWith('/validation') && request.method === 'PATCH') {
+    const document = documents.find(item => item.id === path.split('/').at(-2));
+    if (!document) return send({ message: 'Documento no encontrado.' }, 404);
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const { validated } = JSON.parse(Buffer.concat(chunks).toString());
+    const reviewed = { ...document, state: validated ? 'VALIDATED' : 'PROCESSED' };
+    documents = documents.map(item => item.id === reviewed.id ? reviewed : item);
+    return send(reviewed);
+  }
   if (path.startsWith(base + '/documents/') && path.endsWith('/test-types') && ['PATCH', 'POST'].includes(request.method)) {
     const document = documents.find(document => document.id === path.split('/').at(-2));
     if (!document) return send({ message: 'Documento no encontrado.' }, 404);
@@ -434,10 +456,25 @@ async function verifyDocumentGenerationConfirmation(page) {
     assert.deepEqual(generationRequests.slice(initialRequests), [
       { url: project.environments[0].baseUrl, documentTestTypes: expected }, { types: expected },
     ]);
-    console.log('PASS confirma los tipos guardados en Datos antes de crear casos.');
+    expected.forEach(code => completedDocumentTypes.add(code));
+    await generate.click();
+    await expect(modal.getByText('La documentación marcada ya pasó por generación.')).toBeVisible();
+    await expect(confirm).toBeDisabled();
+    await cancel.click();
+    documents.push({ ...documents[0], id: randomUUID(), filename: 'performance.md', testTypes: ['performance'] });
+    await generate.click();
+    await expect(modal.getByRole('listitem')).toHaveText(['Performance']);
+    await expect(modal.getByText('1 requisito verificable · 0 pendientes')).toBeVisible();
+    await confirm.click();
+    await expect(page.getByText('Generación de Performance completada. Consulta el estado en Calidad.')).toBeVisible();
+    assert.deepEqual(generationRequests.slice(initialRequests + 2), [
+      { url: project.environments[0].baseUrl, documentTestTypes: ['performance'] }, { types: ['performance'] },
+    ]);
+    console.log('PASS al agregar Performance solo confirma y encola el tipo pendiente.');
   } finally {
     documents = original;
     generationSelectionBlocked = false;
+    completedDocumentTypes.clear();
   }
   await page.getByRole('tab', { name: 'Datos', exact: true }).click();
 }
@@ -471,6 +508,9 @@ async function verifyRequirementClarification(page) {
 
 async function verifyDocumentUploads(page) {
   const original = [...documents];
+  documents = documents.map(document => document.state === 'VALIDATED'
+    ? { ...document, testTypes: ['functional_web', 'manual'], testTypesSource: 'AUTOMATIC' }
+    : document);
   await page.getByRole('button', { name: 'Adjuntar nuevo documento o especificación' }).click();
   const dialog = page.getByRole('dialog', { name: 'Documentos asociados y contratos técnicos' });
   const uploadPanel = dialog.getByRole('region', { name: 'Carga de documentos' });
@@ -484,6 +524,22 @@ async function verifyDocumentUploads(page) {
     await expect(picker).toBeEnabled();
     await expect(picker).toHaveAccessibleName('General');
     await expect(card('spec-checkout.yaml')).toBeVisible();
+    const validated = card('flujos-criticos.md');
+    await validated.getByText('Aplica a: Funcional web · Casos manuales', { exact: true }).click();
+    for (const type of types) {
+      await expect(validated.getByRole('checkbox', { name: type, exact: true })).toBeDisabled();
+    }
+    await expect(validated.getByRole('checkbox', { name: 'Funcional web', exact: true })).toBeChecked();
+    await expect(validated.getByRole('checkbox', { name: 'UX', exact: true })).not.toBeChecked();
+    await validated.getByRole('button', { name: 'Retirar validación', exact: true }).click();
+    await expect(validated.getByRole('checkbox', { name: 'UX', exact: true })).toBeEnabled();
+    await validated.getByRole('checkbox', { name: 'UX', exact: true }).click();
+    await expect(validated.getByRole('checkbox', { name: 'UX', exact: true })).toBeChecked();
+    await validated.getByRole('button', { name: 'Marcar como validado', exact: true }).click();
+    await expect(validated.getByRole('button', { name: 'Retirar validación', exact: true })).toBeEnabled();
+    await expect(picker).toBeEnabled();
+    await expect(validated.getByRole('checkbox', { name: 'UX', exact: true })).toBeDisabled();
+    await expect(validated.getByRole('checkbox', { name: 'UX', exact: true })).toBeChecked();
     await picker.setInputFiles({ name: 'requisitos-demo.md', mimeType: 'text/markdown', buffer: Buffer.from('RF-1: Iniciar sesión.') });
     const functional = card('requisitos-demo.md');
     await expect(functional.getByText('Clasificación por determinar')).toBeVisible();

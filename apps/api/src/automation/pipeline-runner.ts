@@ -15,6 +15,7 @@ import type { PrismaClient } from '@prisma/client';
 import { convertDocument, needsAiFallback, type ConvertedDocument } from './document-converter';
 import { buildReviewPrompt, parseReviewResponse, type ReviewResult } from './review-prompt';
 import { currentScenarioRequirements, documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
+import { readGenerationSources, type DocumentGenerationSources } from './document-generation';
 import { runSelectedAgents } from './agents';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
 
@@ -37,6 +38,7 @@ type Inputs = {
   selection?: string[];
   documentTestTypesConfirmed: boolean;
   documentAnalysisId?: string;
+  documentGenerationSources?: DocumentGenerationSources;
 };
 
 function readInputs(raw: unknown): Inputs {
@@ -51,6 +53,7 @@ function readInputs(raw: unknown): Inputs {
     selection: Array.isArray(safe.selection) ? safe.selection.filter(s => typeof s === 'string') : undefined,
     documentTestTypesConfirmed: Array.isArray(safe.documentTestTypes),
     documentAnalysisId: typeof safe.documentAnalysisId === 'string' ? safe.documentAnalysisId : undefined,
+    documentGenerationSources: safe.documentGenerationSources ? readGenerationSources(safe.documentGenerationSources) : undefined,
   };
 }
 
@@ -167,7 +170,11 @@ async function runGenerationPhase(
     return;
   }
 
-  const prioritized = analysis?.requirements.sort((a, b) => Number(!!b.sources.length) - Number(!!a.sources.length));
+  const prioritized = analysis?.requirements.map(requirement => ({
+    ...requirement,
+    documentVersionIds: requirement.sources.map(source => source.versionId),
+    clarified: requirement.sources.some(source => !!source.clarification),
+  })).sort((a, b) => Number(b.clarified) - Number(a.clarified));
   const requirements = prioritized ?? (selection.some(type => ['functional_web', 'mobile_emulated', 'manual'].includes(type))
     ? await readScenarioRequirements(prisma, claim.projectId)
     : []);
@@ -183,6 +190,7 @@ async function runGenerationPhase(
     review,
     requirements,
     documentTestTypesConfirmed: inputs.documentTestTypesConfirmed,
+    documentGenerationSources: inputs.documentGenerationSources,
   }, { prisma, router });
 
   await mergeStep(prisma, claim.id, 'generating', {

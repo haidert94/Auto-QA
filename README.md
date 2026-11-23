@@ -127,7 +127,7 @@ npm.cmd run test:commerce:e2e
 
 ## Documentación y requisitos
 
-En **Datos → Documentos asociados y contratos técnicos**, **General** ofrece un selector para subir archivos. Al subir un archivo, AutoQA lo convierte a Markdown para una revisión inicial local y marca en **Aplica a** los tipos de prueba que encuentra en su contenido. Cada archivo aparece una sola vez, con todos sus tipos visibles en **Aplica a**. Puedes ajustar esas casillas. La asignación manual se conserva al subir otra versión. El formulario de registro también admite seleccionar o arrastrar archivos. El IPA muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
+En **Datos → Documentos asociados y contratos técnicos**, **General** ofrece un selector para subir archivos. Al subir un archivo, AutoQA lo convierte a Markdown para una revisión inicial local y marca en **Aplica a** los tipos de prueba que encuentra en su contenido. Cada archivo aparece una sola vez, con todos sus tipos visibles en **Aplica a**. Para modificar esas casillas en un documento validado, retira primero la validación. La asignación manual se conserva al subir otra versión. El formulario de registro también admite seleccionar o arrastrar archivos. El IPA muestra los datos disponibles y pendientes. Consulta [la guía documental](docs/DOCUMENTS.md) para configurar la clave local en Windows, probar cada ruta y entender los formatos y límites.
 
 ## API de onboarding
 
@@ -215,7 +215,7 @@ La suite inicia NestJS en un puerto local, usa Prisma y PostgreSQL reales y elim
 
 ### Generación incremental desde el análisis documental
 
-En **Escenarios**, «Generar casos de prueba» usa la selección de tipos de Datos y el análisis vigente. La confirmación indica cuántos requisitos son verificables y cuántos quedaron pendientes. La generación web, móvil y manual conserva el vínculo con el requisito verificable y prioriza requisitos sin escenarios del tipo solicitado.
+En **Escenarios**, «Generar casos de prueba» muestra los tipos con documentos nuevos, versiones nuevas o aclaraciones aprobadas pendientes de generar. Cada agente recibe los requisitos verificables de la documentación pendiente de su tipo. Al agregar un documento exclusivo para Performance, los tipos ya generados con sus versiones previas conservan su cobertura. La generación web, móvil y manual conserva el vínculo con el requisito verificable y prioriza requisitos sin escenarios del tipo solicitado.
 
 En **Datos**, abre «Ambiguos o pendientes», selecciona un requisito e introduce la corrección o adjunta un TXT/Markdown con su texto. Añade un criterio observable y aprueba la aclaración. El IPA se recalcula sin procesar de nuevo el documento; el hallazgo conserva el texto, la versión y la ubicación originales. Si ya había escenarios vinculados, revísalos y confirma su cobertura desde el editor. Los resultados anteriores permanecen asociados al escenario.
 

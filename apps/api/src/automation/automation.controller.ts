@@ -42,6 +42,12 @@ export class AutomationController {
     return this.service.availableTypes(projectId, workspace);
   }
 
+  @Get('types/pending')
+  @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')
+  pendingDocumentTypes(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
+    return this.service.pendingDocumentTypes(projectId, workspace);
+  }
+
   @Post(':id/select')
   @RequiresRole('EDITOR')
   @RequiresPlanCapability('AI_DOCUMENT_ANALYSIS')

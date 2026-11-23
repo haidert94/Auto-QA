@@ -39,6 +39,7 @@ export type UploadedDocument = { originalname: string; buffer: Buffer };
 
 type Transaction = Prisma.TransactionClient;
 const active = { removedAt: null };
+const VALIDATED_TEST_TYPES_MESSAGE = 'Retira la validación para cambiar los tipos de prueba.';
 const projectRelations = { environments: true, roles: true } satisfies Prisma.ProjectInclude;
 
 function digest(bytes: Buffer) {
@@ -129,7 +130,7 @@ export class DocumentsService {
               where: { id: current.id }, select: documentSelect,
               data: {
                 ...(type === 'AUTO' ? {} : { type, classificationSource: 'MANUAL' }),
-                ...assignment,
+                ...(current.versions[0]?.validatedAt ? {} : assignment),
               },
             });
             uploads.push(metadata(duplicates));
@@ -199,6 +200,7 @@ export class DocumentsService {
     if (!document) throw new NotFoundException('Documento no encontrado.');
     if (document.testTypesSource !== 'PENDING') return this.get(projectId, documentId);
     const version = document.versions[0];
+    if (version?.validatedAt) throw new ConflictException(VALIDATED_TEST_TYPES_MESSAGE);
     if (!version?.storageKey || !version.format || !version.uploadedAt) {
       throw new BadRequestException('Carga un archivo antes de solicitar sugerencias.');
     }
@@ -212,13 +214,14 @@ export class DocumentsService {
     });
     return this.prisma.$transaction(async tx => {
       await this.lockProject(tx, projectId);
-      await tx.document.updateMany({
-        where: { id: documentId, projectId, ...active, version: version.number, testTypesSource: 'PENDING' },
-        data: { testTypes, testTypesSource: 'AUTOMATIC' },
+      const current = await tx.document.findFirst({ where: { id: documentId, projectId, ...active }, select: documentSelect });
+      if (!current) throw new NotFoundException('Documento no encontrado.');
+      if (current.versions[0]?.validatedAt) throw new ConflictException(VALIDATED_TEST_TYPES_MESSAGE);
+      if (current.testTypesSource !== 'PENDING') return metadata(current);
+      if (current.versions[0]?.id !== version.id) throw new ConflictException('El documento cambió durante la revisión. Inténtalo de nuevo.');
+      const updated = await tx.document.update({
+        where: { id: documentId }, data: { testTypes, testTypesSource: 'AUTOMATIC' }, select: documentSelect,
       });
-      const updated = await tx.document.findFirst({ where: { id: documentId, projectId, ...active }, select: documentSelect });
-      if (!updated) throw new NotFoundException('Documento no encontrado.');
-      if (updated.testTypesSource === 'PENDING') throw new ConflictException('El documento cambió durante la revisión. Inténtalo de nuevo.');
       return metadata(updated);
     });
   }
@@ -227,9 +230,11 @@ export class DocumentsService {
     return this.prisma.$transaction(async tx => {
       await this.lockProject(tx, projectId);
       const existing = await tx.document.findFirst({
-        where: { projectId, id: documentId, ...active }, select: { id: true },
+        where: { projectId, id: documentId, ...active },
+        select: { versions: { orderBy: { number: 'desc' }, take: 1, select: { validatedAt: true } } },
       });
       if (!existing) throw new NotFoundException('Documento no encontrado.');
+      if (existing.versions[0]?.validatedAt) throw new ConflictException(VALIDATED_TEST_TYPES_MESSAGE);
       const updated = await tx.document.update({
         where: { id: documentId }, data: { testTypes, testTypesSource: 'MANUAL' }, select: documentSelect,
       });

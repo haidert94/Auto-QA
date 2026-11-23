@@ -17,7 +17,11 @@ export type AgentContext = {
   description: string | null;
   review: Pick<ReviewResult, 'stories'>;
   documentTestTypesConfirmed?: boolean;
-  requirements?: Array<{ id: string; title: string; criteria: Array<{ text: string }>; scenarios?: Array<{ tags: string[] }> }>;
+  documentGenerationSources?: import('../document-generation').DocumentGenerationSources;
+  requirements?: Array<{
+    id: string; title: string; criteria: Array<{ text: string }>;
+    scenarios?: Array<{ tags: string[] }>; documentVersionIds?: string[];
+  }>;
 };
 
 export type ScenarioPayload = {
