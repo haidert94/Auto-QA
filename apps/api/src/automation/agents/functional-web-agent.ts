@@ -1,6 +1,7 @@
 // Genera escenarios web con pasos de Playwright o instrucciones de ejecución manual.
 
 import type { Prisma } from '@prisma/client';
+import { recordGeneratedCase } from '../generated-cases';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
 import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
@@ -84,7 +85,7 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
     }
     const tags = buildTags(onlyManual ? MANUAL_SCENARIO_TAG : '@funcional', s.flow, s.tags, s.regression, manual);
     try {
-      await deps.prisma.testScenario.create({
+      await recordGeneratedCase(deps, { kind: 'scenario',
         data: {
           projectId: ctx.projectId,
           title: title.slice(0, 300),
@@ -92,7 +93,7 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
           requirementId,
           tags,
           steps: normalized as unknown as Prisma.InputJsonValue,
-        } as Prisma.TestScenarioUncheckedCreateInput,
+        } as Prisma.TestScenarioCreateManyInput,
       });
       created += 1;
     } catch (error) {

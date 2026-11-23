@@ -79,7 +79,7 @@ export async function runSelectedAgents(
       } satisfies AgentOutcome;
     }
   }
-  const compatibilityAfterBase = ctx.documentTestTypesConfirmed && unique.includes('compatibility');
+  const compatibilityAfterBase = unique.includes('compatibility');
   const outcomes = await Promise.all(unique.filter(type => !compatibilityAfterBase || type !== 'compatibility').map(run));
   if (compatibilityAfterBase) outcomes.push(await run('compatibility'));
   return outcomes;

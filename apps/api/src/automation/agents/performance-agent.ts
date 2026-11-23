@@ -2,6 +2,7 @@
 // un LoadTest (k6) sobre URLs clave detectadas por la IA.
 
 import type { Prisma } from '@prisma/client';
+import { recordGeneratedCase } from '../generated-cases';
 import { type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, requestGeneration, scenarioAnalysisContext } from './agent-types';
 
 type Payload = {
@@ -53,7 +54,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
     const url = typeof a.url === 'string' ? a.url.trim() : '';
     if (!url) { errors.push('audit-' + index + '-sin-url'); continue; }
     try {
-      await deps.prisma.performanceAudit.create({
+      await recordGeneratedCase(deps, { kind: 'lighthouse',
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
@@ -61,7 +62,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
           url: url.slice(0, 2048),
           status: 'QUEUED',
           createdByUserId: null,
-        } as Prisma.PerformanceAuditUncheckedCreateInput,
+        } as Prisma.PerformanceAuditCreateManyInput,
       });
       created += 1;
     } catch (error) {
@@ -77,7 +78,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
     const profile = lt.profile && PROFILES[lt.profile] ? lt.profile : 'suave';
     if (!name || !url) { errors.push('load-' + index + '-incompleto'); continue; }
     try {
-      await deps.prisma.loadTest.create({
+      await recordGeneratedCase(deps, { kind: 'load',
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
@@ -86,7 +87,7 @@ export async function runPerformanceAgent(ctx: AgentContext, deps: AgentDeps): P
           url: url.slice(0, 2048),
           stages: PROFILES[profile] as unknown as Prisma.InputJsonValue,
           status: 'QUEUED',
-        } as Prisma.LoadTestUncheckedCreateInput,
+        } as Prisma.LoadTestCreateManyInput,
       });
       created += 1;
     } catch (error) {

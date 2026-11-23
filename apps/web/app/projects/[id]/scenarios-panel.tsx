@@ -38,10 +38,10 @@ const generationIssues: Record<GenerationIssue, string> = {
   'agent-error': 'El agente no pudo guardar casos válidos.',
 };
 
-function generationOutcomeDetails(generation: GenerationSummary | undefined) {
+function generationOutcomeDetails(generation: GenerationSummary | undefined, onlyFailingTypes: boolean) {
   const typesByIssue = new Map<GenerationIssue, string[]>();
   for (const outcome of generation?.outcomes ?? []) {
-    if (outcome.created !== 0) continue;
+    if (outcome.created !== 0 || (onlyFailingTypes && !outcome.issue)) continue;
     const label = Object.hasOwn(TEST_TYPE_LABELS, outcome.type) ? TEST_TYPE_LABELS[outcome.type as TestTypeCode] : 'Tipo de prueba';
     const issue = outcome.issue ?? (outcome.usedFallback && outcome.type !== 'compatibility' ? 'ai-unavailable' : 'no-cases');
     const labels = typesByIssue.get(issue) ?? [];
@@ -53,6 +53,8 @@ function generationOutcomeDetails(generation: GenerationSummary | undefined) {
 const generationErrors: Record<string, string> = {
   'ipa-traceability-blocked': 'La generación está bloqueada por el IPA. Revisa la trazabilidad y los pendientes en Datos.',
   'document-analysis-changed': 'El análisis documental cambió. Vuelve a confirmar la generación.',
+  'generation-worker-outdated': 'El proceso que atendió la solicitud necesita una actualización de Explorer. Vuelve a intentarlo cuando se actualice.',
+  'generation-save-failed': 'El guardado del lote falló. Vuelve a intentar la generación de todos los tipos seleccionados.',
   'review-missing': 'Explorer no pudo usar el análisis de la solicitud. Verifica que Explorer y la aplicación estén en la misma versión.',
   'project-missing': 'El proyecto ya no está disponible para generar casos.',
   'selection-empty': 'La solicitud quedó sin tipos de prueba. Abre de nuevo la confirmación.',
@@ -208,6 +210,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
         if (response.ok) {
           const job: AutomationSummary = await response.json();
           if (job.stage === 'generated') return job;
+          if (job.status === 'COMPLETED' && job.stage === 'review-ready') {
+            return { ...job, status: 'FAILED', errorCode: 'generation-worker-outdated' };
+          }
           if (job.status === 'FAILED' || job.status === 'CANCELED') return job;
         }
       } catch {/* sigue reintentando hasta el timeout */}
@@ -248,16 +253,18 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       const done = await waitForGeneration(newJob.id);
       await Promise.all([load(), loadQuality()]);
       if (!done) {
-        setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios irán apareciendo según termine cada agente.');
+        setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios se publicarán juntos cuando todos los tipos estén listos.');
         return;
       }
 
       const reference = 'Referencia de generación ' + done.id.slice(0, 8) + '.';
       const generation = done.result?.generation;
-      const details = generationOutcomeDetails(generation);
-      if (done.errorCode === 'generation-empty' || (done.status === 'COMPLETED' && generation?.totalCreated === 0)) {
+      const incomplete = done.errorCode === 'generation-incomplete';
+      const details = generationOutcomeDetails(generation, incomplete);
+      if (incomplete || done.errorCode === 'generation-empty' || (done.status === 'COMPLETED' && generation?.totalCreated === 0)) {
         setGenerateNotice('');
-        setError(['No se guardó ningún escenario.', details, reference].filter(Boolean).join(' '));
+        const message = incomplete ? 'No se guardó el lote porque faltaron casos válidos para uno o más tipos.' : 'No se guardó ningún escenario.';
+        setError([message, details, reference].filter(Boolean).join(' '));
       } else if (done.status === 'FAILED' || done.status === 'CANCELED') {
         setGenerateNotice('');
         const reason = done.status === 'CANCELED' ? 'La generación fue cancelada.'

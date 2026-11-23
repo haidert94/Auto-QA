@@ -7,6 +7,7 @@ import type { AiResponse } from '../../ai/ai-provider';
 import type { AiRouter, AiRouterRequest } from '../../ai/ai-router';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import type { ReviewResult } from '../review-prompt';
+import type { GeneratedCase } from '../generated-cases';
 
 export type AgentContext = {
   projectId: string;
@@ -48,8 +49,9 @@ export type AgentOutcome = {
 };
 
 export type AgentDeps = {
-  prisma: PrismaClient;
+  prisma: Pick<PrismaClient, 'testScenario' | 'monitor' | 'performanceAudit' | 'loadTest' | 'uxAudit'>;
   router: AiRouter;
+  batch?: GeneratedCase[];
 };
 
 // Utilidad: extrae un JSON del texto devuelto por la IA. Admite tanto

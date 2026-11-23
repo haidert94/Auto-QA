@@ -3,19 +3,16 @@
 //     1. convertir docs a Markdown (libs, fallback IA si sale vacío)
 //     2. llamar al agente revisor (AiRouter operation document-analysis)
 //     3. deja el job en status=COMPLETED stage='review-ready' con el IPA
-//   Fase B: el cliente escoge tipos vía API -> stage='selection-done'
-//   Fase C (stage='selection-done'):
-//     4. ejecuta en paralelo los agentes de generación seleccionados
-//     5. deja el job en status=COMPLETED stage='generated' con el resumen
-//
-// Un mismo registro AutomationJob puede ser reclamado dos veces por el
-// worker: primero con stage='pending' y luego con stage='selection-done'.
+//   Fase B: la API encola los tipos confirmados en stage='generation-batch-ready'.
+//   Fase C: los agentes preparan el lote y el worker lo guarda en una sola transacción.
 
 import type { PrismaClient } from '@prisma/client';
 import { convertDocument, needsAiFallback, type ConvertedDocument } from './document-converter';
 import { buildReviewPrompt, parseReviewResponse, type ReviewResult } from './review-prompt';
 import { currentScenarioRequirements } from '../documents/document-records';
 import { summarizeGeneration } from './generation-result';
+import { saveGeneratedBatch, type GeneratedCase } from './generated-cases';
+import { GENERATION_BATCH_READY } from './generation-stage';
 import { currentReadiness } from '../documents/readiness';
 import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { readGenerationSources, type DocumentGenerationSources } from './document-generation';
@@ -77,7 +74,7 @@ export async function runAutomation(
   }
 
   try {
-    if (claim.priorStage === 'selection-done') {
+    if (claim.priorStage === GENERATION_BATCH_READY || claim.priorStage === 'selection-done') {
       await runGenerationPhase(prisma, claim, router, project, inputs, log);
     } else {
       await runReviewPhase(prisma, claim, router, project, inputs, log);
@@ -181,6 +178,7 @@ async function runGenerationPhase(
     clarified: requirement.sources.some(source => !!source.clarification),
   })).sort((a, b) => Number(b.clarified) - Number(a.clarified));
   const environmentId = project.environments[0]?.id ?? null;
+  const batch: GeneratedCase[] = [];
   const outcomes = await runSelectedAgents(selection, {
     projectId: claim.projectId,
     organizationId: project.organizationId,
@@ -194,29 +192,59 @@ async function runGenerationPhase(
     documentTestTypesConfirmed: inputs.documentTestTypesConfirmed,
     documentGenerationSources: inputs.documentGenerationSources,
     documentRequirementTypes: inputs.documentRequirementTypes,
-  }, { prisma, router });
+  }, { prisma, router, batch });
 
   await mergeStep(prisma, claim.id, 'generating', {
-    outcomes: outcomes.map(o => ({ type: o.type, created: o.created, usedFallback: o.usedFallback, model: o.model, errors: o.errors.slice(0, 5) })),
+    outcomes: outcomes.map(o => ({ type: o.type, prepared: o.created, usedFallback: o.usedFallback, model: o.model, errors: o.errors.slice(0, 5) })),
   });
 
   const generation = summarizeGeneration(outcomes);
-  const hasCases = generation.totalCreated > 0;
-  await prisma.automationJob.update({
-    where: { id: claim.id },
-    data: {
-      status: hasCases ? 'COMPLETED' : 'FAILED',
-      stage: hasCases ? 'generated' : 'generating',
-      errorCode: hasCases ? null : 'generation-empty',
-      completedAt: new Date(),
-      result: {
-        ...(previous?.result as Record<string, unknown> ?? {}),
-        generation: { selection, ...generation },
-      } as never,
-    },
-  });
-  log(hasCases ? 'INFO' : 'WARN', (hasCases ? 'generated' : 'generation-empty')
-    + ' · ' + outcomes.map(o => o.type + '=' + o.created).join(' '));
+  const result = {
+    ...(previous?.result as Record<string, unknown> ?? {}),
+    generation: { selection, ...generation },
+  };
+  const incomplete = selection.some(type => !outcomes.some(outcome => outcome.type === type && outcome.created > 0));
+  if (incomplete) {
+    const errorCode = batch.length ? 'generation-incomplete' : 'generation-empty';
+    await prisma.automationJob.update({
+      where: { id: claim.id, stage: 'generating' },
+      data: {
+        status: 'FAILED', errorCode, completedAt: new Date(),
+        result: { ...result, generation: {
+          selection, totalCreated: 0, outcomes: generation.outcomes.map(outcome => ({ ...outcome, created: 0 })),
+        } } as never,
+      },
+    });
+    log('WARN', errorCode + ' · ' + outcomes.map(outcome => outcome.type + '=' + outcome.created).join(' '));
+    return;
+  }
+
+  try {
+    const published = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Project" WHERE id = ${claim.projectId} FOR UPDATE`;
+      const latest = await currentReadiness(tx, claim.projectId);
+      if (latest.analysis?.id !== analysis.id || latest.ipa.status !== 'ASSESSED' || latest.ipa.score < IPA_AUTOMATION_THRESHOLD) {
+        await tx.automationJob.update({
+          where: { id: claim.id, stage: 'generating' },
+          data: { status: 'FAILED', errorCode: 'document-analysis-changed', completedAt: new Date() },
+        });
+        return false;
+      }
+      await saveGeneratedBatch(tx, batch);
+      await tx.automationJob.update({
+        where: { id: claim.id, stage: 'generating' },
+        data: { status: 'COMPLETED', stage: 'generated', errorCode: null, completedAt: new Date(), result: result as never },
+      });
+      return true;
+    }, { timeout: 15000 });
+    if (published) log('INFO', 'generated · ' + outcomes.map(outcome => outcome.type + '=' + outcome.created).join(' '));
+  } catch (error) {
+    log('ERROR', 'generation-save-failed: ' + (error instanceof Error ? error.name : 'unknown'));
+    await prisma.automationJob.updateMany({
+      where: { id: claim.id, stage: 'generating' },
+      data: { status: 'FAILED', errorCode: 'generation-save-failed', completedAt: new Date() },
+    });
+  }
 }
 
 async function setStage(prisma: PrismaClient, jobId: string, stage: string): Promise<void> {

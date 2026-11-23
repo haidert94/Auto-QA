@@ -17,7 +17,7 @@ type Review = {
   recommendation: string;
 };
 
-type Outcome = { type: string; created: number; usedFallback: boolean; model: string; errorCount: number };
+type Outcome = { type: string; created: number; usedFallback: boolean; model: string; errorCount: number; issue?: string };
 type Generation = { selection: string[]; outcomes: Outcome[]; totalCreated: number };
 
 type Job = {
@@ -35,6 +35,7 @@ const STAGE_LABELS: Record<string, string> = {
   reviewing: 'Analizando con IA',
   'review-ready': 'Diagnóstico listo',
   'selection-done': 'Selección guardada — en cola para generar',
+  'generation-batch-ready': 'Selección guardada — en cola para generar',
   generating: 'Generando casos de prueba',
   generated: 'Casos generados',
 };
@@ -46,6 +47,7 @@ const TYPE_LABELS: Record<string, string> = {
   availability: 'Disponibilidad',
   performance: 'Performance',
   ux: 'UX',
+  manual: 'Casos manuales',
 };
 
 type TestTypeOption = { code: string; label: string; description: string; available: boolean };
@@ -117,8 +119,7 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
         return;
       }
       setSelectionDone(true);
-      // Forzamos un refetch inmediato para re-armar el polling con el
-      // nuevo stage='selection-done' (status=QUEUED otra vez).
+      // La consulta vuelve a activar el seguimiento con el lote en cola.
       try {
         const check = await fetch(`/api/projects/${projectId}/automation/${job.id}`, { cache: 'no-store' });
         if (check.ok) {
@@ -173,7 +174,7 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
 
   // Polling: corre mientras el job esté QUEUED o RUNNING. Se detiene al
   // llegar a COMPLETED/FAILED, pero vuelve a armarse si acceptSelection
-  // re-encola el job (status=QUEUED stage='selection-done').
+  // vuelve a poner el trabajo en cola.
   useEffect(() => {
     if (!job) return;
     if (job.status !== 'QUEUED' && job.status !== 'RUNNING') return;
@@ -250,8 +251,20 @@ export function AutomateWizard({ projectId, projectName, suggestedUrl }: {
   // Mientras no haya review-ready, muestra pantalla de progreso. Pero si
   // ya tenemos review-ready y el usuario está generando, mantenemos la
   // IPA visible con un banner inferior.
-  const generating = job?.stage === 'selection-done' || job?.stage === 'generating';
+  const generating = job?.stage === 'selection-done' || job?.stage === 'generation-batch-ready' || job?.stage === 'generating';
   const generated = job?.stage === 'generated';
+  const outdatedWorker = selectionDone && job?.status === 'COMPLETED' && job.stage === 'review-ready';
+  if (outdatedWorker || (generating && (job?.status === 'FAILED' || job?.status === 'CANCELED'))) {
+    const missingTypes = job?.result?.generation?.outcomes.filter(outcome => outcome.issue)
+      .map(outcome => TYPE_LABELS[outcome.type] ?? outcome.type) ?? [];
+    return <section className="automate-progress">
+      <h2>El lote quedó pendiente</h2>
+      <p role="alert">No se guardaron casos nuevos. {outdatedWorker
+        ? 'Actualiza Explorer antes de reintentar.'
+        : missingTypes.length ? 'Tipos sin casos válidos: ' + missingTypes.join(', ') + '.' : 'Vuelve a intentar la generación.'}</p>
+      <button type="button" onClick={() => { setJob(null); setSelectionDone(false); setStep(0); }}>Volver a intentar</button>
+    </section>;
+  }
   if ((step === 1 || !job?.result) && !generating && !generated) {
     const stageLabel = STAGE_LABELS[job?.stage ?? 'pending'] ?? job?.stage ?? 'Procesando…';
     const done = job?.status === 'FAILED';

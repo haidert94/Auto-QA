@@ -2,6 +2,7 @@
 // IA vincule con las historias y requisitos analizados.
 
 import type { Prisma } from '@prisma/client';
+import { recordGeneratedCase } from '../generated-cases';
 import { type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, requestGeneration, scenarioAnalysisContext } from './agent-types';
 
 type Payload = { monitors?: Array<{ requirementId?: string; name?: string; url?: string; intervalMinutes?: number }> };
@@ -44,7 +45,7 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
     if (!name || !url) { errors.push('monitor-' + index + '-incompleto'); continue; }
     const intervalMinutes = Math.min(Math.max(typeof m.intervalMinutes === 'number' ? m.intervalMinutes : 15, 5), 60);
     try {
-      await deps.prisma.monitor.create({
+      await recordGeneratedCase(deps, { kind: 'monitor',
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
@@ -55,7 +56,7 @@ export async function runAvailabilityAgent(ctx: AgentContext, deps: AgentDeps): 
           timeoutMs: 10000,
           notifyEmails: [],
           createdByUserId: null,
-        } as Prisma.MonitorUncheckedCreateInput,
+        } as Prisma.MonitorCreateManyInput,
       });
       created += 1;
     } catch (error) {

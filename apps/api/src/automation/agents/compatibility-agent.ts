@@ -6,6 +6,7 @@
 // Cada variante conserva la historia o requisito del caso base.
 
 import type { Prisma } from '@prisma/client';
+import { recordGeneratedCase } from '../generated-cases';
 import { hasPlaywrightAssertion, readGeneratorSteps } from '../../scenarios/playwright-generator';
 import { COMPATIBILITY_SCENARIO_TAG, COMPATIBILITY_SCENARIO_TAGS, MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { linkedRequirementId, type AgentContext, type AgentDeps, type AgentOutcome } from './agent-types';
@@ -34,7 +35,13 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
     select: { title: true, requirementId: true, steps: true, expectedResult: true, tags: true } as const,
   });
 
-  const base = existing.filter(scenario => linkedRequirementId(ctx, scenario.requirementId)
+  const staged = (deps.batch ?? []).flatMap(candidate => {
+    if (candidate.kind !== 'scenario' || candidate.data.projectId !== ctx.projectId) return [];
+    const { title, requirementId, expectedResult, steps, tags } = candidate.data;
+    if (!Array.isArray(tags) || tags.includes(MANUAL_SCENARIO_TAG) || COMPATIBILITY_SCENARIO_TAGS.some(tag => tags.includes(tag))) return [];
+    return [{ title, requirementId, expectedResult, steps, tags }];
+  });
+  const base = [...existing, ...staged].filter(scenario => linkedRequirementId(ctx, scenario.requirementId)
     && hasPlaywrightAssertion(readGeneratorSteps(scenario.steps))).slice(0, 5);
   const errors = base.length ? [] : ['compatibility-no-linked-base'];
   let created = 0;
@@ -46,11 +53,13 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
       const tags = [...inherited.slice(0, 20 - required.length), ...required];
       try {
         const title = ('[COMPAT:' + browser.enum + '] ' + scenario.title).slice(0, 300);
-        if (await deps.prisma.testScenario.findFirst({
+        const alreadyStaged = deps.batch?.some(candidate => candidate.kind === 'scenario' &&
+          candidate.data.title === title && candidate.data.requirementId === scenario.requirementId);
+        if (alreadyStaged || await deps.prisma.testScenario.findFirst({
           where: { projectId: ctx.projectId, archivedAt: null, title, requirementId: scenario.requirementId },
           select: { id: true },
         })) continue;
-        await deps.prisma.testScenario.create({
+        await recordGeneratedCase(deps, { kind: 'scenario',
           data: {
             projectId: ctx.projectId,
             title,
@@ -58,7 +67,7 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
             expectedResult: scenario.expectedResult,
             tags,
             steps: scenario.steps as Prisma.InputJsonValue,
-          } as Prisma.TestScenarioUncheckedCreateInput,
+          } as Prisma.TestScenarioCreateManyInput,
         });
         created += 1;
       } catch (error) {

@@ -99,6 +99,8 @@ test('la generación usa los requisitos de la versión documental vigente del pr
   const generationUpdates = [];
   const signature = createHash('sha256').update(JSON.stringify(['rules-v1', [['document', 'version']]])).digest('hex');
   const prisma = {
+    async $transaction(fn) { return fn(this); },
+    async $queryRaw() { return []; },
     project: { async findUnique() { return readyProject; }, async findUniqueOrThrow() { return readyProject; } },
     automationJob: {
       async findUnique() { return { result: { review: { stories: [] } }, steps: {} }; },
@@ -120,7 +122,7 @@ test('la generación usa los requisitos de la versión documental vigente del pr
         };
       },
     },
-    testScenario: { async count() { return 0; }, async create({ data }) { saved.push(data); } },
+    testScenario: { async count() { return 0; }, async createMany({ data }) { saved.push(...data); } },
   };
   await runAutomation(prisma, {
     id: 'job', projectId: 'project', priorStage: 'selection-done', runKey: null,

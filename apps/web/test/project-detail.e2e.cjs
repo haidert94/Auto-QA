@@ -208,6 +208,13 @@ const api = createServer(async (request, response) => {
     })));
   }
   if (path === base + '/automation/' + generationJobId && request.method === 'GET') {
+    if (generationErrorCode === 'generation-incomplete') return send({
+      id: generationJobId, status: 'FAILED', stage: 'generating', errorCode: generationErrorCode,
+      result: { generation: { totalCreated: 0, outcomes: [
+        { type: 'performance', created: 0, usedFallback: false },
+        { type: 'ux', created: 0, usedFallback: false, issue: 'no-cases' },
+      ] } },
+    });
     if (generationErrorCode) return send({
       id: generationJobId, status: 'FAILED', stage: 'generating', errorCode: generationErrorCode,
     });
@@ -638,6 +645,20 @@ async function verifyDocumentGenerationConfirmation(page) {
     const failure = page.getByRole('alert').filter({ hasText: 'Explorer no pudo usar el análisis' });
     await expect(failure).toContainText('Referencia de generación ' + generationJobId.slice(0, 8));
     console.log('PASS Escenarios indica la causa y la referencia cuando Explorer rechaza la generación.');
+
+    documents.push({ ...documents[0], id: randomUUID(), filename: 'ux.md', testTypes: ['ux'] });
+    generationErrorCode = 'generation-incomplete';
+    await generate.click();
+    await expect(modal.getByRole('listitem')).toHaveText(['UX', 'Performance']);
+    await confirm.click();
+    const partial = page.getByRole('alert').filter({ hasText: 'No se guardó el lote' });
+    await expect(partial).toContainText('UX · El agente no devolvió casos para estos requisitos.');
+    await expect(partial).not.toContainText('Performance');
+    await expect(page.getByRole('tab', { name: 'Escenarios (5)', exact: true })).toBeVisible();
+    await generate.click();
+    await expect(modal.getByRole('listitem')).toHaveText(['UX', 'Performance']);
+    await cancel.click();
+    console.log('PASS un lote incompleto conserva la lista y permite reintentar todos los tipos pendientes.');
   } finally {
     documents = original;
     checkScenarioTraceability = false;

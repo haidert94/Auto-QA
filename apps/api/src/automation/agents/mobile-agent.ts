@@ -3,6 +3,7 @@
 // elegir el dispositivo en el panel de runs.
 
 import type { Prisma } from '@prisma/client';
+import { recordGeneratedCase } from '../generated-cases';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
 import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
@@ -67,7 +68,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     }
     const tags = buildTags('@mobile', s.flow, s.tags, s.regression, manual);
     try {
-      await deps.prisma.testScenario.create({
+      await recordGeneratedCase(deps, { kind: 'scenario',
         data: {
           projectId: ctx.projectId,
           title: (title.startsWith('[MOBILE]') ? title : '[MOBILE] ' + title).slice(0, 300),
@@ -75,7 +76,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
           requirementId,
           tags,
           steps: steps as unknown as Prisma.InputJsonValue,
-        } as Prisma.TestScenarioUncheckedCreateInput,
+        } as Prisma.TestScenarioCreateManyInput,
       });
       created += 1;
     } catch (error) {

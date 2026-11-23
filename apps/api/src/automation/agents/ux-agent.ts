@@ -3,6 +3,7 @@
 // el análisis real (Playwright + DOM a11y + IA) ocurre en ux-runner.ts.
 
 import type { Prisma } from '@prisma/client';
+import { recordGeneratedCase } from '../generated-cases';
 import { type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, requestGeneration, scenarioAnalysisContext } from './agent-types';
 
 type Payload = { audits?: Array<{ requirementId?: string; url?: string }> };
@@ -43,14 +44,14 @@ export async function runUxAgent(ctx: AgentContext, deps: AgentDeps): Promise<Ag
     const url = typeof a.url === 'string' ? a.url.trim() : '';
     if (!url) { errors.push('ux-' + index + '-sin-url'); continue; }
     try {
-      await deps.prisma.uxAudit.create({
+      await recordGeneratedCase(deps, { kind: 'ux',
         data: {
           projectId: ctx.projectId,
           environmentId: ctx.environmentId,
           requirementId,
           url: url.slice(0, 2048),
           status: 'QUEUED',
-        } as Prisma.UxAuditUncheckedCreateInput,
+        } as Prisma.UxAuditCreateManyInput,
       });
       created += 1;
     } catch (error) {

@@ -444,7 +444,7 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   assert.deepEqual(saved.inputs.documentGenerationSources, {
     performance: [{ versionId: uploadPerf.data[0].currentVersion.id, clarifiedAt: null }],
   });
-  assert.equal(saved.stage, 'selection-done');
+  assert.equal(saved.stage, 'generation-batch-ready');
   const perfRequirement = second.data.analysis.findings.find(item => item.kind === 'NON_FUNCTIONAL' && item.requirementId);
   assert.ok(perfRequirement);
   const prompts = [];
@@ -554,7 +554,7 @@ test('reintenta Móvil y Manual sin repetir Funcional y usa la categoría de cad
   assert.deepEqual((await read(base + '/types/pending')).data.types, []);
 });
 
-test('un proyecto nuevo procesa los siete tipos y recupera respuestas incompletas de Web y Manual', async () => {
+test('los siete tipos se guardan juntos y el lote entero sigue pendiente si un tipo o el guardado falla', async () => {
   const types = ['functional_web', 'mobile_emulated', 'compatibility', 'availability', 'performance', 'ux', 'manual'];
   const source = [
     'HU-1: Consultar el catálogo web.',
@@ -591,22 +591,30 @@ test('un proyecto nuevo procesa los siete tipos y recupera respuestas incompleta
   const base = '/' + fresh.id + '/automation';
   const pending = await read(base + '/types/pending');
   assert.deepEqual(pending.data.types.map(type => type.code), types);
+  const extraRequirement = await prisma.requirement.create({ data: {
+    projectId: fresh.id, title: 'Conservar un caso anterior',
+  } });
+  const extraScenario = await prisma.testScenario.create({ data: {
+    projectId: fresh.id, requirementId: extraRequirement.id, title: 'Escenario existente',
+    tags: ['@manual'], steps: [{ ordinal: 1, action: 'Consultar el caso existente.' }],
+  } });
   const headers = { ...authorized, 'Content-Type': 'application/json' };
-  const job = await request(base, {
-    method: 'POST', headers, body: JSON.stringify({ url: 'https://example.test', documentTestTypes: types }),
-  });
-  assert.equal(job.status, 201, JSON.stringify(job.data));
-  const selected = await request(base + '/' + job.data.id + '/select', {
-    method: 'POST', headers, body: JSON.stringify({ types }),
-  });
-  assert.equal(selected.status, 201, JSON.stringify(selected.data));
-  const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  async function queueBatch() {
+    const job = await request(base, {
+      method: 'POST', headers, body: JSON.stringify({ url: 'https://example.test', documentTestTypes: types }),
+    });
+    assert.equal(job.status, 201, JSON.stringify(job.data));
+    const selected = await request(base + '/' + job.data.id + '/select', {
+      method: 'POST', headers, body: JSON.stringify({ types }),
+    });
+    assert.equal(selected.status, 201, JSON.stringify(selected.data));
+    return prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+  }
   const { runAutomation } = require('../dist/automation/pipeline-runner');
   const retries = [];
   const expectedSteps = [{ action: 'navigate: /' }, { action: 'expect-text: Catálogo' }];
-  await runAutomation(prisma, {
-    id: saved.id, projectId: fresh.id, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
-  }, {
+  let failManual = true;
+  const router = {
     async dispatch({ prompt, operation }) {
       const url = 'https://example.test/';
       const quality = { requirementId: 'HU-1', url };
@@ -620,15 +628,64 @@ test('un proyecto nuevo procesa los siete tipos y recupera respuestas incompleta
       const manual = prompt.includes('Genera hasta 5 casos manuales');
       if (!prompt.includes('Segundo intento')) return { model: 'test', text: '{"scenarios":[{"title":"Respuesta cortada' };
       retries.push(manual ? 'manual' : 'functional_web');
+      if (manual && failManual) return respond({ scenarios: [] });
       return manual ? respond({ scenarios: [{
         title: 'Revisar comprobante', mode: 'manual', requirementId: 'HU-3',
         expectedResult: 'El comprobante incluye la fecha del pedido.',
         steps: [{ action: 'Abre el comprobante.', expected: 'Se ve la fecha del pedido.' }],
       }] }) : respond({ scenarios: [{ title: 'Mostrar catálogo web', requirementId: 'HU-1', steps: expectedSteps }] });
     },
+  };
+  async function runBatch(database = prisma) {
+    const job = await queueBatch();
+    await runAutomation(database, {
+      id: job.id, projectId: fresh.id, inputs: job.inputs, runKey: job.runKey, priorStage: job.stage,
+    }, router);
+    return read(base + '/' + job.id);
+  }
+
+  async function checkNoPartialCases() {
+    const where = { projectId: fresh.id };
+    assert.deepEqual(await prisma.testScenario.findMany({ where, select: { id: true } }), [{ id: extraScenario.id }]);
+    assert.equal(await prisma.monitor.count({ where }), 0);
+    assert.equal(await prisma.performanceAudit.count({ where }), 0);
+    assert.equal(await prisma.loadTest.count({ where }), 0);
+    assert.equal(await prisma.uxAudit.count({ where }), 0);
+    assert.deepEqual((await read(base + '/types/pending')).data.types.map(type => type.code), types);
+  }
+
+  const incomplete = await runBatch();
+  assert.equal(incomplete.data.status, 'FAILED');
+  assert.equal(incomplete.data.errorCode, 'generation-incomplete');
+  assert.equal(incomplete.data.result.generation.totalCreated, 0);
+  assert.ok(incomplete.data.result.generation.outcomes.every(outcome => outcome.created === 0));
+  assert.equal(incomplete.data.result.generation.outcomes.find(outcome => outcome.type === 'manual').issue, 'no-cases');
+  await checkNoPartialCases();
+
+  failManual = false;
+  let reachedLoadWrite = false;
+  const databaseWithWriteError = new Proxy(prisma, {
+    get(target, key) {
+      if (key !== '$transaction') return target[key];
+      return (fn, options) => target.$transaction(tx => fn(new Proxy(tx, {
+        get(client, model) {
+          if (model !== 'loadTest') return client[model];
+          return { async createMany() {
+            reachedLoadWrite = true;
+            throw new Error('Error simulado al guardar la prueba de carga.');
+          } };
+        },
+      })), options);
+    },
   });
+  const failedSave = await runBatch(databaseWithWriteError);
+  assert.equal(reachedLoadWrite, true);
+  assert.equal(failedSave.data.errorCode, 'generation-save-failed');
+  await checkNoPartialCases();
+
+  retries.length = 0;
+  const finished = await runBatch();
   assert.deepEqual(retries.sort(), ['functional_web', 'manual']);
-  const finished = await read(base + '/' + saved.id);
   assert.equal(finished.data.status, 'COMPLETED');
   assert.equal(finished.data.result.generation.totalCreated, 13);
   assert.deepEqual(finished.data.result.generation.outcomes.map(({ type }) => type).sort(), [...types].sort());

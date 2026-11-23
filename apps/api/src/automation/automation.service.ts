@@ -8,6 +8,7 @@ import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { PrismaService } from '../prisma.service';
 import { documentGenerationScope, readGenerationSources, type DocumentGenerationSources } from './document-generation';
 import { readDocumentRequirementTypes, type DocumentRequirementTypes } from './document-requirement-types';
+import { GENERATION_BATCH_READY } from './generation-stage';
 import { CreateAutomationDto } from './dto/create-automation.dto';
 import { SelectTestsDto } from './dto/select-tests.dto';
 import { ALL_TEST_TYPES, TEST_TYPE_META, type AutomationTestType } from './test-types';
@@ -152,7 +153,7 @@ export class AutomationService {
         data: {
           inputs: inputs as unknown as Prisma.InputJsonValue,
           status: 'QUEUED',
-          stage: 'selection-done',
+          stage: GENERATION_BATCH_READY,
           completedAt: null,
         },
       });
@@ -163,7 +164,7 @@ export class AutomationService {
       await this.prisma.$transaction(async tx => {
         await tx.$queryRaw`SELECT id FROM "Project" WHERE id = ${projectId} FOR UPDATE`;
         const active = await tx.automationJob.findFirst({
-          where: { projectId, status: { in: ['QUEUED', 'RUNNING'] }, stage: { in: ['selection-done', 'generating'] } },
+          where: { projectId, status: { in: ['QUEUED', 'RUNNING'] }, stage: { in: ['selection-done', GENERATION_BATCH_READY, 'generating'] } },
           select: { id: true },
         });
         if (active) throw new ConflictException('Ya se están generando casos para este proyecto.');
