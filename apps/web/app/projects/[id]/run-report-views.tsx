@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Download, ExternalLink, Image as ImageIcon, PlayCircle, X } from 'lucide-react';
+import { Download, ExternalLink, Image as ImageIcon, X } from 'lucide-react';
 import { dateText, durationText, isManualRun, milliseconds, outcome, resultDuration, resultLabels, runLabels, runTitle, runtime, type ReportRun } from './run-report-data';
-import { ScreenshotCarouselModal, VideoPlayerModal } from './evidence-modal';
-import { ManualEvidenceButton, ManualEvidencePreview } from './manual-evidence';
+import { RunEvidenceModal } from './evidence-modal';
+import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
+import { ManualEvidenceButton } from './manual-evidence';
 
 export type RunFilter = 'all' | 'passed' | 'failed' | 'blocked' | 'skipped' | 'pending' | 'empty';
 export const filterLabels: Record<RunFilter, string> = { all: 'Todos', passed: 'Exitosos', failed: 'Fallidos', blocked: 'Bloqueados', skipped: 'Omitidos', pending: 'En cola / curso', empty: 'Sin resultado' };
@@ -23,29 +24,21 @@ export function TraceLink({ projectId, run, resultId }: { projectId: string; run
     download={`trace-${resultId}.zip`} aria-label={`Descargar traza ${resultId.slice(0, 8)} de ${runTitle(run)}`}><Download size={12} />Traza</a>;
 }
 
-// Botón de evidencias contextual: para escenarios manuales, abre el modal
-// de carga/edición de evidencias. Para automatizados, usa imagen (carrusel)
-// en PASS, video en FAIL. Siempre deja disponible el fallback de descarga
-// del zip de trace para QA avanzado.
 export function EvidenceAction({ projectId, run, result }: {
   projectId: string; run: ReportRun; result: { id: string; status: string; evidenceKey?: string | null };
 }) {
-  const [open, setOpen] = useState<'carousel' | 'video' | null>(null);
-  if (isManualRun(run) && run.scenarioId) {
-    return <ManualEvidenceButton projectId={projectId} scenarioId={run.scenarioId}
-      resultId={result.id} currentStatus={result.status as 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED'}
-      onSaved={() => { if (typeof window !== 'undefined') window.location.reload(); }} />;
-  }
-  const failed = result.status === 'FAILED' || result.status === 'BLOCKED';
+  const [open, setOpen] = useState(false);
+  if (!isReportableRunStatus(run.status)) return null;
   const label = runTitle(run);
+  const manualScenarioId = isManualRun(run) ? run.scenarioId : null;
   return <>
-    {failed
-      ? <button type="button" className="run-trace-link" onClick={() => setOpen('video')}
-        aria-label={`Ver video del fallo de ${label}`}><PlayCircle size={12} /> Video</button>
-      : <button type="button" className="run-trace-link" onClick={() => setOpen('carousel')}
-        aria-label={`Ver screenshots por paso de ${label}`}><ImageIcon size={12} /> Pasos</button>}
-    {open === 'carousel' && <ScreenshotCarouselModal projectId={projectId} runId={run.id} resultId={result.id} title={label} onClose={() => setOpen(null)} />}
-    {open === 'video' && <VideoPlayerModal projectId={projectId} runId={run.id} resultId={result.id} title={label} onClose={() => setOpen(null)} />}
+    {!run.id.startsWith('manual-pending-') && <button type="button" className="run-trace-link" onClick={() => setOpen(true)}
+      aria-label={`Ver evidencias de ${label}`}><ImageIcon size={12} /> Evidencias</button>}
+    {result.evidenceKey && <TraceLink projectId={projectId} run={run} resultId={result.id} />}
+    {manualScenarioId && <ManualEvidenceButton projectId={projectId} scenarioId={manualScenarioId}
+      resultId={result.id} currentStatus={result.status as 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED'}
+      onSaved={() => { if (typeof window !== 'undefined') window.location.reload(); }} />}
+    {open && <RunEvidenceModal projectId={projectId} runId={run.id} resultId={result.id} title={label} onClose={() => setOpen(false)} />}
   </>;
 }
 

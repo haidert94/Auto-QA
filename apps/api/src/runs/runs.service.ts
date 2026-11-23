@@ -14,6 +14,7 @@ import { currentAutomation } from '../scenarios/automation-agent';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../scenarios/scenario-tags';
 import { defaultScenarioBrowser } from '../scenarios/playwright-generator';
 import { CreateRunDto } from './dto/create-run.dto';
+import type { EvidenceManifest, ManualEvidence } from './evidence-types';
 import { readQualitySuiteActivity, stopQualitySuiteAttempts } from '../scenarios/quality-suite-activity';
 
 @Injectable()
@@ -419,16 +420,19 @@ export class RunsService {
     await this.ensureProject(projectId, workspace);
     const result = await this.prisma.testResult.findFirst({
       where: { id: resultId, runId, run: { projectId } },
-      select: { evidenceKey: true },
+      select: { evidence: true, evidenceKey: true },
     });
     if (!result) throw new NotFoundException('Resultado no encontrado.');
-    if (!result.evidenceKey) throw new NotFoundException('Esta ejecución no tiene traza almacenada.');
-    const bytes = await this.evidence.read(result.evidenceKey).catch(() => null);
+    const trace = normaliseEvidence(result.evidence, result.evidenceKey).trace;
+    if (!trace) throw new NotFoundException('Esta ejecución no tiene traza almacenada.');
+    const bytes = await this.evidence.read(trace).catch(() => null);
     if (!bytes || bytes.length === 0) {
       // Self-heal: la clave en DB apunta a un archivo que ya no está en el
       // storage (reemplazo de deploy, worker externo que ya no corre, etc.).
       // Limpiamos la referencia para que la UI deje de ofrecer la descarga.
-      await this.prisma.testResult.update({ where: { id: resultId }, data: { evidenceKey: null } }).catch(() => {});
+      if (result.evidenceKey === trace) {
+        await this.prisma.testResult.updateMany({ where: { id: resultId, evidenceKey: trace }, data: { evidenceKey: null } }).catch(() => {});
+      }
       throw new NotFoundException('Traza no disponible en el almacenamiento.');
     }
     return bytes;
@@ -444,7 +448,7 @@ export class RunsService {
     });
     if (!result) throw new NotFoundException('Resultado no encontrado.');
     const manifest = normaliseEvidence(result.evidence, result.evidenceKey);
-    return { status: result.status, ...manifest };
+    return { status: result.status, ...manifest, manual: manualEvidence(result.evidence) };
   }
 
   // Empaqueta un reporte consolidado en zip estilo SerenityBDD con index.html,
@@ -627,12 +631,6 @@ ${manifest.trace ? '<p><a href="trace.zip" download>Descargar trace.zip (visor P
 </body></html>`;
 }
 
-export type EvidenceManifest = {
-  trace: string | null;
-  video: string | null;
-  screenshots: Array<{ step: number; action: string; key: string; status: 'pass' | 'fail' }>;
-};
-
 // Normaliza el campo Json del schema a un manifiesto tipado, y acepta el
 // fallback evidenceKey (trace legacy) para runs anteriores al JSON.
 export function normaliseEvidence(raw: unknown, legacyTraceKey: string | null): EvidenceManifest {
@@ -652,4 +650,18 @@ export function normaliseEvidence(raw: unknown, legacyTraceKey: string | null): 
     }) as EvidenceManifest['screenshots'][number])
     .filter(s => s.key);
   return { trace, video, screenshots };
+}
+
+function manualEvidence(value: Prisma.JsonValue): ManualEvidence | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.manual !== true) return null;
+  const screenshots = Array.isArray(value.screenshots) ? value.screenshots.slice(0, 8) : [];
+  return {
+    notes: typeof value.notes === 'string' ? value.notes.slice(0, 2000) : null,
+    screenshots: screenshots.flatMap(shot => {
+      if (!shot || typeof shot !== 'object' || Array.isArray(shot)
+        || typeof shot.filename !== 'string' || typeof shot.data !== 'string' || shot.data.length > 2_000_100
+        || !/^data:image\/(png|jpe?g|webp|gif);base64,[a-z0-9+/]+={0,2}$/i.test(shot.data)) return [];
+      return [{ filename: shot.filename.slice(0, 120), data: shot.data }];
+    }),
+  };
 }

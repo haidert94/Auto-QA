@@ -68,11 +68,14 @@ function QualityEvidence({ source, projectId }: { source: QualityResult; project
       <strong>{severity[finding.severity] ?? severity.unknown} · {finding.summary}</strong>
       {finding.recommendation && <p>{finding.recommendation}</p>}
     </li>)}</ul> : <p className="muted">Sin hallazgos detallados registrados.</p>}
-    {data.detail.hasScreenshot && <a href={path + '/screenshot'} download="captura-ux.png">Descargar captura UX</a>}
+    {data.detail.hasScreenshot && <figure className="quality-result-screenshot">
+      <img src={path + '/screenshot'} alt="Captura de la auditoría UX" loading="lazy" />
+      <figcaption><a href={path + '/screenshot'} download="captura-ux.png">Descargar captura UX</a></figcaption>
+    </figure>}
   </div>;
 }
 
-export function QualityResultsReport({ projectId, active }: { projectId: string; active: boolean }) {
+export function QualityResultsReport({ projectId, active, refreshKey }: { projectId: string; active: boolean; refreshKey?: number }) {
   const [rows, setRows] = useState<QualityResult[] | null>(null);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
@@ -106,7 +109,7 @@ export function QualityResultsReport({ projectId, active }: { projectId: string;
     }
     void read();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [active, projectId, retry]);
+  }, [active, projectId, refreshKey, retry]);
 
   function exportResults() {
     const blob = new Blob([JSON.stringify({ projectId, results: filtered }, null, 2)], { type: 'application/json' });
@@ -121,6 +124,7 @@ export function QualityResultsReport({ projectId, active }: { projectId: string;
   }
 
   return <section className="quality-results-report" aria-label="Resultados de calidad">
+    <h2>Resultados de calidad</h2>
     <section className="run-report-filters">
       <div>
         <label>Tipo de prueba <select value={kind} onChange={event => {
@@ -158,6 +162,7 @@ export function QualityResultsReport({ projectId, active }: { projectId: string;
             download={`k6-${row.id}.json`}>Descargar resumen k6</a>}
           {canExpand && <button type="button" className="secondary" aria-expanded={detail === key}
             onClick={() => setDetail(detail === key ? null : key)}>{row.kind === 'availability' ? 'Historial del monitor' : 'Hallazgos UX'}</button>}
+          {!row.hasEvidence && <p className="muted">Sin archivos de evidencia guardados.</p>}
           {canExpand && detail === key && <QualityEvidence key={key} source={row} projectId={projectId} />}
         </li>;
       })}

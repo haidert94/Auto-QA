@@ -53,10 +53,11 @@ export async function runLoadTest(
     signal?.throwIfAborted();
     const outcome = await spawnK6(scriptPath, summaryPath, log, signal);
     signal?.throwIfAborted();
-    const summaryText = await readFile(summaryPath, 'utf8').catch(() => '{}');
-    const parsed = (() => { try { return JSON.parse(summaryText); } catch { return {}; } })();
+    const summaryText = await readFile(summaryPath, 'utf8').catch(() => null);
+    const parsed = (() => { try { return summaryText === null ? null : JSON.parse(summaryText); } catch { return null; } })();
     const metrics = parseK6Summary(parsed);
-    const summaryKey = await storage.put(Buffer.from(summaryText, 'utf8'), { contentType: 'application/json' });
+    const summaryKey = summaryText && parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? await storage.put(Buffer.from(summaryText, 'utf8'), { contentType: 'application/json' }) : null;
 
     const failed = outcome.exitCode !== 0 && (suiteAttempt(claim) || metrics.totalRequests === null);
     await prisma.loadTest.updateMany({

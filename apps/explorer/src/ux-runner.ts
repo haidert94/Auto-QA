@@ -39,6 +39,7 @@ export async function runUxAudit(
     where: { id: claim.projectId }, select: { organizationId: true },
   });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+  let screenshotKey: string | null = null;
   function stopBrowser() { void browser?.close().catch(() => {}); }
   signal?.addEventListener('abort', stopBrowser, { once: true });
   try {
@@ -56,6 +57,8 @@ export async function runUxAudit(
     await page.goto(claim.url, { waitUntil: 'networkidle', timeout: UX_NAVIGATION_TIMEOUT_MS });
 
     const screenshot = await page.screenshot({ fullPage: true, type: 'png' });
+    signal?.throwIfAborted();
+    screenshotKey = await storage.put(screenshot, { contentType: 'image/png' });
     // Resumen del DOM: encabezados, botones, enlaces, inputs, imágenes sin
     // alt — suficiente para que la IA valore accesibilidad básica.
     const domSummary = await page.evaluate(summarizeUxDom).catch(() => ({}));
@@ -80,7 +83,6 @@ export async function runUxAudit(
     const parsed = parseReport(response.text);
     const findings = (parsed.findings ?? []).slice(0, 25);
     const counts = tallySeverities(findings);
-    const screenshotKey = await storage.put(screenshot, { contentType: 'image/png' });
     const reportKey = await storage.put(Buffer.from(JSON.stringify({
       ...parsed, findings, screenshotKey, model: response.model,
     }, null, 2), 'utf8'), { contentType: 'application/json' });
@@ -100,9 +102,12 @@ export async function runUxAudit(
     if (signal?.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     log('ERROR', 'ux-crashed: ' + message);
+    const reportKey = screenshotKey ? await storage.put(Buffer.from(JSON.stringify({
+      screenshotKey, overallSummary: 'La captura está disponible. El análisis de usabilidad no se completó.',
+    }), 'utf8'), { contentType: 'application/json' }).catch(() => null) : null;
     await prisma.uxAudit.updateMany({
       where: runnableQualityAttempt(claim),
-      data: { status: 'FAILED', completedAt: new Date(), errorCode: message.slice(0, 120) },
+      data: { status: 'FAILED', completedAt: new Date(), errorCode: message.slice(0, 120), reportKey },
     }).catch(() => {});
   } finally {
     signal?.removeEventListener('abort', stopBrowser);

@@ -171,6 +171,7 @@ export class RunsController {
   // Manifiesto JSON de evidencias para un resultado. La UI lo pide una vez
   // y después pide cada screenshot / video por su key opaca.
   @Get('projects/:projectId/runs/:runId/results/:resultId/evidence')
+  @Header('Cache-Control', 'no-store')
   @RequiresPlanCapability('BROWSER_TESTS')
   evidence(
     @Param('projectId', ParseUUIDPipe) projectId: string,

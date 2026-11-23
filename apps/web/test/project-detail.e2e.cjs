@@ -381,6 +381,11 @@ const api = createServer(async (request, response) => {
     }
     return send({ latest: [...latest.values()], history: recent.slice(0, 100) });
   }
+  const evidenceBase = `${base}/runs/${reportRuns[0].id}/results/${reportRuns[0].results[0].id}`;
+  if (path === evidenceBase + '/evidence') return send({
+    status: 'PASSED', trace: 'a'.repeat(32), video: 'b'.repeat(32),
+    screenshots: [{ step: 1, action: 'Confirmación visible', key: 'c'.repeat(32), status: 'pass' }],
+  });
   if (path === `${base}/runs/${reportRuns[0].id}/trace/${reportRuns[0].results[0].id}`) {
     response.setHeader('Content-Type', 'application/zip'); response.setHeader('Content-Disposition', 'attachment; filename="trace.zip"');
     const archive = new JSZip(); archive.file('trace.fixture.json', '{"synthetic":true}');
@@ -1012,6 +1017,10 @@ async function verifyQualityScenarios(page) {
     const reportTypes = reports.getByRole('group', { name: 'Tipo de resultados' });
     await reportTypes.getByRole('button', { name: 'Escenarios', exact: true }).click();
     await expect(qualityReport).toHaveCount(0);
+    assert.equal(new URL(page.url()).searchParams.get('resultados'), 'escenarios');
+    await reportTypes.getByRole('button', { name: 'Todas', exact: true }).click();
+    await expect(reports.getByRole('region', { name: 'Resultados de escenarios' })).toBeVisible();
+    await expect(qualityReport).toBeVisible();
     assert.equal(new URL(page.url()).searchParams.get('resultados'), null);
     await reportTypes.getByRole('button', { name: 'Calidad', exact: true }).click();
     await expect(qualityReport).toBeVisible();
@@ -1899,6 +1908,33 @@ async function verifyAutomation(page, screenshots) {
   console.log('PASS automatización: lista sin visor, revisión sin falsos validados, cabecera común/móvil, confirmación y cuota, caché invalidada, errores y reintentos. API simulada, sin worker real.');
 }
 
+async function verifyReportEvidence(page) {
+  reportMode = true;
+  try {
+    await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+    const report = page.getByRole('region', { name: 'Reporte de ejecuciones', exact: true });
+    await report.getByRole('button', { name: 'Todas', exact: true }).click();
+    await expect(report.getByRole('region', { name: 'Resultados de calidad' })).toBeVisible();
+    await report.getByRole('button', { name: 'Seleccionar ejecución ' + reportRuns[0].id.slice(0, 8), exact: true }).click();
+    const table = report.getByRole('table', { name: 'Ejecuciones registradas' });
+    const row = table.getByRole('row').filter({ hasText: reportRuns[0].id.slice(0, 8) });
+    const evidence = row.getByRole('button', { name: /^Ver evidencias de/ });
+    await evidence.click();
+    const dialog = page.getByRole('dialog', { name: /^Evidencias de/ });
+    await expect(dialog.getByRole('heading', { name: 'Capturas por paso' })).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Descargar imagen' })).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Descargar video' })).toBeVisible();
+    await expect(dialog.getByRole('link', { name: 'Descargar traza (.zip)' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(evidence).toBeFocused();
+    console.log('PASS Reportes muestra calidad por defecto y abre las capturas, el video y la traza de una misma ejecución.');
+  } finally {
+    reportMode = false;
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  }
+}
+
 async function verifyRunReport(page, screenshots) {
   reportMode = true;
   const initialQueues = queuedRequests.length;
@@ -2322,6 +2358,7 @@ async function run() {
     await verifyDocumentGenerationConfirmation(page);
     await verifyRequirementClarification(page);
     await verifyQualityScenarios(page);
+    await verifyReportEvidence(page);
     await verifyGenerationForBrowserTypes(page);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);

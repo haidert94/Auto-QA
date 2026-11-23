@@ -1,123 +1,91 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
+import type { EvidenceManifest, ManualEvidence } from '../../../../api/src/runs/evidence-types';
 
-type Manifest = {
-  trace: string | null;
-  video: string | null;
-  screenshots: Array<{ step: number; action: string; key: string; status: 'pass' | 'fail' }>;
-};
+type Manifest = EvidenceManifest & { manual?: ManualEvidence | null };
 
-async function loadManifest(projectId: string, runId: string, resultId: string): Promise<Manifest | null> {
-  const response = await fetch(`/api/projects/${projectId}/runs/${runId}/results/${resultId}/evidence`);
-  if (!response.ok) return null;
-  return response.json();
-}
-
-// Carrusel de screenshots por paso. Se abre al clicar el icono de imagen
-// para runs PASSED. Navegación con flechas, Escape cierra.
-export function ScreenshotCarouselModal({ projectId, runId, resultId, title, onClose }: {
+export function RunEvidenceModal({ projectId, runId, resultId, title, onClose }: {
   projectId: string; runId: string; resultId: string; title: string; onClose: () => void;
 }) {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [index, setIndex] = useState(0);
   const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const base = `/api/projects/${projectId}/runs/${runId}`;
+  const path = `${base}/results/${resultId}`;
 
   useEffect(() => {
-    loadManifest(projectId, runId, resultId).then(data => {
-      if (!data) { setError('No se pudieron cargar las evidencias.'); return; }
-      setManifest(data);
-    }).catch(() => setError('No se pudieron cargar las evidencias.'));
-  }, [projectId, runId, resultId]);
-
-  const prev = useCallback(() => setIndex(i => Math.max(0, i - 1)), []);
-  const next = useCallback(() => {
-    setIndex(i => Math.min((manifest?.screenshots.length ?? 1) - 1, i + 1));
-  }, [manifest?.screenshots.length]);
+    const previous = document.activeElement;
+    closeButton.current?.focus();
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+  }, []);
 
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
-      if (event.key === 'ArrowLeft') prev();
-      if (event.key === 'ArrowRight') next();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, prev, next]);
+    const controller = new AbortController();
+    fetch(path + '/evidence', { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })
+      .then(async response => {
+        if (!response.ok) throw new Error();
+        const data = await response.json() as Manifest;
+        if (!Array.isArray(data.screenshots)) throw new Error();
+        if (!controller.signal.aborted) setManifest(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError('No se pudieron cargar las evidencias.');
+      });
+    return () => controller.abort();
+  }, [path, retry]);
 
-  const shots = manifest?.screenshots ?? [];
-  const current = shots[index];
+  const images = manifest?.manual?.screenshots.map(shot => ({
+    src: shot.data, label: shot.filename, filename: shot.filename,
+  })) ?? manifest?.screenshots.map(shot => ({
+    src: `${path}/screenshot/${shot.key}`, label: `Paso ${shot.step} · ${shot.action}`, filename: `paso-${shot.step}.png`,
+  })) ?? [];
+  const current = images[index];
+  const notes = manifest?.manual?.notes;
+  const fileAvailable = !!(images.length || manifest?.video || manifest?.trace || notes);
+  const videoUrl = manifest?.video ? `${path}/video/${manifest.video}` : null;
+  function move(offset: number) {
+    setIndex(value => Math.max(0, Math.min(images.length - 1, value + offset)));
+  }
 
-  return <div className="evidence-modal" role="dialog" aria-label={`Screenshots de ${title}`} onClick={onClose}>
-    <div className="evidence-modal__box" onClick={event => event.stopPropagation()}>
-      <header>
-        <div>
-          <h3>{title}</h3>
-          {current && <small>Paso {current.step} · {current.action} · {index + 1} de {shots.length}</small>}
-        </div>
-        <button type="button" aria-label="Cerrar" onClick={onClose}><X size={18} /></button>
-      </header>
-      <div className="evidence-modal__body">
-        {error && <p className="error">{error}</p>}
-        {!error && !manifest && <p className="muted">Cargando evidencias…</p>}
-        {manifest && !shots.length && <p className="muted">Esta ejecución no tiene screenshots por paso.</p>}
-        {current && <img src={`/api/projects/${projectId}/runs/${runId}/results/${resultId}/screenshot/${current.key}`} alt={`Paso ${current.step} ${current.action}`} />}
+  return <div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidencias de ${title}`}
+    onClick={event => { if (event.target === event.currentTarget) onClose(); }}
+    onKeyDown={event => {
+      if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+    }}>
+    <div className="evidence-modal__box">
+      <header><h3>{title}</h3><button ref={closeButton} type="button" aria-label="Cerrar evidencias" onClick={onClose}><X size={18} /></button></header>
+      <div className="run-evidence-content">
+        {error && <div role="alert"><p>{error}</p><button type="button" className="secondary" onClick={() => {
+          setError(''); setRetry(value => value + 1);
+        }}>Reintentar</button></div>}
+        {!error && !manifest && <p role="status">Cargando evidencias…</p>}
+        {manifest && !fileAvailable && <p>Sin evidencias guardadas para esta ejecución.</p>}
+        {notes && <section><h4>Notas de la ejecución</h4><p>{notes}</p></section>}
+        {current && <section aria-label="Capturas">
+          <h4>{manifest?.manual ? 'Imágenes adjuntas' : 'Capturas por paso'}</h4>
+          <figure><img src={current.src} alt={current.label} />
+            <figcaption>{current.label} · {index + 1} de {images.length}</figcaption></figure>
+          <div className="actions">
+            {images.length > 1 && <>
+              <button type="button" className="secondary" onClick={() => move(-1)} disabled={index === 0} aria-label="Captura anterior"><ChevronLeft size={14} /></button>
+              <button type="button" className="secondary" onClick={() => move(1)} disabled={index === images.length - 1} aria-label="Captura siguiente"><ChevronRight size={14} /></button>
+            </>}
+            <a href={current.src} download={current.filename}><Download size={12} /> Descargar imagen</a>
+          </div>
+        </section>}
+        {videoUrl && <section aria-label="Video de ejecución">
+          <h4>Video de ejecución</h4>
+          <video controls preload="metadata" src={videoUrl} />
+          <a href={videoUrl} download={`video-${resultId}.webm`}><Download size={12} /> Descargar video</a>
+        </section>}
+        {manifest?.trace && <a href={`${base}/trace/${resultId}`} download={`trace-${resultId}.zip`}>
+          <Download size={12} /> Descargar traza (.zip)
+        </a>}
       </div>
-      {shots.length > 1 && <footer>
-        <button type="button" onClick={prev} disabled={index === 0} aria-label="Anterior"><ChevronLeft size={18} /></button>
-        <div className="evidence-modal__dots" role="tablist">
-          {shots.map((shot, i) => <button key={shot.key} type="button" role="tab" aria-selected={i === index}
-            className={`evidence-modal__dot ${shot.status === 'fail' ? 'evidence-modal__dot--fail' : ''}`}
-            onClick={() => setIndex(i)} aria-label={`Ir al paso ${shot.step}`} />)}
-        </div>
-        <button type="button" onClick={next} disabled={index === shots.length - 1} aria-label="Siguiente"><ChevronRight size={18} /></button>
-      </footer>}
-      {manifest?.trace && <a className="evidence-modal__advanced"
-        href={`/api/projects/${projectId}/runs/${runId}/trace/${resultId}`}
-        download={`trace-${resultId}.zip`}><Download size={12} /> Descargar .zip para visor avanzado</a>}
-    </div>
-  </div>;
-}
-
-// Player de video para runs FAILED. Se abre al clicar el icono de video.
-export function VideoPlayerModal({ projectId, runId, resultId, title, onClose }: {
-  projectId: string; runId: string; resultId: string; title: string; onClose: () => void;
-}) {
-  const [manifest, setManifest] = useState<Manifest | null>(null);
-  const [error, setError] = useState('');
-  const video = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    loadManifest(projectId, runId, resultId).then(data => {
-      if (!data) { setError('No se pudieron cargar las evidencias.'); return; }
-      setManifest(data);
-    }).catch(() => setError('No se pudieron cargar las evidencias.'));
-  }, [projectId, runId, resultId]);
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) { if (event.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  return <div className="evidence-modal" role="dialog" aria-label={`Video de ${title}`} onClick={onClose}>
-    <div className="evidence-modal__box" onClick={event => event.stopPropagation()}>
-      <header>
-        <h3>{title}</h3>
-        <button type="button" aria-label="Cerrar" onClick={onClose}><X size={18} /></button>
-      </header>
-      <div className="evidence-modal__body">
-        {error && <p className="error">{error}</p>}
-        {!error && !manifest && <p className="muted">Cargando video…</p>}
-        {manifest && !manifest.video && <p className="muted">Esta ejecución no tiene video grabado (solo se guarda en fallos).</p>}
-        {manifest?.video && <video ref={video} controls autoPlay style={{ width: '100%', maxHeight: '70vh', background: '#000' }}>
-          <source src={`/api/projects/${projectId}/runs/${runId}/results/${resultId}/video/${manifest.video}`} type="video/webm" />
-        </video>}
-      </div>
-      {manifest?.trace && <a className="evidence-modal__advanced"
-        href={`/api/projects/${projectId}/runs/${runId}/trace/${resultId}`}
-        download={`trace-${resultId}.zip`}><Download size={12} /> Descargar .zip para visor avanzado</a>}
     </div>
   </div>;
 }

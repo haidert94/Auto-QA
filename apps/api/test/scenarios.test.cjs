@@ -598,6 +598,32 @@ test('la suite encola los cuatro tipos de calidad sobre los registros existentes
   assert.equal(await prisma.monitorCheck.count({ where: { monitorId: monitor.id } }), 1);
 });
 
+test('Reportes consulta notas y capturas manuales con el alcance del resultado', async () => {
+  const projectId = await makeProject();
+  const otherProject = await makeProject();
+  const create = await post(projectId, { title: 'Escenario con evidencia manual', steps: [{ ordinal: 1, action: 'Verificar la página' }], tags: ['@manual'] });
+  const scenario = await create.json();
+  const run = await prisma.testRun.create({ data: {
+    projectId, scenarioId: scenario.id, status: 'COMPLETED', targetProvider: 'manual',
+  } });
+  const result = await prisma.testResult.create({ data: {
+    runId: run.id, scenarioId: scenario.id, status: 'PASSED',
+    evidence: { manual: true, notes: 'La página muestra la confirmación en QA.', screenshots: [
+      { filename: 'confirmacion.png', data: 'data:image/png;base64,iVBORw0KGgo=' },
+      { filename: 'ignorar.svg', data: 'data:image/svg+xml;base64,PHN2Zz4=' },
+    ] },
+  } });
+  const path = '/runs/' + run.id + '/results/' + result.id + '/evidence';
+  const response = await request(baseUrl + '/projects/' + projectId + path);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual((await response.json()).manual, {
+    notes: 'La página muestra la confirmación en QA.',
+    screenshots: [{ filename: 'confirmacion.png', data: 'data:image/png;base64,iVBORw0KGgo=' }],
+  });
+  assert.equal((await request(baseUrl + '/projects/' + otherProject + path)).status, 404);
+});
+
 test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async () => {
   const projectId = await makeProject();
   const otherProjectId = await makeProject();
