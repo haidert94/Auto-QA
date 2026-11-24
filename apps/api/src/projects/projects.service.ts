@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { CreateProjectDto, UpdateProjectDto } from './dto/create-project.dto';
 import { getMissingRequirements, prepareOnboarding } from './onboarding';
 import { parseBaseUrl } from './scope';
+import { parseStorageState, summarizeStorageState, type StorageStatePublic } from './storage-state';
 
 const environments = {
   orderBy: [{ position: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
@@ -22,9 +23,26 @@ type ProjectRecord = Prisma.ProjectGetPayload<{ include: typeof includeOnboardin
 type EnvironmentData = ReturnType<typeof prepareOnboarding>['environments'][number]['data'];
 
 function redactEnvironment(environment: unknown) {
-  const source = environment as Record<string, unknown> & { credentialCipher?: unknown };
-  const { credentialCipher, ...rest } = source;
-  return { ...rest, hasCredentials: !!credentialCipher };
+  const source = environment as Record<string, unknown> & {
+    credentialCipher?: unknown;
+    storageStateCipher?: unknown;
+    storageStateLabel?: unknown;
+    storageStateUploadedAt?: unknown;
+    storageStateExpiresAt?: unknown;
+  };
+  const { credentialCipher, storageStateCipher, storageStateLabel, storageStateUploadedAt, storageStateExpiresAt, ...rest } = source;
+  return {
+    ...rest,
+    hasCredentials: !!credentialCipher,
+    // Nunca exponemos el blob cifrado al cliente. Solo metadatos: label, fechas
+    // y que exista o no. El blob solo sale del servidor al worker, descifrado,
+    // en el workdir temporal de un run.
+    storageState: storageStateCipher ? {
+      label: typeof storageStateLabel === 'string' ? storageStateLabel : null,
+      uploadedAt: storageStateUploadedAt instanceof Date ? storageStateUploadedAt.toISOString() : null,
+      expiresAt: storageStateExpiresAt instanceof Date ? storageStateExpiresAt.toISOString() : null,
+    } : null,
+  };
 }
 
 function describeProject<T extends ProjectRecord>(project: T) {
@@ -240,5 +258,70 @@ export class ProjectsService {
       }
       throw error;
     }
+  }
+
+  // Guarda un storageState de Playwright cifrado con SecretCipher. El blob se
+  // valida con parseStorageState antes de cifrar, y nunca vuelve al cliente:
+  // la respuesta son solo metadatos (label, fechas, conteos).
+  async setStorageState(
+    projectId: string,
+    environmentId: string,
+    input: { storageState: unknown; label?: string | null; expiresAt?: string | null },
+    workspace: Workspace,
+  ): Promise<StorageStatePublic> {
+    const environment = await this.loadScopedEnvironment(projectId, environmentId, workspace);
+    let parsed;
+    try { parsed = parseStorageState(input.storageState); }
+    catch (error) {
+      throw new BadRequestException((error as Error).message || 'storage-state-invalido');
+    }
+    const label = typeof input.label === 'string' ? input.label.trim().slice(0, 80) || null : null;
+    const expiresAt = this.parseExpiresAt(input.expiresAt);
+    const uploadedAt = new Date();
+    const cipher = this.cipher.encrypt(JSON.stringify(parsed));
+    await this.prisma.environment.update({
+      where: { id: environment.id },
+      data: {
+        storageStateCipher: cipher,
+        storageStateLabel: label,
+        storageStateUploadedAt: uploadedAt,
+        storageStateExpiresAt: expiresAt,
+      },
+    });
+    return summarizeStorageState(parsed, { label, uploadedAt, expiresAt });
+  }
+
+  async clearStorageState(projectId: string, environmentId: string, workspace: Workspace): Promise<{ removed: true }> {
+    const environment = await this.loadScopedEnvironment(projectId, environmentId, workspace);
+    await this.prisma.environment.update({
+      where: { id: environment.id },
+      data: {
+        storageStateCipher: null,
+        storageStateLabel: null,
+        storageStateUploadedAt: null,
+        storageStateExpiresAt: null,
+      },
+    });
+    return { removed: true };
+  }
+
+  private async loadScopedEnvironment(projectId: string, environmentId: string, workspace: Workspace) {
+    // Un solo query valida tanto que el proyecto es del tenant como que el
+    // entorno es de ese proyecto. No usamos findUnique por id del entorno
+    // suelto: eso saltaría el scope del workspace.
+    const env = await this.prisma.environment.findFirst({
+      where: { id: environmentId, project: { id: projectId, ...projectScope(workspace) } },
+      select: { id: true },
+    });
+    if (!env) throw new NotFoundException('Entorno no encontrado');
+    return env;
+  }
+
+  private parseExpiresAt(raw: string | null | undefined): Date | null {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) throw new BadRequestException('expiresAt-invalido');
+    if (parsed.getTime() <= Date.now()) throw new BadRequestException('expiresAt-en-el-pasado');
+    return parsed;
   }
 }

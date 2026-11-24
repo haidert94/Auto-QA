@@ -140,6 +140,13 @@ model Environment {
   readOnly               Boolean          @default(true)
   credentialUser         String?
   credentialCipher       String?
+  // Sesión importada por el QA para que los tests no se logueen de nuevo.
+  // El blob (cookies+localStorage de Playwright) va cifrado con SecretCipher;
+  // el worker lo descifra justo antes de inyectarlo con test.use({ storageState }).
+  storageStateCipher     String?
+  storageStateLabel      String?
+  storageStateUploadedAt DateTime?
+  storageStateExpiresAt  DateTime?
   explorations           Exploration[]
   runs                   TestRun[]
   performanceAudits      PerformanceAudit[]
