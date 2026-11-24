@@ -5,7 +5,7 @@
 La web y la API comparten el proceso Node.js en el despliegue documentado. PostgreSQL conserva los datos y la cola que consume Explorer. Las guías de [despliegue](DEPLOY.md) y del [worker](EXPLORER_DEPLOY.md) detallan la configuración.
 
 ## Arquitectura objetivo
-Web Next.js -> API NestJS -> PostgreSQL/Prisma. API publica trabajos a Redis/BullMQ; workers Playwright aislados ejecutan exploración y tests; almacenamiento S3-compatible conserva documentos/evidencias; motor IA enruta reglas -> modelo local -> proveedor externo. No implementar todos los servicios en la primera fase.
+Web Next.js -> API NestJS -> PostgreSQL/Prisma. La API encola trabajos como filas en PostgreSQL (`Exploration`, `TestRun`, `AutomationJob`, `PerformanceAudit`, `LoadTest`, `UxAudit`); workers Playwright aislados las reclaman con `FOR UPDATE SKIP LOCKED` (ver [Escalado horizontal](EXPLORER_DEPLOY.md#escalado-horizontal)) y ejecutan exploración y tests; almacenamiento S3-compatible conserva documentos/evidencias; motor IA enruta reglas -> modelo local -> proveedor externo. No se usa Redis/BullMQ: el lock pesimista de Postgres ya resuelve la coordinación entre varios workers sin una cola externa. No implementar todos los servicios en la primera fase.
 
 ## Módulos
 - `projects`: proyecto, entornos, autorización, alcance, configuraciones.

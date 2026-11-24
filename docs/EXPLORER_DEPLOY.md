@@ -205,6 +205,55 @@ sudo -u autoqa env PLAYWRIGHT_BROWSERS_PATH=/var/lib/autoqa/playwright-browsers 
 
 Explorer usa ese CLI desde el repositorio para las pruebas que prepara en un directorio temporal. Las migraciones de Prisma las corre el que despliega el API, no el worker.
 
+## Escalado horizontal
+
+**El patrón de cola ya soporta varios workers sin cambios de código.** Cada
+tipo de trabajo (`Exploration`, `TestRun`, `AutomationJob`, `PerformanceAudit`,
+`LoadTest`, `UxAudit`) se reclama con `FOR UPDATE SKIP LOCKED` sobre
+PostgreSQL — ver `claimNext*` en `apps/explorer/src/worker.ts`. Ese lock
+pesimista es justamente para esto: si dos procesos intentan reclamar la misma
+fila `QUEUED` al mismo tiempo, Postgres le da la fila a uno solo y el otro
+pasa a la siguiente sin bloquearse ni duplicar trabajo. No hace falta Redis,
+BullMQ ni ningún broker externo — la base de datos ya hace de cola.
+
+El comentario en el propio código lo confirma: *"Un solo worker a la vez por
+diseño en fase 5.3 (sin Redis); el lock pesimista garantiza que si hay varios
+workers no se pisan."* Hoy corre un solo worker por elección de capacidad
+(`MemoryMax=2G`, `CPUQuota=150%` en la unidad systemd), no por una limitación
+del diseño.
+
+### Cómo agregar un segundo worker
+
+1. Repite los pasos 1–5 de esta guía en **otro VPS**, con el mismo
+   `/etc/autoqa/explorer.env` apuntando a la **misma** `DATABASE_URL`.
+2. **Usa backend `s3` para las capturas**, no `local`. Con dos VPS, si uno
+   escribe una captura en su disco local, el API (o el otro worker) no la va
+   a encontrar — el backend `local` asume que todos los procesos comparten
+   filesystem. Ver "Almacenamiento de capturas y el API" arriba.
+3. No hace falta tocar `AUTOQA_INLINE_WORKER` en Hostinger ni ningún código:
+   los dos `autoqa-explorer.service` van a reclamar trabajos de la misma cola
+   de forma independiente.
+
+### Cuándo agregar capacidad
+
+No lo decidas por número de clientes contratados — decide por cuánto tiempo
+espera un trabajo antes de ser reclamado. Una señal simple y barata: comparar
+`queuedAt`/`createdAt` contra `startedAt` en las filas recientes de cada
+tabla de cola; si el promedio empieza a superar unos pocos segundos de forma
+sostenida (más allá del intervalo de poll, hoy 5 s en `runLoop`), es momento
+de sumar un worker.
+
+### Limitación actual: no hay separación por tipo de trabajo
+
+El loop (`tick()` en `worker.ts`) revisa **todas** las colas en cada vuelta,
+en este orden: exploración, ejecución de escenarios, auditorías de
+performance, pruebas de carga, automatización, auditorías UX, monitores. Hoy
+no existe una variable de entorno para que un worker solo atienda, por
+ejemplo, `UxAudit` (la más pesada por abrir Chrome) y otro solo atienda
+`AutomationJob`. Separar por tipo de trabajo —útil cuando un tipo de carga
+satura a los demás— requiere un cambio de código: filtrar qué `claimNext*` se
+llama según una variable de entorno nueva. No está implementado todavía.
+
 ## Observabilidad y troubleshooting
 
 - `journalctl -u autoqa-explorer -n 200 --no-pager` — últimas 200 líneas.
