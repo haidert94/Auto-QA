@@ -11,7 +11,7 @@ import { QualityResultsReport } from './quality-results-report';
 import { ProjectHeading } from './project-heading';
 import { useReportHeader } from './project-tabs';
 import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
-import { dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
+import { primaryReportTags, dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
 import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, type RunFilter } from './run-report-views';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 
@@ -136,13 +136,14 @@ export function ExecutionReport({ project }: { project: Project }) {
   const scopeLabel = showLatest ? 'escenarios' : 'ejecuciones';
   const scoped = showLatest ? latest : history.filter(run => scope === 'all' || run.id === scope);
   const stats = reportStatistics(scoped);
-  const tags = new Map((scenarios ?? []).map(scenario => [scenario.id, scenario.tags ?? []]));
+  const allTags = new Map((scenarios ?? []).map(scenario => [scenario.id, scenario.tags ?? []]));
+  const tags = new Map(Array.from(allTags, ([id, values]) => [id, primaryReportTags(values)]));
   const availableTags = [...new Set(scoped.flatMap(run => run.scenarioId ? tags.get(run.scenarioId) ?? [] : []))].sort();
   const normalized = query.trim().toLocaleLowerCase('es');
   const filteredRuns = scoped.filter(run => (filter === 'all' || category(run) === filter)
     && (!tag || (run.scenarioId && tags.get(run.scenarioId)?.includes(tag)))
     && (!normalized || [runTitle(run), run.id, run.scenarioId ?? '', run.errorCode ?? '', run.targetBrowser ?? '',
-      ...(run.results.map(result => result.errorMessage ?? '')), ...(run.scenarioId ? tags.get(run.scenarioId) ?? [] : [])]
+      ...(run.results.map(result => result.errorMessage ?? '')), ...(run.scenarioId ? allTags.get(run.scenarioId) ?? [] : [])]
       .join(' ').toLocaleLowerCase('es').includes(normalized)));
   const { visible: pagedRuns, results: listRef, resetPage, pagination } = useScenarioPagination<ReportRun, HTMLDivElement>(filteredRuns);
   const detail = scoped.find(run => run.id === detailId);

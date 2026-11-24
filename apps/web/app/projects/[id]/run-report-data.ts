@@ -1,4 +1,5 @@
 import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
+import { COMPATIBILITY_SCENARIO_TAG, COMPATIBILITY_SCENARIO_TAGS, MANUAL_SCENARIO_TAG } from '../../../../api/src/scenarios/scenario-tags';
 import { runPresentation } from './scenario-presentation';
 
 export type RunResult = {
@@ -13,6 +14,17 @@ export type ReportRun = {
   targetBrowser?: string | null; targetDevice?: string | null; targetProvider?: string | null;
 };
 export const isManualRun = (run: ReportRun) => run.scenario?.tags?.includes('@manual') ?? run.targetProvider === 'manual';
+
+const reportTags = [
+  MANUAL_SCENARIO_TAG, '@funcional', '@mobile', COMPATIBILITY_SCENARIO_TAG,
+  '@disponibilidad', '@performance', '@ux', '@flujoBasico', '@flujoAlterno',
+] as const;
+
+export function primaryReportTags(tags: readonly string[]): string[] {
+  const normalized = new Set(tags.map(tag => tag.trim().toLowerCase()));
+  if (COMPATIBILITY_SCENARIO_TAGS.some(tag => normalized.has(tag))) normalized.add(COMPATIBILITY_SCENARIO_TAG);
+  return reportTags.filter(tag => normalized.has(tag.toLowerCase()));
+}
 
 export const resultLabels = { PASSED: 'Pasó', FAILED: 'Falló', BLOCKED: 'Bloqueada', SKIPPED: 'Omitida' };
 export const runLabels = { QUEUED: 'En cola', RUNNING: 'En curso', COMPLETED: 'Completada', FAILED: 'Falló', CANCELED: 'Cancelada' };

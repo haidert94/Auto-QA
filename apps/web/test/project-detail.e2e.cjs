@@ -2148,6 +2148,50 @@ async function verifyManualEvidenceDialog(page) {
   }
 }
 
+async function verifyPrimaryReportTags(page) {
+  const savedScenarios = scenarios;
+  const savedRuns = scenarioRuns;
+  const labels = [
+    ['@funcional', '@flujoBasico', '@login', '@smoke'],
+    ['@manual', '@flujoAlterno', '@checkout'],
+    ['@compatibility', '@compatibilidad', '@mobile', '@firefox', '@regresion'],
+  ];
+  scenarios = savedScenarios.slice(0, labels.length).map((scenario, index) => ({ ...scenario, tags: labels[index] }));
+  scenarioRuns = scenarios.map(scenario => ({
+    ...savedRuns[0], id: randomUUID(), scenarioId: scenario.id,
+    scenario: { id: scenario.id, title: scenario.title, tags: scenario.tags },
+  }));
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+    const report = page.getByRole('region', { name: 'Resultados de escenarios' });
+    const table = report.getByRole('table', { name: 'Ejecuciones registradas' });
+    const tagsMenu = report.getByLabel('Filtrar por etiqueta actual del escenario', { exact: true });
+    await expect(tagsMenu).toHaveText('Todas las etiquetas (6)');
+    await tagsMenu.click();
+    const options = report.getByRole('group', { name: 'Opciones de etiqueta' });
+    const tags = ['Todas (6)', '@compatibilidad', '@flujoAlterno', '@flujoBasico', '@funcional', '@manual', '@mobile'];
+    assert.deepEqual(await options.getByRole('button').allTextContents(), tags);
+    await expect(table.locator('.run-report-tags > span')).toHaveText(['@funcional', '@flujoBasico', '@manual', '@flujoAlterno', '@mobile', '@compatibilidad']);
+
+    await options.getByRole('button', { name: '@manual', exact: true }).click();
+    await expect(table.getByRole('row')).toHaveCount(2);
+    await expect(table.getByText('@manual', { exact: true })).toBeVisible();
+
+    await tagsMenu.click();
+    await options.getByRole('button', { name: 'Todas (6)', exact: true }).click();
+    await report.getByRole('searchbox', { name: 'Buscar ejecuciones' }).fill('@login');
+    await expect(table.getByRole('row')).toHaveCount(2);
+    await expect(table.getByText('@funcional', { exact: true })).toBeVisible();
+    console.log('PASS Reportes muestra solo los tipos de prueba y los flujos, y conserva la búsqueda por etiquetas guardadas.');
+  } finally {
+    scenarios = savedScenarios;
+    scenarioRuns = savedRuns;
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.reload();
+  }
+}
+
 async function verifyReportPagination(page) {
   const savedRuns = scenarioRuns;
   const cases = Array.from({ length: 13 }, (_, index) => {
@@ -2612,6 +2656,7 @@ async function run() {
     await verifyQualityScenarios(page);
     await verifyReportEvidence(page);
     await verifyManualEvidenceDialog(page);
+    await verifyPrimaryReportTags(page);
     await verifyReportPagination(page);
     await verifyGenerationForBrowserTypes(page);
     await verifyScenarioPagination(page);
