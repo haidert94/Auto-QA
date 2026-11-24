@@ -23,7 +23,7 @@ export function ProjectCard({ project, canRemove = true }: { project: ProjectSum
   const primary = project.environments.find(e => e.baseUrl) ?? project.environments[0];
 
   async function handleRemove() {
-    const label = `Vas a eliminar "${project.name}" y todos sus entornos, roles, documentos y ejecuciones. Esta acción no se puede deshacer.`;
+    const label = `Vas a eliminar "${project.name}" y sus entornos, roles, documentos, escenarios, código de pruebas y ejecuciones. Esta acción es definitiva.`;
     if (!confirm(label)) return;
     setRemoving(true); setError('');
     try {

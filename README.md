@@ -147,6 +147,7 @@ En la pantalla **Carga controlada**, usa **Importar colección de Postman** para
 | GET | `/api/projects/:id` | Devuelve la configuración y los requisitos pendientes. Responde `404` para un UUID inexistente. |
 | POST | `/api/projects` | Crea un borrador por defecto. Con `status: "READY"` valida que el registro esté completo antes de crearlo. |
 | PUT | `/api/projects/:id` | Guarda la configuración completa del proyecto. Exige la revisión actual y devuelve `409` ante una revisión obsoleta o un proyecto archivado. |
+| DELETE | `/api/projects/:id` | Elimina el proyecto autorizado y sus datos de forma definitiva. Borra primero las ejecuciones y sus resultados en la misma transacción para permitir el borrado de los escenarios y su automatización. |
 
 Prueba las cuatro rutas desde PowerShell:
 

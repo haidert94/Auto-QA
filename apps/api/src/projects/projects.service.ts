@@ -150,15 +150,31 @@ export class ProjectsService {
   }
 
   async remove(id: string, workspace: Workspace) {
-    const previous = await this.prisma.project.findUnique({
-      where: { id, ...projectScope(workspace) }, select: { id: true },
-    });
-    if (!previous) throw new NotFoundException('Proyecto no encontrado');
-    // Hard delete: las relaciones de Project usan onDelete: Cascade para
-    // entornos, roles, documentos, escenarios, runs, monitores, auditorías
-    // y jobs de automatización. Nada más hace falta.
-    await this.prisma.project.delete({ where: { id } });
-    return { id, removed: true };
+    const where = { id, ...projectScope(workspace) };
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const project = await tx.project.findUnique({ where, select: { id: true } });
+        if (!project) throw new NotFoundException('Proyecto no encontrado.');
+
+        // Bloquea vínculos nuevos al proyecto mientras se borran sus ejecuciones.
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM "Project" WHERE id = ${project.id} FOR UPDATE
+        `;
+        if (!locked.length) throw new NotFoundException('Proyecto no encontrado.');
+
+        // Los resultados se eliminan con sus ejecuciones antes de borrar los escenarios.
+        await tx.testRun.deleteMany({ where: { projectId: project.id } });
+        const deleted = await tx.project.deleteMany({ where });
+        if (!deleted.count) throw new NotFoundException('Proyecto no encontrado.');
+        return { id, removed: true };
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2003') throw new ConflictException('No se pudo eliminar el proyecto porque todavía tiene registros vinculados.');
+        if (error.code === 'P2034') throw new ConflictException('El proyecto cambió durante el borrado. Vuelve a intentarlo.');
+      }
+      throw error;
+    }
   }
 
   async update(id: string, dto: UpdateProjectDto, workspace: Workspace) {

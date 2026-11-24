@@ -320,6 +320,44 @@ test('elimina solo los escenarios seleccionados, sus ejecuciones y sus resultado
   assert.equal((await request(url).then(r => r.json())).length, 2);
 });
 
+test('eliminar un proyecto con resultados borra su automatización y conserva los otros proyectos', async () => {
+  const projectId = await makeProject();
+  const otherProjectId = await makeProject();
+  async function executedScenario(owner, legacy) {
+    const scenario = await prisma.testScenario.create({
+      data: { projectId: owner, title: 'Caso con código guardado', steps: [], automation: { id: randomUUID() } },
+    });
+    const run = await prisma.testRun.create({
+      data: {
+        projectId: owner, scenarioId: legacy ? null : scenario.id, status: 'COMPLETED',
+        automation: scenario.automation, specText: '// código de prueba',
+        results: { create: { scenarioId: scenario.id, status: 'PASSED' } },
+      },
+      include: { results: true },
+    });
+    return { scenario, run, result: run.results[0] };
+  }
+
+  const removed = [await executedScenario(projectId, false), await executedScenario(projectId, true)];
+  const retained = await executedScenario(otherProjectId, false);
+  const url = `${baseUrl}/projects/${projectId}`;
+  const response = await fetch(url, { method: 'DELETE' });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.deepEqual(await response.json(), { id: projectId, removed: true });
+  assert.equal((await fetch(url)).status, 404);
+  assert.equal((await fetch(url, { method: 'DELETE' })).status, 404);
+
+  for (const { scenario, run, result } of removed) {
+    assert.equal(await prisma.testScenario.findUnique({ where: { id: scenario.id } }), null);
+    assert.equal(await prisma.testRun.findUnique({ where: { id: run.id } }), null);
+    assert.equal(await prisma.testResult.findUnique({ where: { id: result.id } }), null);
+  }
+  assert.deepEqual((await prisma.testScenario.findUnique({ where: { id: retained.scenario.id } })).automation,
+    retained.scenario.automation);
+  assert.ok(await prisma.testRun.findUnique({ where: { id: retained.run.id } }));
+  assert.ok(await prisma.testResult.findUnique({ where: { id: retained.result.id } }));
+});
+
 test('Reportes conserva una fila por escenario aunque un caso acumule más intentos que el límite del historial', async () => {
   const projectId = await makeProject();
   const scenario = { title: 'Inicio de sesión', steps: [{ ordinal: 1, action: 'x' }] };
