@@ -1108,6 +1108,11 @@ async function verifyQualityScenarios(page) {
     assert.deepEqual(qualityFileRequests.filter(request => request.method === 'GET').map(request => request.kind),
       qualityScenarioRows.map(row => row.quality.kind));
     await expect(generate).toBeDisabled();
+    await expect(selectVisible).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Ejecutar suite (3)', exact: true })).toBeEnabled();
+    const exclusions = automation.getByRole('status', { name: 'Pruebas de calidad excluidas de la suite' });
+    await expect(exclusions).toContainText('1 prueba de calidad con código guardado queda fuera de la suite.');
+    await expect(exclusions.getByRole('listitem')).toHaveText('Revisar usabilidad del catálogo · Requiere un entorno y un destino autorizados.');
     await automation.getByRole('button', { name: 'Todos (' + total + ')', exact: true }).click();
     const initialRuns = scenarioRuns.length;
     await page.getByRole('button', { name: 'Ejecutar suite (5)', exact: true }).click();
@@ -1196,6 +1201,7 @@ async function verifyQualityScenarios(page) {
     await page.reload();
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await automation.getByRole('button', { name: 'Calidad (4)', exact: true }).click();
+    await expect(exclusions).toHaveCount(0);
     await page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true }).click();
     await expect(dialog.getByRole('checkbox', { name: 'Seleccionar Funcional web', exact: true })).not.toBeChecked();
     await dialog.getByRole('checkbox', { name: 'Seleccionar Disponibilidad', exact: true }).uncheck();

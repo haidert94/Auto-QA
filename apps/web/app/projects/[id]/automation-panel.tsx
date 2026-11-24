@@ -209,8 +209,12 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const ready = prepared.filter(scenario => selected.has(scenario.id));
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError && !onlyQuality;
   const browserSuite = canRun ? ready : [];
+  const qualityEligibility = selectedQualityRows.map(row => ({
+    ...row, problem: qualityExecutionProblem(row.scenario, project, role),
+  }));
+  const blockedQuality = qualityEligibility.filter(({ origin, problem }) => origin.automation.prepared && problem);
   const runnableQualityCount = project.status === 'READY'
-    ? selectedQualityRows.filter(({ scenario }) => !qualityExecutionProblem(scenario, project, role)).length : 0;
+    ? qualityEligibility.filter(({ problem }) => !problem).length : 0;
   const suiteCount = browserSuite.length + runnableQualityCount;
   const pendingQuality = selectedQualityRows.filter(({ origin }) => !origin.automation.prepared);
   const generationDisabled = busy || ((!!listError || ready.length === selectedScenarios.length) && pendingQuality.length === 0);
@@ -333,6 +337,13 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
     </GenerationCard>}
     {notice && <p className="automation-message automation-operation-notice" role="status">{notice}</p>}
     {error && <p className="automation-message error" role="alert">{error}</p>}
+    {canRunSuite && project.status === 'READY' && blockedQuality.length > 0 &&
+      <div className="automation-message automation-suite-exclusions" role="status" aria-label="Pruebas de calidad excluidas de la suite">
+        <strong>{blockedQuality.length === 1
+          ? '1 prueba de calidad con código guardado queda fuera de la suite.'
+          : `${blockedQuality.length} pruebas de calidad con código guardado quedan fuera de la suite.`}</strong>
+        <ul>{blockedQuality.map(({ scenario, problem }) => <li key={scenario.id}>{scenario.title} · {problem}</li>)}</ul>
+      </div>}
     <ScenarioListToolbar
       label="Buscar y filtrar automatización" searchLabel={hasQuality ? 'Buscar pruebas para automatización' : 'Buscar escenarios para Playwright'}
       placeholder="Buscar por título, ID, paso o archivo…"
