@@ -55,19 +55,15 @@
   },
   "overrides": {
     "multer": "2.5.0",
-    "body-parser": "1.20.9",
     "qs": "6.16.1",
     "lodash": "4.18.1",
     "postcss": "8.5.23",
     "picomatch@4": "4.0.4",
-    "glob@10": "10.5.0",
+    "glob@10": "14.0.6",
     "webpack": "5.104.1",
     "@prisma/config@6.19.3": {
       "effect": "3.22.1",
       "deepmerge-ts": "8.0.0"
-    },
-    "get-uri@6": {
-      "basic-ftp": "6.2.4"
     },
     "external-editor@3": {
       "tmp": "0.2.7"
@@ -76,8 +72,16 @@
       ".": "$exceljs",
       "uuid": "11.1.1"
     },
-    "@nestjs/common@10": {
-      "file-type": "21.3.2"
-    }
+    "lighthouse": {
+      ".": "$lighthouse",
+      "puppeteer-core": "25.18.1",
+      "@sentry/node": "11.17.0"
+    },
+    "chromium-bidi@157.0.8090-0": {
+      "zod": "4.6.6"
+    },
+    "body-parser@1": "1.20.9",
+    "@nestjs/common": "11.1.18",
+    "ajv@8": "8.20.0"
   }
 }
