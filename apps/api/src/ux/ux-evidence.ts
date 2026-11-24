@@ -39,6 +39,27 @@ export function summarizeUxDom() {
   };
 }
 
+
+export function normalizeUxReport(value: unknown) {
+  const report = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const text = (input: unknown, limit: number) => typeof input === 'string' ? input.trim().slice(0, limit) : '';
+  const findings = Array.isArray(report.findings) ? report.findings.slice(0, 25).flatMap((value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const finding = value as Record<string, unknown>;
+    const summary = text(finding.summary, 800);
+    if (!summary) return [];
+    const { severity } = finding;
+    return [{
+      summary,
+      severity: severity === 'critical' || severity === 'major' || severity === 'minor' ? severity : 'unknown',
+      recommendation: text(finding.recommendation, 800),
+      heuristic: text(finding.heuristic, 80),
+      selector: text(finding.selector, 300),
+    }];
+  }) : [];
+  return { overallSummary: text(report.overallSummary, 1800), findings };
+}
+
 export const UX_PROMPT_START = [
   'Audita la siguiente página web aplicando heurísticas de Nielsen y pautas WCAG básicas.',
   'Heurísticas a considerar:',

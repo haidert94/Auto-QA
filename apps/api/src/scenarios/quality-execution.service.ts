@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma, RunStatus } from '@prisma/client';
+import { Prisma, type RunStatus } from '@prisma/client';
 import { projectScope, hasRole, type Workspace } from '../commerce/workspace.guard';
 import { AiRouter } from '../ai/ai-router';
 import { UsageService } from '../commerce/usage.service';
@@ -55,7 +55,8 @@ function updateAudit(
     });
     case 'ux': return tx.uxAudit.updateMany({
       where, data: { ...data, ...(queued && {
-        reportKey: null, totalFindings: null, criticalCount: null, majorCount: null, minorCount: null,
+        reportKey: null, reportDetails: Prisma.DbNull, screenshotKey: null,
+        totalFindings: null, criticalCount: null, majorCount: null, minorCount: null,
       }) },
     });
   }

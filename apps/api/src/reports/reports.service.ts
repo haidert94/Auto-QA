@@ -3,6 +3,7 @@ import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { DocumentsService } from '../documents/documents.service';
 import { SCREENSHOT_READER, type ScreenshotReader } from '../exploration/screenshot-storage';
 import { KEY_PATTERN } from '../exploration/s3-config';
+import { normalizeUxReport } from '../ux/ux-evidence';
 import { qualityError, readQualityResults, type AvailabilityCheck, type UxResultDetail } from './quality-results';
 import { IcspService } from '../icsp/icsp.service';
 import { computeIcsp } from '../icsp/icsp-calculator';
@@ -37,16 +38,9 @@ export class ReportsService {
 
   async uxDetails(projectId: string, id: string, workspace: Workspace): Promise<UxResultDetail> {
     const data = await this.readUxEvidence(projectId, id, workspace);
-    const text = (value: unknown, limit: number) => typeof value === 'string' ? value.trim().slice(0, limit) : '';
-    const findings = Array.isArray(data.findings) ? data.findings.slice(0, 25).flatMap(finding => {
-      if (!finding || typeof finding !== 'object') return [];
-      const { summary, recommendation, severity } = finding as Record<string, unknown>;
-      const message = text(summary, 800);
-      if (!message) return [];
-      return [{ summary: message, recommendation: text(recommendation, 800),
-        severity: severity === 'critical' || severity === 'major' || severity === 'minor' ? severity : 'unknown' }];
-    }) : [];
-    return { summary: text(data.overallSummary, 1800), findings, hasScreenshot: this.uxScreenshotKey(data) !== null };
+    const report = normalizeUxReport(data);
+    const findings = report.findings.map(({ summary, recommendation, severity }) => ({ summary, recommendation, severity }));
+    return { summary: report.overallSummary, findings, hasScreenshot: this.uxScreenshotKey(data) !== null };
   }
 
   async uxScreenshot(projectId: string, id: string, workspace: Workspace) {
@@ -64,8 +58,13 @@ export class ReportsService {
   private async readUxEvidence(projectId: string, id: string, workspace: Workspace): Promise<Record<string, unknown>> {
     await this.ensureProject(projectId, workspace);
     const audit = await this.prisma.uxAudit.findFirst({
-      where: { projectId, id, status: { in: ['COMPLETED', 'FAILED'] } }, select: { reportKey: true },
+      where: { projectId, id, status: { in: ['COMPLETED', 'FAILED'] } },
+      select: { reportDetails: true, screenshotKey: true, reportKey: true },
     });
+    const details = audit?.reportDetails;
+    if (audit && details && typeof details === 'object' && !Array.isArray(details)) {
+      return { ...details, screenshotKey: audit.screenshotKey };
+    }
     const bytes = audit?.reportKey ? await this.evidence.read(audit.reportKey) : null;
     if (bytes && bytes.byteLength <= 1024 * 1024) {
       try {

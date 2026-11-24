@@ -499,8 +499,10 @@ model UxAudit {
   majorCount    Int?
   minorCount    Int?
 
-  // Reporte completo JSON subido al ScreenshotStorage.
-  reportKey String?
+  // El detalle vive en la base. reportKey permite leer los informes anteriores.
+  reportDetails Json?
+  screenshotKey String?
+  reportKey     String?
 
   createdAt DateTime @default(now())
 

@@ -33,11 +33,49 @@ export function ManualEvidenceButton(props: ManualEvidenceButtonProps) {
   </>;
 }
 
+function ManualImagePreview({ file, label }: { file: File; label: string }) {
+  const preview = useRef<HTMLCanvasElement>(null);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    const canvas = preview.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    let active = true;
+    setUnavailable(false);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    async function draw() {
+      try {
+        const bitmap = await createImageBitmap(file);
+        try {
+          if (!active || !canvas || !context) return;
+          const scale = Math.min(canvas.width / bitmap.width, canvas.height / bitmap.height);
+          const width = bitmap.width * scale;
+          const height = bitmap.height * scale;
+          context.drawImage(bitmap, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+        } finally {
+          bitmap.close();
+        }
+      } catch {
+        if (active) setUnavailable(true);
+      }
+    }
+
+    void draw();
+    return () => { active = false; };
+  }, [file]);
+
+  return <>
+    <canvas ref={preview} role="img" aria-label={label} width={240} height={180} hidden={unavailable} />
+    {unavailable && <small>Vista previa no disponible</small>}
+  </>;
+}
+
 function ManualEvidenceModal({ projectId, scenarioId, currentStatus, currentScreenshots, onSaved, onClose }: ManualEvidenceButtonProps & { onClose: () => void }) {
   const [status, setStatus] = useState<ResultStatus>(currentStatus ?? 'PASSED');
   const [notes, setNotes] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picker = useRef<HTMLInputElement>(null);
@@ -53,12 +91,6 @@ function ManualEvidenceModal({ projectId, scenarioId, currentStatus, currentScre
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
     };
   }, []);
-
-  useEffect(() => {
-    const urls = files.map(file => URL.createObjectURL(file));
-    setPreviews(urls);
-    return () => urls.forEach(url => URL.revokeObjectURL(url));
-  }, [files]);
 
   function onPick(selection: FileList | null) {
     if (!selection) return;
@@ -119,8 +151,8 @@ function ManualEvidenceModal({ projectId, scenarioId, currentStatus, currentScre
           <small className="muted">Evidencia actual: {currentScreenshots.length} imagen{currentScreenshots.length === 1 ? '' : 'es'}. Si subes nuevas, reemplazan a las anteriores.</small>
         )}
       </div>
-      {previews.length > 0 && <ol className="manual-evidence-previews">{previews.map((url, index) => <li key={index}>
-        <img src={url.startsWith('blob:') ? url : undefined} alt={`Evidencia ${index + 1}`} />
+      {files.length > 0 && <ol className="manual-evidence-previews">{files.map((file, index) => <li key={index}>
+        <ManualImagePreview file={file} label={`Evidencia ${index + 1}`} />
         <button type="button" aria-label={`Quitar imagen ${index + 1}`} onClick={() => setFiles(files.filter((_, i) => i !== index))}><Trash2 size={11} /></button>
       </li>)}</ol>}
       {error && <p className="error" role="alert">{error}</p>}

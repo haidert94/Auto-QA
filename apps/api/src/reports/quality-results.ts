@@ -92,7 +92,7 @@ export async function readQualityResults(db: Prisma.TransactionClient, projectId
     }),
     db.uxAudit.findMany({
       ...recent,
-      select: { ...run, totalFindings: true, criticalCount: true, majorCount: true, minorCount: true, reportKey: true },
+      select: { ...run, totalFindings: true, criticalCount: true, majorCount: true, minorCount: true, reportKey: true, screenshotKey: true },
     }),
   ]);
   const rows: QualityResult[] = [
@@ -116,7 +116,7 @@ export async function readQualityResults(db: Prisma.TransactionClient, projectId
     ]), !!row.summaryKey)),
     ...ux.map(row => result(row, 'ux', 'Auditoría de usabilidad y accesibilidad', metrics([
       ['Hallazgos', row.totalFindings], ['Críticos', row.criticalCount], ['Mayores', row.majorCount], ['Menores', row.minorCount],
-    ]), !!row.reportKey)),
+    ]), !!(row.screenshotKey || row.reportKey))),
   ];
   return rows.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt) || a.id.localeCompare(b.id));
 }

@@ -2268,9 +2268,21 @@ async function verifyManualEvidenceDialog(page) {
     assert.match(background, /^rgb\(/, 'El fondo del diálogo debe ser opaco.');
     await modal.getByRole('textbox', { name: 'Notas (opcional)' }).fill('El resultado quedó registrado.');
     const [chooser] = await Promise.all([page.waitForEvent('filechooser'), selector.click()]);
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRAAAAABJRU5ErkJggg==', 'base64');
-    await chooser.setFiles({ name: 'evidencia.png', mimeType: 'image/png', buffer: png });
-    await expect(modal.getByRole('img', { name: 'Evidencia 1', exact: true })).toBeVisible();
+    const image = await page.evaluate(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 2;
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#2266cc';
+      context.fillRect(0, 0, 2, 2);
+      return canvas.toDataURL('image/png').split(',')[1];
+    });
+    await chooser.setFiles({ name: 'evidencia.png', mimeType: 'image/png', buffer: Buffer.from(image, 'base64') });
+    const preview = modal.getByRole('img', { name: 'Evidencia 1', exact: true });
+    await expect(preview).toBeVisible();
+    await expect.poll(() => preview.evaluate(canvas => {
+      const pixel = canvas.getContext('2d').getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data;
+      return [...pixel];
+    })).toEqual([34, 102, 204, 255]);
     await expect(save).toBeEnabled();
 
     await page.setViewportSize({ width: 390, height: 620 });

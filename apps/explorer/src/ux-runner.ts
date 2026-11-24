@@ -2,12 +2,12 @@
 // 1. abre la URL con Playwright, captura screenshot y árbol a11y simplificado.
 // 2. llama al AiRouter (operación ux-analysis) con heurísticas Nielsen +
 //    WCAG básico pidiendo hallazgos categorizados.
-// 3. guarda el reporte en ScreenshotStorage y los agregados en UxAudit.
+// 3. guarda la captura en ScreenshotStorage y el informe estructurado en UxAudit.
 
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { chromium } from 'playwright';
 import { type AiRouter } from '../../api/src/ai/ai-router';
-import { buildUxPrompt, summarizeUxDom, UX_NAVIGATION_TIMEOUT_MS, UX_SYSTEM_PROMPT, UX_VIEWPORT } from '../../api/src/ux/ux-evidence';
+import { buildUxPrompt, normalizeUxReport, summarizeUxDom, UX_NAVIGATION_TIMEOUT_MS, UX_SYSTEM_PROMPT, UX_VIEWPORT } from '../../api/src/ux/ux-evidence';
 import { type ScreenshotStorage } from './screenshot-storage';
 import { runnableQualityAttempt } from './quality-attempt';
 
@@ -21,15 +21,6 @@ export type UxAuditClaim = {
 
 type Logger = (level: 'INFO' | 'WARN' | 'ERROR', detail: string) => void;
 
-type Finding = {
-  heuristic?: string;
-  severity?: 'critical' | 'major' | 'minor';
-  summary?: string;
-  recommendation?: string;
-  selector?: string;
-};
-
-type UxReport = { findings?: Finding[]; overallSummary?: string };
 
 export async function runUxAudit(
   prisma: PrismaClient, claim: UxAuditClaim, storage: ScreenshotStorage,
@@ -80,57 +71,55 @@ export async function runUxAudit(
     });
 
     signal?.throwIfAborted();
-    const parsed = parseReport(response.text);
-    const findings = (parsed.findings ?? []).slice(0, 25);
-    const counts = tallySeverities(findings);
-    const reportKey = await storage.put(Buffer.from(JSON.stringify({
-      ...parsed, findings, screenshotKey, model: response.model,
-    }, null, 2), 'utf8'), { contentType: 'application/json' });
+    const report = normalizeUxReport(parseReport(response.text));
+    const counts = tallySeverities(report.findings);
 
     await prisma.uxAudit.updateMany({
       where: runnableQualityAttempt(claim),
       data: {
         status: 'COMPLETED', completedAt: new Date(),
-        totalFindings: findings.length,
+        totalFindings: report.findings.length,
         criticalCount: counts.critical, majorCount: counts.major, minorCount: counts.minor,
-        reportKey,
+        reportDetails: { ...report, model: response.model.slice(0, 120) },
+        screenshotKey, reportKey: null,
       },
     });
-    log('INFO', 'ux ok · findings=' + findings.length + ' c=' + counts.critical + ' M=' + counts.major + ' m=' + counts.minor);
+    log('INFO', 'ux ok · findings=' + report.findings.length + ' c=' + counts.critical + ' M=' + counts.major + ' m=' + counts.minor);
   } catch (error) {
     if (browser) await browser.close().catch(() => {});
     if (signal?.aborted) return;
     const message = error instanceof Error ? error.message : String(error);
     log('ERROR', 'ux-crashed: ' + message);
-    const reportKey = screenshotKey ? await storage.put(Buffer.from(JSON.stringify({
-      screenshotKey, overallSummary: 'La captura está disponible. El análisis de usabilidad no se completó.',
-    }), 'utf8'), { contentType: 'application/json' }).catch(() => null) : null;
     await prisma.uxAudit.updateMany({
       where: runnableQualityAttempt(claim),
-      data: { status: 'FAILED', completedAt: new Date(), errorCode: message.slice(0, 120), reportKey },
+      data: {
+        status: 'FAILED', completedAt: new Date(), errorCode: message.slice(0, 120),
+        reportDetails: screenshotKey ? { overallSummary: 'La captura está disponible. El análisis de usabilidad no se completó.' } : Prisma.DbNull,
+        screenshotKey, reportKey: null,
+      },
     }).catch(() => {});
   } finally {
     signal?.removeEventListener('abort', stopBrowser);
   }
 }
 
-function parseReport(text: string): UxReport {
+function parseReport(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const body = fenced ? fenced[1] : text;
   const start = body.indexOf('{');
   if (start < 0) return {};
-  try { return JSON.parse(body.slice(start)) as UxReport; }
+  try { return JSON.parse(body.slice(start)); }
   catch {
     const end = body.lastIndexOf('}');
     if (end > start) {
-      try { return JSON.parse(body.slice(start, end + 1)) as UxReport; }
+      try { return JSON.parse(body.slice(start, end + 1)); }
       catch { return {}; }
     }
     return {};
   }
 }
 
-function tallySeverities(findings: Finding[]): { critical: number; major: number; minor: number } {
+function tallySeverities(findings: ReturnType<typeof normalizeUxReport>['findings']): { critical: number; major: number; minor: number } {
   let critical = 0, major = 0, minor = 0;
   for (const f of findings) {
     if (f.severity === 'critical') critical += 1;

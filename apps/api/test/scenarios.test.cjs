@@ -689,7 +689,7 @@ test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async
   const url = 'https://example.test/catalogo?token=privado-fixture#credencial';
   const timestamp = new Date('2026-11-23T12:00:00Z');
   const completed = { projectId, url, status: 'COMPLETED', completedAt: timestamp };
-  const [monitor, , , ux, otherUx] = await Promise.all([
+  const [monitor, , , ux, otherUx, storedUx] = await Promise.all([
     prisma.monitor.create({ data: {
       projectId, name: 'Monitor pausado', url, active: false, lastCheckedAt: timestamp, lastStatus: 'UP',
       lastLatencyMs: 0, lastHttpStatus: 204,
@@ -699,6 +699,10 @@ test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async
     prisma.loadTest.create({ data: { ...completed, name: 'Carga registrada', stages: [], failRate: 0, p95Ms: 250 } }),
     prisma.uxAudit.create({ data: { ...completed, totalFindings: 1, criticalCount: 0, reportKey: auditKey } }),
     prisma.uxAudit.create({ data: { ...completed, projectId: otherProjectId, reportKey: auditKey } }),
+    prisma.uxAudit.create({ data: { ...completed, screenshotKey, reportDetails: {
+      overallSummary: 'Auditoría en PostgreSQL',
+      findings: [{ severity: 'minor', summary: 'Mejorar la etiqueta', recommendation: 'Agregar contexto visible' }],
+    } } }),
     prisma.performanceAudit.create({ data: { ...completed, status: 'RUNNING', performanceScore: 99 } }),
     prisma.loadTest.create({ data: { ...completed, name: 'Carga cancelada', status: 'CANCELED', stages: [] } }),
   ]);
@@ -721,7 +725,8 @@ test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async
     assert.equal(response.status, 200);
     const data = await response.json();
     const byKind = new Map(data.map(row => [row.kind, row]));
-    assert.equal(data.length, 4);
+    assert.equal(data.length, 5);
+    assert.equal(data.find(row => row.id === storedUx.id).hasEvidence, true);
     assert.equal(byKind.get('availability').status, 'available');
     assert.deepEqual(byKind.get('availability').metrics, [{ label: 'Código HTTP', value: '204' }, { label: 'Latencia', value: '0 ms' }]);
     assert.ok(byKind.get('lighthouse').metrics.some(metric => metric.value === '0/100'));
@@ -735,6 +740,12 @@ test('Reportes reúne resultados finalizados y evidencia UX del proyecto', async
     const screenshot = await request(base + '/ux/' + ux.id + '/screenshot');
     assert.equal(screenshot.headers.get('content-type'), 'image/png');
     assert.deepEqual([...new Uint8Array(await screenshot.arrayBuffer())], [137, 80, 78, 71]);
+    const stored = await (await request(base + '/ux/' + storedUx.id)).json();
+    assert.deepEqual(stored, { summary: 'Auditoría en PostgreSQL', hasScreenshot: true,
+      findings: [{ severity: 'minor', summary: 'Mejorar la etiqueta', recommendation: 'Agregar contexto visible' }] });
+    const storedScreenshot = await request(base + '/ux/' + storedUx.id + '/screenshot');
+    assert.equal(storedScreenshot.status, 200);
+    assert.deepEqual([...new Uint8Array(await storedScreenshot.arrayBuffer())], [137, 80, 78, 71]);
     assert.equal((await request(base + '/ux/' + otherUx.id)).status, 404);
     assert.equal((await request(base + '/ux/' + otherUx.id + '/screenshot')).status, 404);
   } finally {
