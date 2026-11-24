@@ -1,5 +1,5 @@
 // Ticker de monitores: toma hasta N monitores "vencidos" por tick,
-// les hace HTTP GET (sin Chromium — es barato), guarda el check y
+// ejecuta sus comprobaciones HTTP (sin Chromium — es barato), guarda el check y
 // dispara alertas si cambió el estado. No usa el filtro Playwright,
 // pero sí revalida la URL con url-guard antes de cada chequeo (DNS
 // podría haber cambiado desde que se creó el monitor).
@@ -8,6 +8,7 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest, Agent } from 'node:https';
 import type { PrismaClient } from '@prisma/client';
 import { configuredUrlScope, validateExplorationUrl } from '../../api/src/exploration/url-guard';
+import { defaultMonitorHttpCheck, type MonitorHttpCheck } from '../../api/src/monitors/monitor-http-check';
 import { RUN_CANCELED_BY_USER, RUN_STOP_REQUESTED } from '../../api/src/runs/run-cancellation';
 import { withQualityStop } from './quality-attempt';
 
@@ -22,7 +23,7 @@ export type MonitorClaim = {
   notifyEmails: string[];
   previousStatus: string | null;
   checkId?: string;
-};
+} & MonitorHttpCheck;
 
 type Logger = (level: 'INFO' | 'WARN' | 'ERROR', detail: string) => void;
 
@@ -34,7 +35,7 @@ async function claimRequestedChecks(prisma: PrismaClient): Promise<MonitorClaim[
     UPDATE "MonitorCheck" c SET status = 'RUNNING'
     FROM (
       SELECT c.id AS "checkId", m.id, m."projectId", m."environmentId", m.url,
-        m."timeoutMs", m."notifyEmails", m."lastStatus" AS "previousStatus"
+        m."timeoutMs", m.method, m."minStatus", m."maxStatus", m."notifyEmails", m."lastStatus" AS "previousStatus"
       FROM "MonitorCheck" c JOIN "Monitor" m ON m.id = c."monitorId"
       WHERE c.status = 'QUEUED'
       ORDER BY c.at, c.id
@@ -47,10 +48,7 @@ async function claimRequestedChecks(prisma: PrismaClient): Promise<MonitorClaim[
 }
 
 export async function claimDueMonitors(prisma: PrismaClient, limit = BATCH_SIZE): Promise<MonitorClaim[]> {
-  const rows = await prisma.$queryRaw<Array<{
-    id: string; projectId: string; environmentId: string | null; url: string;
-    timeoutMs: number; notifyEmails: string[]; lastStatus: string | null;
-  }>>`
+  const rows = await prisma.$queryRaw<Array<Omit<MonitorClaim, 'previousStatus'> & { lastStatus: string | null }>>`
     UPDATE "Monitor"
     SET "lastCheckedAt" = now()
     WHERE id IN (
@@ -66,13 +64,9 @@ export async function claimDueMonitors(prisma: PrismaClient, limit = BATCH_SIZE)
       FOR UPDATE SKIP LOCKED
       LIMIT ${limit}
     )
-    RETURNING id, "projectId", "environmentId", url, "timeoutMs", "notifyEmails", "lastStatus";
+    RETURNING id, "projectId", "environmentId", url, "timeoutMs", method, "minStatus", "maxStatus", "notifyEmails", "lastStatus";
   `;
-  return rows.map(row => ({
-    id: row.id, projectId: row.projectId, environmentId: row.environmentId,
-    url: row.url, timeoutMs: row.timeoutMs, notifyEmails: row.notifyEmails,
-    previousStatus: row.lastStatus,
-  }));
+  return rows.map(({ lastStatus, ...claim }) => ({ ...claim, previousStatus: lastStatus }));
 }
 
 export type CheckOutcome = {
@@ -82,15 +76,14 @@ export type CheckOutcome = {
   errorCode: string | null;
 };
 
-// HTTP HEAD → si no responde cae a GET. 2xx/3xx = UP; 4xx/5xx = DOWN.
-// Timeout definido por el monitor. Un error de red devuelve DOWN con
-// errorCode legible.
-export async function performCheck(url: string, timeoutMs: number, signal?: AbortSignal): Promise<CheckOutcome> {
+export async function performCheck(
+  url: string, timeoutMs: number, signal?: AbortSignal, check: MonitorHttpCheck = defaultMonitorHttpCheck,
+): Promise<CheckOutcome> {
   const started = Date.now();
   try {
-    const result = await httpOnce(url, timeoutMs, signal);
+    const result = await httpOnce(url, timeoutMs, check.method === 'HEAD' ? 'HEAD' : 'GET', signal);
     const latencyMs = Date.now() - started;
-    const up = result.status >= 200 && result.status < 400;
+    const up = result.status >= check.minStatus && result.status <= check.maxStatus;
     return { status: up ? 'UP' : 'DOWN', httpStatus: result.status, latencyMs, errorCode: up ? null : 'http-' + result.status };
   } catch (error) {
     const latencyMs = Date.now() - started;
@@ -99,7 +92,7 @@ export async function performCheck(url: string, timeoutMs: number, signal?: Abor
   }
 }
 
-function httpOnce(url: string, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number }> {
+function httpOnce(url: string, timeoutMs: number, method: 'GET' | 'HEAD', signal?: AbortSignal): Promise<{ status: number }> {
   return new Promise((resolve, reject) => {
     let parsed: URL;
     try { parsed = new URL(url); } catch { reject(new Error('invalid-url')); return; }
@@ -107,7 +100,7 @@ function httpOnce(url: string, timeoutMs: number, signal?: AbortSignal): Promise
     const transport = isHttps ? httpsRequest : httpRequest;
     const agent = isHttps ? new Agent({ keepAlive: false }) : undefined;
     const req = transport({
-      method: 'GET',
+      method,
       protocol: parsed.protocol,
       hostname: parsed.hostname,
       port: parsed.port || (isHttps ? 443 : 80),
@@ -161,8 +154,8 @@ export async function tickMonitors(prisma: PrismaClient, log: Logger, notify: (
       ? await withQualityStop(async () => {
         const check = await prisma.monitorCheck.findUnique({ where: { id: claim.checkId }, select: { errorCode: true, status: true } });
         return !check || check.status !== 'RUNNING' || check.errorCode === RUN_STOP_REQUESTED;
-      }, signal => performCheck(claim.url, claim.timeoutMs, signal))
-      : await performCheck(claim.url, claim.timeoutMs);
+      }, signal => performCheck(claim.url, claim.timeoutMs, signal, claim))
+      : await performCheck(claim.url, claim.timeoutMs, undefined, claim);
     await recordCheck(prisma, claim, outcome, log, notify);
   }));
 

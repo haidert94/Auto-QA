@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ImagePlus, Loader2, Paperclip, Trash2, X } from 'lucide-react';
 
 type ManualScreenshot = { ordinal: number; filename: string; contentType: string; data: string };
@@ -41,12 +41,18 @@ function ManualEvidenceModal({ projectId, scenarioId, currentStatus, currentScre
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picker = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const uploadHint = useId();
 
   useEffect(() => {
-    function onEsc(event: KeyboardEvent) { if (event.key === 'Escape') onClose(); }
-    document.addEventListener('keydown', onEsc);
-    return () => document.removeEventListener('keydown', onEsc);
-  }, [onClose]);
+    const trigger = document.activeElement;
+    const panel = dialog.current;
+    panel?.showModal();
+    return () => {
+      panel?.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, []);
 
   useEffect(() => {
     const urls = files.map(file => URL.createObjectURL(file));
@@ -86,42 +92,46 @@ function ManualEvidenceModal({ projectId, scenarioId, currentStatus, currentScre
     } finally { setBusy(false); }
   }
 
-  return <div className="evidence-modal" role="dialog" aria-modal="true" aria-label="Adjuntar evidencia manual" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <div className="evidence-modal__panel manual-evidence-panel">
-      <header><h3>Adjuntar evidencia</h3><button type="button" onClick={onClose} aria-label="Cerrar"><X size={16} /></button></header>
-      <div className="manual-evidence-body">
-        <label className="manual-evidence-field">Estado del escenario
-          <select value={status} onChange={event => setStatus(event.target.value as ResultStatus)}>
-            {(Object.keys(STATUS_LABEL) as ResultStatus[]).map(key => <option key={key} value={key}>{STATUS_LABEL[key]}</option>)}
-          </select>
-        </label>
-        <label className="manual-evidence-field">Notas (opcional)
-          <textarea value={notes} onChange={event => setNotes(event.target.value)} rows={2} maxLength={2000} placeholder="Observaciones de la ejecución…" />
-        </label>
-        <div className="manual-evidence-field">
-          <span>Imágenes (máx. 8 · PNG/JPG/WebP/GIF · ≤ 1.5 MB cada una)</span>
-          <input ref={picker} type="file" accept="image/*" multiple hidden onChange={event => onPick(event.target.files)} />
-          <button type="button" className="secondary" onClick={() => picker.current?.click()}>
-            <ImagePlus size={13} />Seleccionar imágenes
-          </button>
-          {currentScreenshots && currentScreenshots.length > 0 && files.length === 0 && (
-            <small className="muted">Evidencia actual: {currentScreenshots.length} imagen{currentScreenshots.length === 1 ? '' : 'es'}. Si subes nuevas, reemplazan a las anteriores.</small>
-          )}
+  return <dialog ref={dialog} className="evidence-modal__box manual-evidence-panel" aria-label="Adjuntar evidencia manual"
+    onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}
+    onClick={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <header><h3>Adjuntar evidencia</h3><button type="button" onClick={onClose} aria-label="Cerrar" disabled={busy}><X size={16} /></button></header>
+    <div className="manual-evidence-body">
+      <label className="manual-evidence-field">Estado del escenario
+        <select value={status} onChange={event => setStatus(event.target.value as ResultStatus)}>
+          {(Object.keys(STATUS_LABEL) as ResultStatus[]).map(key => <option key={key} value={key}>{STATUS_LABEL[key]}</option>)}
+        </select>
+      </label>
+      <label className="manual-evidence-field">Notas (opcional)
+        <textarea value={notes} onChange={event => setNotes(event.target.value)} rows={2} maxLength={2000} placeholder="Observaciones de la ejecución…" />
+      </label>
+      <div className="manual-evidence-upload">
+        <div>
+          <strong>Imágenes</strong>
+          <p id={uploadHint}>Hasta 8 archivos PNG, JPG, WebP o GIF de 1,5 MB cada uno.</p>
         </div>
-        {previews.length > 0 && <ol className="manual-evidence-previews">{previews.map((url, index) => <li key={index}>
-          <img src={url} alt={`Evidencia ${index + 1}`} />
-          <button type="button" aria-label={`Quitar imagen ${index + 1}`} onClick={() => setFiles(files.filter((_, i) => i !== index))}><Trash2 size={11} /></button>
-        </li>)}</ol>}
-        {error && <p className="error" role="alert">{error}</p>}
-      </div>
-      <footer>
-        <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancelar</button>
-        <button type="button" onClick={() => void submit()} disabled={busy || (!files.length && !currentScreenshots?.length)}>
-          {busy ? <><Loader2 size={13} className="spin" />Guardando…</> : 'Guardar evidencia'}
+        <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden
+          onChange={event => { onPick(event.target.files); event.target.value = ''; }} />
+        <button type="button" className="secondary" aria-describedby={uploadHint} onClick={() => picker.current?.click()}>
+          <ImagePlus size={15} aria-hidden="true" />Seleccionar imágenes
         </button>
-      </footer>
+        {currentScreenshots && currentScreenshots.length > 0 && files.length === 0 && (
+          <small className="muted">Evidencia actual: {currentScreenshots.length} imagen{currentScreenshots.length === 1 ? '' : 'es'}. Si subes nuevas, reemplazan a las anteriores.</small>
+        )}
+      </div>
+      {previews.length > 0 && <ol className="manual-evidence-previews">{previews.map((url, index) => <li key={index}>
+        <img src={url} alt={`Evidencia ${index + 1}`} />
+        <button type="button" aria-label={`Quitar imagen ${index + 1}`} onClick={() => setFiles(files.filter((_, i) => i !== index))}><Trash2 size={11} /></button>
+      </li>)}</ol>}
+      {error && <p className="error" role="alert">{error}</p>}
     </div>
-  </div>;
+    <footer>
+      <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancelar</button>
+      <button type="button" onClick={() => void submit()} disabled={busy || (!files.length && !currentScreenshots?.length)}>
+        {busy ? <><Loader2 size={13} className="spin" />Guardando…</> : 'Guardar evidencia'}
+      </button>
+    </footer>
+  </dialog>;
 }
 
 export function ManualEvidencePreview({ screenshots }: { screenshots: ManualScreenshot[] }) {

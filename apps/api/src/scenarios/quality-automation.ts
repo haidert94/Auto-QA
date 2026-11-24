@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { configuredUrlScope, validateExplorationUrlSync } from '../exploration/url-guard';
+import { defaultMonitorHttpCheck, monitorHttpCheckFields, type MonitorHttpCheck } from '../monitors/monitor-http-check';
 import { prepareAvailability } from './quality-agents/availability-agent';
 import { prepareLighthouse } from './quality-agents/lighthouse-agent';
 import { prepareK6 } from './quality-agents/k6-agent';
@@ -34,10 +35,11 @@ export const qualityAutomationSource = {
 } as const;
 
 type Source = Prisma.MonitorGetPayload<{ select: typeof qualityAutomationSource }> & {
+  active?: boolean;
   timeoutMs?: number;
   intervalMinutes?: number;
   stages?: Prisma.JsonValue;
-};
+} & Partial<MonitorHttpCheck>;
 type StoredSource = Source & { automationCode: string | null };
 type QualityFile = QualityAutomation & { code?: string };
 
@@ -45,16 +47,23 @@ function environmentFor(source: Source) {
   return source.environment?.projectId === source.projectId ? source.environment : null;
 }
 
-function snapshotSignature(kind: QualityKind, source: Source) {
+export function qualityConfigurationSignature(kind: QualityKind, source: Source) {
   const environment = environmentFor(source);
+  const check = kind === 'availability' ? customMonitorHttpCheck(source) : [];
   return createHash('sha256').update(JSON.stringify([
     2, kind, source.url, source.timeoutMs, source.intervalMinutes, source.stages, source.environmentId,
     environment?.authorizationConfirmed, environment?.authorizedAt,
-    environment?.allowedHosts, environment?.allowedPaths, environment?.excludedPaths,
+    environment?.allowedHosts, environment?.allowedPaths, environment?.excludedPaths, ...check,
   ])).digest('hex');
 }
 
-function authorizedTarget(source: Source): URL {
+function customMonitorHttpCheck(source: Partial<MonitorHttpCheck>) {
+  const { method, minStatus, maxStatus } = { ...defaultMonitorHttpCheck, ...source };
+  if (method === 'GET' && minStatus === 200 && maxStatus === 399) return [];
+  return [method, minStatus, maxStatus];
+}
+
+export function authorizedTarget(source: Source): URL {
   const environment = environmentFor(source);
   if (!environment?.authorizationConfirmed) {
     throw new QualityReviewRequired('Asocia la prueba a un entorno autorizado.');
@@ -65,7 +74,7 @@ function authorizedTarget(source: Source): URL {
 }
 
 function wasPreparedByLegacyGenerator(kind: QualityKind, source: Source) {
-  if (!source.automationSignature || source.automationReview) return false;
+  if (!source.automationSignature || source.automationReview || (kind === 'availability' && customMonitorHttpCheck(source).length)) return false;
   const legacy = createHash('sha256').update(JSON.stringify([1, kind, source.url, source.timeoutMs, source.stages])).digest('hex');
   if (source.automationSignature !== legacy) return false;
   try {
@@ -78,7 +87,7 @@ function wasPreparedByLegacyGenerator(kind: QualityKind, source: Source) {
 }
 
 export function qualityAutomationStatus(kind: QualityKind, source: Source): QualityAutomation {
-  if (source.automationSignature === snapshotSignature(kind, source)) {
+  if (source.automationSignature === qualityConfigurationSignature(kind, source)) {
     return source.automationReview
       ? { ...qualityTools[kind], prepared: false, reviewReason: source.automationReview }
       : { ...qualityTools[kind], prepared: true };
@@ -90,6 +99,9 @@ function renderAgentFile(kind: QualityKind, source: Source, target: URL, uxConte
   switch (kind) {
     case 'availability': return prepareAvailability(target, {
       timeoutMs: source.timeoutMs ?? 0, intervalMinutes: source.intervalMinutes ?? 0,
+      method: source.method ?? defaultMonitorHttpCheck.method,
+      minStatus: source.minStatus ?? defaultMonitorHttpCheck.minStatus,
+      maxStatus: source.maxStatus ?? defaultMonitorHttpCheck.maxStatus,
     });
     case 'lighthouse': return prepareLighthouse(target);
     case 'load': return prepareK6(target, source.stages);
@@ -113,11 +125,17 @@ function checkModuleSyntax(code: string): Promise<boolean> {
 export function readQualityExecutionSource(db: Prisma.TransactionClient, kind: QualityKind, where: { id: string; projectId: string }): PromiseLike<StoredSource | null> {
   const select = { ...qualityAutomationSource, automationCode: true } as const;
   switch (kind) {
-    case 'availability': return db.monitor.findFirst({ where, select: { ...select, timeoutMs: true, intervalMinutes: true } });
+    case 'availability': return db.monitor.findFirst({ where, select: { ...select, ...monitorHttpCheckFields, active: true, timeoutMs: true, intervalMinutes: true } });
     case 'lighthouse': return db.performanceAudit.findFirst({ where, select });
     case 'load': return db.loadTest.findFirst({ where, select: { ...select, stages: true } });
     case 'ux': return db.uxAudit.findFirst({ where, select });
   }
+}
+
+export async function renderQualityConfiguration(kind: QualityKind, source: Source, target: URL, context: UxAgentContext) {
+  const code = await renderAgentFile(kind, source, target, context);
+  if (!await checkModuleSyntax(code)) throw new QualityReviewRequired('El archivo generado no pasó la validación de sintaxis.');
+  return { automationSignature: qualityConfigurationSignature(kind, source), automationCode: code, automationReview: null };
 }
 
 function savePreparation(
@@ -130,7 +148,8 @@ function savePreparation(
   };
   switch (kind) {
     case 'availability': return db.monitor.updateMany({
-      where: { ...where, timeoutMs: source.timeoutMs, intervalMinutes: source.intervalMinutes }, data,
+      where: { ...where, timeoutMs: source.timeoutMs, intervalMinutes: source.intervalMinutes,
+        method: source.method, minStatus: source.minStatus, maxStatus: source.maxStatus }, data,
     });
     case 'lighthouse': return db.performanceAudit.updateMany({ where, data });
     case 'load': return db.loadTest.updateMany({
@@ -155,7 +174,7 @@ async function qualityFile(
   }
   if (!context) throw new NotFoundException('El código de esta prueba está pendiente de generación.');
 
-  const signature = snapshotSignature(kind, source);
+  const signature = qualityConfigurationSignature(kind, source);
   let code: string | null = null;
   let reviewReason: string | null = null;
   try {
@@ -169,7 +188,7 @@ async function qualityFile(
 
   const latest = await readQualityExecutionSource(db, kind, where);
   if (!latest) throw new NotFoundException('Prueba de calidad no encontrada.');
-  if (snapshotSignature(kind, latest) !== signature) throw new ConflictException('La configuración cambió. Vuelve a generar el archivo.');
+  if (qualityConfigurationSignature(kind, latest) !== signature) throw new ConflictException('La configuración cambió. Vuelve a generar el archivo.');
   const latestMetadata = qualityAutomationStatus(kind, latest);
   if (latestMetadata.prepared) return latestMetadata;
 
@@ -178,7 +197,7 @@ async function qualityFile(
   });
   if (!updated.count) {
     const concurrent = await readQualityExecutionSource(db, kind, where);
-    if (concurrent && snapshotSignature(kind, concurrent) === signature) {
+    if (concurrent && qualityConfigurationSignature(kind, concurrent) === signature) {
       const concurrentMetadata = qualityAutomationStatus(kind, concurrent);
       if (concurrentMetadata.prepared || concurrentMetadata.reviewReason) return concurrentMetadata;
     }

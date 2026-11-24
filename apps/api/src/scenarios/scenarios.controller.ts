@@ -4,6 +4,7 @@ import { CurrentWorkspace, RequiresPlanCapability, RequiresRole, type Workspace,
 import { CreateScenarioDto, ScenarioSelectionDto, UpdateScenarioDto } from './dto/scenario.dto';
 import { ScenariosService } from './scenarios.service';
 import { QualityExecutionService } from './quality-execution.service';
+import { QualityConfigurationDto } from './dto/quality-configuration.dto';
 
 type HttpResponse = { setHeader(name: string, value: string): unknown };
 
@@ -69,6 +70,17 @@ export class ScenariosController {
   @RequiresPlanCapability('BROWSER_TESTS')
   listQuality(@Param('projectId', ParseUUIDPipe) projectId: string, @CurrentWorkspace() workspace: Workspace) {
     return this.service.listQuality(projectId, workspace);
+  }
+
+  @Patch('quality/:kind/:id/configuration')
+  @RequiresRole('EDITOR')
+  @RequiresPlanCapability('BROWSER_TESTS')
+  configureQuality(
+    @Param('projectId', ParseUUIDPipe) projectId: string, @Param('kind') kind: string,
+    @Param('id', ParseUUIDPipe) id: string, @Body() dto: QualityConfigurationDto,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.qualityExecution.configure(projectId, id, kind, dto, workspace);
   }
 
   @Post('quality/:kind/:id/executions/:attemptId')

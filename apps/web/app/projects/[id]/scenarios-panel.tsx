@@ -366,7 +366,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           disabled={!selected.length || deletionDisabled}
           onClick={deleteSelected}>Eliminar escenarios</button>}
         <ScenarioExport projectId={project.id} projectName={project.name} scenarios={checked.size ? selected : items ?? []} />
-        {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && !canOpenSuite)} onClick={() => runner.open(runnable && !listError ? browserSuite : [], qualitySuite)}>
+        {canRun && runner && <button type="button" disabled={runner.stopping || (!runner.hasSuite && !canOpenSuite)} onClick={() => runner.open(runnable && !listError ? browserSuite : [], qualitySuite, {
+          scenarios: runnable && !listError ? (items ?? []).filter(hasRunnableSpec) : [],
+          qualityScenarios: qualityItems,
+        })}>
           {runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suiteCount})`}<ArrowRight size={14} />
         </button>}
       </>} />, header.element)}

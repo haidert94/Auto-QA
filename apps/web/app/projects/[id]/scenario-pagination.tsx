@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const PAGE_SIZES = [10, 20, 30] as const;
 
@@ -27,7 +27,7 @@ export function useScenarioPagination<Item, Ref extends HTMLElement = HTMLUListE
     if (page !== currentPage) setPage(currentPage);
   }, [page, currentPage]);
 
-  function resetPage() { setPage(1); }
+  const resetPage = useCallback(() => setPage(1), []);
 
   function changePage(nextPage: number) {
     setPage(nextPage);

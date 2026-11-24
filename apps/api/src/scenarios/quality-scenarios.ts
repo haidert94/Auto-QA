@@ -1,6 +1,7 @@
 import type { Prisma, RunStatus } from '@prisma/client';
 
-import { DEFAULT_K6_LIMITS, readLoadStages } from '../load/k6-summary';
+import { DEFAULT_K6_LIMITS, readLoadStages, type LoadStage } from '../load/k6-summary';
+import { monitorHttpCheckFields, type MonitorHttpCheck } from '../monitors/monitor-http-check';
 import { LIGHTHOUSE_CATEGORIES } from '../performance/lighthouse-report';
 import { UX_NAVIGATION_TIMEOUT_MS, UX_VIEWPORT } from '../ux/ux-evidence';
 import { qualityAutomationSource, qualityAutomationStatus, type QualityAutomation, type QualityKind as Kind } from './quality-automation';
@@ -16,6 +17,8 @@ export type QualityScenarioOrigin = {
     environmentId: string | null;
     url: string | null;
     parameters: Array<{ label: string; value: string }>;
+    monitor?: MonitorHttpCheck & { intervalMinutes: number; timeoutMs: number; active: boolean };
+    stages?: LoadStage[];
   };
   label: string;
   status: Status;
@@ -102,14 +105,14 @@ function scenario(
   };
 }
 
-export async function readQualityScenarios(db: Prisma.TransactionClient, projectId: string) {
+export async function readQualityScenarios(db: Prisma.TransactionClient, projectId: string, id?: string) {
   // Los registros de herramientas e intentos antiguos se consultan en Reportes.
-  const where = { projectId, requirement: { is: { projectId } } };
+  const where = { projectId, ...(id && { id }), requirement: { is: { projectId } } };
   const [monitors, audits, loads, uxAudits] = await Promise.all([
     db.monitor.findMany({
       where,
       select: {
-        ...qualityAutomationSource, ...requirementFields, id: true, name: true, active: true, intervalMinutes: true, timeoutMs: true,
+        ...qualityAutomationSource, ...monitorHttpCheckFields, ...requirementFields, id: true, name: true, active: true, intervalMinutes: true, timeoutMs: true,
         lastCheckedAt: true, lastStatus: true, lastLatencyMs: true, lastHttpStatus: true,
       },
     }),
@@ -131,16 +134,17 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
         : row.lastStatus === 'UP' ? { label: 'Disponible', tone: 'passed' }
         : row.lastStatus === 'DOWN' ? { label: 'No disponible', tone: 'failed' }
         : { label: 'Sin comprobaciones', tone: 'unknown' };
+      const { method, minStatus, maxStatus, intervalMinutes, timeoutMs, active } = row;
       return scenario('availability', row.name, displayTarget(row.url), 'que hay un monitor configurado',
         'AutoQA comprueba la disponibilidad cada ' + row.intervalMinutes + ' min',
-        'El servicio responde con un código HTTP entre 200 y 399 dentro de ' + row.timeoutMs + ' ms.', row, {
+        'El servicio responde a ' + method + ' con un código HTTP entre ' + minStatus + ' y ' + maxStatus + ' dentro de ' + timeoutMs + ' ms.', row, {
           resourceId: row.id, automation: qualityAutomationStatus('availability', row),
-          executionConfig: executionConfig(row, [
-            { label: 'Comprobación', value: 'HTTP GET · códigos 200 a 399' },
+          executionConfig: { ...executionConfig(row, [
+            { label: 'Comprobación', value: 'HTTP ' + method + ' · códigos ' + minStatus + ' a ' + maxStatus },
             { label: 'Intervalo del monitor', value: row.intervalMinutes + ' min' },
             { label: 'Tiempo máximo de respuesta', value: row.timeoutMs + ' ms' },
             { label: 'Estado del monitor', value: row.active ? 'Activo' : 'En pausa' },
-          ]),
+          ]), monitor: { method, minStatus, maxStatus, intervalMinutes, timeoutMs, active } },
           status, hasResult: !!row.lastCheckedAt, runAt: row.lastCheckedAt?.toISOString() ?? null,
           durationMs: row.lastLatencyMs,
           result: row.lastHttpStatus === null ? null : 'Última respuesta HTTP ' + row.lastHttpStatus + '.',
@@ -172,7 +176,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
         'la prueba aplica el perfil de carga configurado',
         'Se registran la cantidad de solicitudes, los tiempos de respuesta y la proporción de errores.', row, {
           resourceId: row.id, automation: qualityAutomationStatus('load', row),
-          executionConfig: executionConfig(row, [
+          executionConfig: { ...executionConfig(row, [
             { label: 'Método', value: 'HTTP GET' },
             ...(stages?.map((stage, index) => ({
               label: 'Etapa ' + (index + 1),
@@ -180,7 +184,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
             })) ?? [{ label: 'Etapas', value: 'Falta un perfil de carga válido.' }]),
             { label: 'Tiempo de respuesta (p95)', value: 'Menor a ' + DEFAULT_K6_LIMITS.p95Ms + ' ms' },
             { label: 'Tasa de error', value: 'Menor al ' + new Intl.NumberFormat('es-CO', { style: 'percent' }).format(DEFAULT_K6_LIMITS.errorRate) },
-          ]),
+          ]), ...(stages && { stages }) },
           ...runInfo(row), href: root + '/load', result: result || null,
         });
     }),

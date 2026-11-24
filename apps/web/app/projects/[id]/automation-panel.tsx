@@ -205,7 +205,8 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
   const selectedScenarios = listError ? [] : items.filter(scenario => selected.has(scenario.id));
   const selectedQualityRows = qualityRows.filter(({ scenario }) => qualitySelection === null || qualitySelection.has(scenario.id));
   const generationSelection = new Set([...selectedScenarios.map(item => item.id), ...selectedQualityRows.map(({ scenario }) => scenario.id)]);
-  const ready = rows.filter(({ scenario, status }) => selected.has(scenario.id) && status === 'generated').map(({ scenario }) => scenario);
+  const prepared = rows.filter(({ status }) => status === 'generated').map(({ scenario }) => scenario);
+  const ready = prepared.filter(scenario => selected.has(scenario.id));
   const canRun = project.status === 'READY' && environments.length > 0 && ready.length > 0 && !listError && !onlyQuality;
   const browserSuite = canRun ? ready : [];
   const runnableQualityCount = project.status === 'READY'
@@ -315,7 +316,10 @@ export function AutomationPanel({ project, role }: { project: Project; role?: Or
         : 'Genera y ejecuta el código de los escenarios seleccionados.'}
       actions={<>{canRunSuite && runner && <button type="button"
         disabled={runner.stopping || (!runner.hasSuite && (busy || suiteCount === 0))}
-        onClick={() => runner.open(browserSuite, selectedQualityRows.map(({ scenario }) => scenario))}>
+        onClick={() => runner.open(browserSuite, selectedQualityRows.map(({ scenario }) => scenario), {
+          scenarios: project.status === 'READY' && environments.length > 0 && !listError ? prepared : [],
+          qualityScenarios: qualityItems,
+        })}>
         <ArrowRight size={14} />{runner.hasSuite ? 'Ver suite' : `Ejecutar suite (${suiteCount})`}
       </button>}</>} />, header.element)}
     {canGenerate && <GenerationCard title="Generar código de automatización" variant="playwright" disabled={generationDisabled} action={

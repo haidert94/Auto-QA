@@ -8,6 +8,7 @@ import { can } from '../../permissions';
 import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { EnvironmentsDialog } from './environments-dialog';
 import { SuiteQualityConfiguration } from './suite-quality-configuration';
+import { ScenarioSuiteSelection } from './scenario-suite-selection';
 import { qualityExecutionProblem } from './suite-quality-availability';
 import type { ScenarioListItem } from './scenario-card';
 import type { GeneratedSpec } from './automation-export';
@@ -32,13 +33,15 @@ function resultLabel(state: SuiteState) {
 
 export type ScenarioSuiteControl = { stop: () => Promise<void> };
 
-export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, specs, control, open, onHide, onClose, onViewReport, onRunningChange, onRunsChanged, onProgress, onTrackingWarning }: {
+export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, initialIds, specs, control, open, onHide, onClose, onViewReport, onRunningChange, onRunsChanged, onQualitySaved, onProgress, onTrackingWarning }: {
   project: Project; role?: OrgRole; scenarios: ScenarioListItem[];
   qualityScenarios: ScenarioListItem[];
+  initialIds: readonly string[];
   specs?: Record<string, GeneratedSpec>;
   control: Ref<ScenarioSuiteControl>;
   open: boolean; onHide: () => void; onClose: () => void; onViewReport: (qualityOnly: boolean) => void;
   onRunningChange: (running: boolean) => void; onRunsChanged?: () => void;
+  onQualitySaved: (scenario: ScenarioListItem) => void;
   onProgress: (results: SuiteResult[]) => void;
   onTrackingWarning: (warning: string) => void;
 }) {
@@ -50,17 +53,25 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
   const currentProject = savedProject && savedProject.revision > project.revision ? savedProject : project;
   const environments = currentProject.environments.filter(item => !scenarioRunEnvironmentError(item));
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '');
-  const candidates = [...scenarios, ...qualityScenarios];
-  const runnable = [...scenarios, ...qualityScenarios.filter(item => !qualityExecutionProblem(item, currentProject, role))];
-  const [selectedIds, setSelectedIds] = useState(() => new Set(runnable.map(scenario => scenario.id)));
-  const selectedScenarios = runnable.filter(scenario => selectedIds.has(scenario.id));
+  const candidates = [...scenarios, ...qualityScenarios].map(scenario => ({
+    scenario, problem: qualityExecutionProblem(scenario, currentProject, role),
+  }));
+  const [selectedIds, setSelectedIds] = useState(() => {
+    const ids = new Set(initialIds);
+    for (const { scenario, problem } of candidates) {
+      if (problem) ids.delete(scenario.id);
+    }
+    return ids;
+  });
+  const selectedScenarios = candidates.filter(({ scenario, problem }) => !problem && selectedIds.has(scenario.id))
+    .map(({ scenario }) => scenario);
   const selectedQuality = selectedScenarios.filter(scenario => scenario.quality);
   const hasBrowser = selectedScenarios.length > selectedQuality.length;
-  const selectAll = useRef<HTMLInputElement>(null);
-  const allSelected = runnable.length > 0 && selectedScenarios.length === runnable.length;
-  const someSelected = selectedScenarios.length > 0 && !allSelected;
   const [confirmedScope, setConfirmedScope] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [editingQualityId, setEditingQualityId] = useState<string | null>(null);
+  const [savingQuality, setSavingQuality] = useState(false);
+  const editingQuality = selectedQuality.some(item => item.id === editingQualityId);
   const [results, setResults] = useState<SuiteResult[] | null>(null);
   const [trackingWarning, setTrackingWarning] = useState('');
   const finished = results?.filter(({ state }) => state.kind === 'finished').length ?? 0;
@@ -79,9 +90,6 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
     if (open) element.showModal();
     else element.close();
   }, [open]);
-  useEffect(() => {
-    if (selectAll.current) selectAll.current.indeterminate = someSelected;
-  }, [someSelected]);
   useEffect(() => () => suite.current?.controller.abort(), []);
   useImperativeHandle(control, () => ({
     async stop() {
@@ -93,6 +101,7 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
   }), []);
 
   function close() {
+    if (savingQuality) return;
     if (suite.current) onHide();
     else onClose();
   }
@@ -104,20 +113,27 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
     router.refresh();
   }
 
-  function updateSelection(id: string | null, checked: boolean) {
+  function editQuality(id: string | null) {
+    setEditingQualityId(id);
     setConfirmedScope(null);
+  }
+
+  function updateSelection(ids: readonly string[], checked: boolean) {
+    setConfirmedScope(null);
+    if (!checked && editingQualityId && ids.includes(editingQualityId)) setEditingQualityId(null);
     setSelectedIds(previous => {
-      if (id === null) return new Set(checked ? runnable.map(scenario => scenario.id) : []);
       const next = new Set(previous);
-      if (checked) next.add(id);
-      else next.delete(id);
+      for (const id of ids) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
   }
 
   async function queue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedScenarios.length || suite.current || results || !confirmed || (hasBrowser && (!environment || (allowsWrites && !environment.authorizedAt)))) return;
+    if (editingQuality || savingQuality || !selectedScenarios.length || suite.current || results || !confirmed || (hasBrowser && (!environment || (allowsWrites && !environment.authorizedAt)))) return;
     const controller = new AbortController();
     setBusy(true);
     onRunningChange(true);
@@ -157,24 +173,10 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
     {!results ? <>
       <p>Marca las pruebas que quieres ejecutar.</p>
       <form onSubmit={queue}>
-        <fieldset className="scenario-run-selection" disabled={busy}>
-          <legend>Pruebas para ejecutar</legend>
-          {runnable.length > 1 && <label className="check scenario-run-select-all">
-            <input ref={selectAll} type="checkbox" checked={allSelected} onChange={event => updateSelection(null, event.target.checked)} />
-            Seleccionar todas
-          </label>}
-          <ul className="scenario-run-targets">{candidates.map(scenario => {
-            const problem = qualityExecutionProblem(scenario, currentProject, role);
-            return <li key={scenario.id}>
-              <label className="check">
-                <input type="checkbox" checked={!problem && selectedIds.has(scenario.id)} disabled={!!problem}
-                  onChange={event => updateSelection(scenario.id, event.target.checked)} />
-                <span>{scenario.title}{problem && <small>{problem}</small>}</span>
-              </label>
-            </li>;
-          })}</ul>
-        </fieldset>
-        {selectedQuality.length > 0 && <SuiteQualityConfiguration project={currentProject} scenarios={selectedQuality} />}
+        <ScenarioSuiteSelection candidates={candidates} selected={selectedIds} onChange={updateSelection} disabled={busy || savingQuality} />
+        {selectedQuality.length > 0 && <SuiteQualityConfiguration project={currentProject} scenarios={selectedQuality}
+          editingId={editingQuality ? editingQualityId : null} onEdit={editQuality} saving={savingQuality} onSaving={setSavingQuality}
+          onSaved={scenario => { onQualitySaved(scenario); editQuality(null); }} />}
         {hasBrowser && <>
           <label>Entorno autorizado<select value={environment?.id ?? ''} onChange={event => { setEnvironmentId(event.target.value); setConfirmedScope(null); }} disabled={busy} required>
             {!environment && <option value="" disabled>Selecciona un entorno autorizado</option>}
@@ -190,13 +192,13 @@ export function ScenarioRunDialog({ project, role, scenarios, qualityScenarios, 
           </div>}
         </>}
         <label className="check">
-          <input type="checkbox" required checked={confirmed} disabled={busy} onChange={event => setConfirmedScope(event.target.checked ? scope : null)} />
+          <input type="checkbox" required checked={confirmed} disabled={busy || editingQuality || savingQuality} onChange={event => setConfirmedScope(event.target.checked ? scope : null)} />
           {!hasBrowser ? 'Confirmo ejecutar las pruebas seleccionadas dentro del alcance autorizado.' : allowsWrites
             ? 'Confirmo ejecutar los escenarios seleccionados con cambios en los datos de prueba, dentro del alcance autorizado.'
             : 'Confirmo ejecutar los escenarios seleccionados en solo lectura, dentro del alcance autorizado.'}
         </label>
-        <div className="actions"><button type="submit" disabled={busy || !selectedScenarios.length || (hasBrowser && !environment) || !confirmed}>Confirmar ejecución</button>
-          <button type="button" className="secondary" disabled={busy} onClick={onClose}>Cancelar</button></div>
+        <div className="actions"><button type="submit" disabled={busy || editingQuality || savingQuality || !selectedScenarios.length || (hasBrowser && !environment) || !confirmed}>Confirmar ejecución</button>
+          <button type="button" className="secondary" disabled={busy || savingQuality} onClick={onClose}>Cancelar</button></div>
       </form>
     </> : <>
       <p role="status">{busy || pending ? `Suite en curso · ${finished} de ${results.length} pruebas finalizadas.`

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Download, ExternalLink, Image as ImageIcon, X } from 'lucide-react';
+import { ExternalLink, Image as ImageIcon, X } from 'lucide-react';
 import { dateText, durationText, isManualRun, milliseconds, outcome, resultDuration, resultLabels, runLabels, runTitle, runtime, type ReportRun } from './run-report-data';
 import { RunEvidenceModal } from './evidence-modal';
 import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
@@ -19,13 +19,8 @@ export function category(run: ReportRun): Exclude<RunFilter, 'all'> {
   return run.results.length && run.results.every(result => result.status === 'PASSED') ? 'passed' : 'empty';
 }
 
-export function TraceLink({ projectId, run, resultId }: { projectId: string; run: ReportRun; resultId: string }) {
-  return <a className="run-trace-link" href={`/api/projects/${projectId}/runs/${run.id}/trace/${resultId}`}
-    download={`trace-${resultId}.zip`} aria-label={`Descargar traza ${resultId.slice(0, 8)} de ${runTitle(run)}`}><Download size={12} />Traza</a>;
-}
-
 export function EvidenceAction({ projectId, run, result }: {
-  projectId: string; run: ReportRun; result: { id: string; status: string; evidenceKey?: string | null };
+  projectId: string; run: ReportRun; result: { id: string; status: string };
 }) {
   const [open, setOpen] = useState(false);
   if (!isReportableRunStatus(run.status)) return null;
@@ -34,7 +29,6 @@ export function EvidenceAction({ projectId, run, result }: {
   return <>
     {!run.id.startsWith('manual-pending-') && <button type="button" className="run-trace-link" onClick={() => setOpen(true)}
       aria-label={`Ver evidencias de ${label}`}><ImageIcon size={12} /> Evidencias</button>}
-    {result.evidenceKey && <TraceLink projectId={projectId} run={run} resultId={result.id} />}
     {manualScenarioId && <ManualEvidenceButton projectId={projectId} scenarioId={manualScenarioId}
       resultId={result.id} currentStatus={result.status as 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED'}
       onSaved={() => { if (typeof window !== 'undefined') window.location.reload(); }} />}

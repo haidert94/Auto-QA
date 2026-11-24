@@ -156,10 +156,25 @@
 .scenario-run-selection legend { padding-inline: 4px; font-size: 12px; font-weight: 600; }
 .scenario-run-dialog .scenario-run-selection label.check { display: flex; gap: 8px; margin: 0; padding: 5px 0; overflow-wrap: anywhere; }
 .scenario-run-select-all { font-weight: 600; border-bottom: 1px solid var(--line); }
-.scenario-run-targets { list-style: none; padding: 0; margin: 0; max-height: 200px; overflow: auto; }
+.scenario-run-groups, .scenario-run-targets { list-style: none; padding: 0; margin: 0; }
+.scenario-run-groups > li + li { border-top: 1px solid var(--line); }
+.scenario-run-group-header { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.scenario-run-group-header > label { font-weight: 600; flex: 1; min-width: 0; }
+.scenario-run-group-count { font-size: 11px; color: var(--muted); }
+.scenario-run-group-header .scenario-run-group-toggle { display: grid; place-items: center; min-height: 26px; min-width: 30px; padding: 0; }
+.scenario-run-group-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.scenario-run-targets { max-height: 130px; overflow: auto; padding-inline-start: 18px; }
 .scenario-run-targets small { color: var(--muted); display: block; }
 .suite-quality-settings { margin: 0 0 16px; }
 .suite-quality-settings > summary { font-size: 12px; cursor: pointer; }
+.suite-quality-edit { margin-top: 10px; }
+.suite-quality-editor { border: 0; margin: 0; padding: 0; min-width: 0; }
+.suite-quality-editor legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.suite-quality-editor label { display: grid; gap: 4px; min-width: 0; font-size: 12px; }
+.suite-quality-editor select, .suite-quality-editor input:not([type="checkbox"]) { width: 100%; min-width: 0; }
+.suite-quality-editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 8px; align-items: end; }
+.suite-quality-editor-stages { display: grid; gap: 10px; justify-items: start; }
+.suite-quality-editor-stages > div { width: 100%; }
 .suite-quality-settings > ul { max-height: 240px; overflow: auto; }
 .suite-quality-settings p { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
 .suite-quality-settings ul { list-style: none; display: grid; gap: 10px; padding: 0; margin: 12px 0 0; }

@@ -11,10 +11,11 @@ import { ScenarioRunDialog, type ScenarioSuiteControl } from './scenario-run-dia
 import type { SuiteResult } from './scenario-suite';
 
 type ScenarioSpecs = Record<string, GeneratedSpec>;
-type SuiteSelection = { scenarios: ScenarioListItem[]; qualityScenarios: ScenarioListItem[] };
+type SuiteCandidates = { scenarios: ScenarioListItem[]; qualityScenarios: ScenarioListItem[] };
+type SuiteSelection = SuiteCandidates & { initialIds: string[] };
 
 const ScenarioSuiteContext = createContext<{
-  open: (scenarios: ScenarioListItem[], qualityScenarios?: ScenarioListItem[]) => void;
+  open: (scenarios: ScenarioListItem[], qualityScenarios?: ScenarioListItem[], candidates?: SuiteCandidates) => void;
   hasSuite: boolean;
   suiteRunning: boolean;
   progress: SuiteResult[] | null;
@@ -144,9 +145,12 @@ export function ProjectTabs({
   const scenarioQuality = useMemo(() => ({
     items: qualityItems, error: qualityError, reload: loadQuality, updateAutomation: updateQualityAutomation,
   }), [qualityItems, qualityError, loadQuality, updateQualityAutomation]);
-  const openSuite = useCallback((scenarios: ScenarioListItem[], qualityScenarios: ScenarioListItem[] = []) => {
+  const openSuite = useCallback((scenarios: ScenarioListItem[], qualityScenarios: ScenarioListItem[] = [], candidates?: SuiteCandidates) => {
     if (stopRequest.current) return;
-    setRunSelection(current => current ?? { scenarios, qualityScenarios });
+    setRunSelection(current => current ?? {
+      ...(candidates ?? { scenarios, qualityScenarios }),
+      initialIds: [...scenarios, ...qualityScenarios].map(scenario => scenario.id),
+    });
     setSuiteOpen(true);
   }, []);
   const stopSuite = useCallback(async () => {
@@ -261,9 +265,16 @@ export function ProjectTabs({
           {children[id]}
         </div>
       ))}
-      {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection.scenarios} qualityScenarios={runSelection.qualityScenarios} specs={specs}
+      {runSelection && <ScenarioRunDialog project={project} role={role} scenarios={runSelection.scenarios} qualityScenarios={runSelection.qualityScenarios} initialIds={runSelection.initialIds} specs={specs}
         control={suiteControl} open={suiteOpen} onHide={() => setSuiteOpen(false)}
         onClose={closeSuite} onViewReport={viewSuiteReport} onRunningChange={setSuiteRunning}
+        onQualitySaved={scenario => {
+          qualityRequest.current++;
+          setQualityItems(items => items.map(item => item.id === scenario.id ? scenario : item));
+          setRunSelection(current => current && { ...current,
+            qualityScenarios: current.qualityScenarios.map(item => item.id === scenario.id ? scenario : item),
+          });
+        }}
         onRunsChanged={() => { setHistoryVersion(version => version + 1); void loadQuality(); }}
         onProgress={setSuiteProgress} onTrackingWarning={setSuiteTrackingWarning} />}
     </ExplorationHeaderContext.Provider>

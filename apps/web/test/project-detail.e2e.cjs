@@ -249,6 +249,34 @@ const api = createServer(async (request, response) => {
     summary: 'Resumen UX de prueba', findings: [{ severity: 'major', summary: 'Campo sin etiqueta', recommendation: 'Añadir etiqueta' }],
     hasScreenshot: true,
   });
+  const configuration = qualityScenarioRows.find(row => path === base + '/scenarios/quality/'
+    + row.quality.kind + '/' + row.quality.resourceId + '/configuration');
+  if (configuration && request.method === 'PATCH') {
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    const { environmentId, url, intervalMinutes, timeoutMs, active, method, minStatus, maxStatus, stages } = JSON.parse(Buffer.concat(chunks).toString());
+    if (environmentId !== environment.id || (url && !url.startsWith('https://example.test/'))) {
+      return send({ message: 'La URL de la prueba está fuera del alcance autorizado.' }, 400);
+    }
+    const config = configuration.quality.executionConfig;
+    config.environmentId = environmentId;
+    if (url) config.url = url;
+    if (configuration.quality.kind === 'availability') {
+      config.monitor = { intervalMinutes, timeoutMs, active, method, minStatus, maxStatus };
+      config.parameters = [
+        { label: 'Comprobación', value: 'HTTP ' + method + ' · códigos ' + minStatus + ' a ' + maxStatus },
+        { label: 'Intervalo del monitor', value: intervalMinutes + ' min' },
+        { label: 'Tiempo máximo de respuesta', value: timeoutMs + ' ms' },
+        { label: 'Estado del monitor', value: active ? 'Activo' : 'En pausa' },
+      ];
+    }
+    if (configuration.quality.kind === 'load') {
+      config.stages = stages;
+      config.parameters = stages.map(({ duration, target }, index) => ({
+        label: 'Etapa ' + (index + 1), value: duration + ' · ' + target + ' usuarios virtuales',
+      }));
+    }
+    return send(configuration);
+  }
   const execution = path.match(/\/scenarios\/quality\/([^/]+)\/([^/]+)\/executions\/([^/]+)$/);
   if (execution) {
     const [, kind, resourceId, id] = execution;
@@ -870,7 +898,11 @@ async function verifyQualityScenarios(page) {
         kind, resourceId, label: title, result, href, hasResult: true,
         status: { label: 'Finalizada', tone: 'unknown' }, runAt: null, durationMs: null,
         automation: { ...tools[kind], prepared: false },
-        executionConfig: { environmentId: kind === 'ux' ? null : environment.id, url: qualityUrl, parameters: settings[kind] },
+        executionConfig: {
+          environmentId: kind === 'ux' ? null : environment.id, url: qualityUrl, parameters: settings[kind],
+          ...(kind === 'availability' && { monitor: { intervalMinutes: 12, timeoutMs: 7000, active: true, method: 'GET', minStatus: 200, maxStatus: 399 } }),
+          ...(kind === 'load' && { stages: [{ duration: '15s', target: 2 }] }),
+        },
       },
     };
   };
@@ -983,13 +1015,31 @@ async function verifyQualityScenarios(page) {
     const confirm = dialog.getByRole('button', { name: 'Confirmar ejecución' });
     const authorize = dialog.getByRole('checkbox', { name: /^Confirmo ejecutar/ });
     await expect(confirm).toBeDisabled();
+    for (const type of ['Funcional web', 'Mobile emulado', 'Compatibilidad', 'Disponibilidad', 'Performance', 'UX']) {
+      await expect(dialog.getByRole('checkbox', { name: 'Seleccionar ' + type, exact: true })).toBeVisible();
+    }
+    for (const type of ['Mobile emulado', 'Compatibilidad', 'UX']) {
+      await expect(dialog.getByRole('checkbox', { name: 'Seleccionar ' + type, exact: true })).toBeDisabled();
+    }
+    await dialog.getByRole('button', { name: 'Ver pruebas de UX', exact: true }).click();
     await expect(dialog.getByRole('checkbox', { name: /Revisar usabilidad del catálogo/ })).toBeDisabled();
     await dialog.getByRole('checkbox', { name: 'Seleccionar todas' }).uncheck();
     await expect(dialog).toHaveAccessibleName('Ejecutar suite (0)');
     await authorize.check();
     await expect(confirm).toBeDisabled();
     const chosenQuality = qualityScenarioRows.filter(row => row.quality.kind !== 'ux');
-    for (const row of chosenQuality) await dialog.getByRole('checkbox', { name: row.title, exact: true }).check();
+    const performance = dialog.getByRole('checkbox', { name: 'Seleccionar Performance', exact: true });
+    await performance.check();
+    await dialog.getByRole('button', { name: 'Ver pruebas de Performance', exact: true }).click();
+    for (const row of chosenQuality.filter(row => row.quality.kind !== 'availability')) {
+      await expect(dialog.getByRole('checkbox', { name: row.title, exact: true })).toBeChecked();
+    }
+    const loadTest = dialog.getByRole('checkbox', { name: chosenQuality.find(row => row.quality.kind === 'load').title, exact: true });
+    await loadTest.uncheck();
+    await expect(performance).toHaveJSProperty('indeterminate', true);
+    await loadTest.check();
+    await dialog.getByRole('checkbox', { name: 'Seleccionar Disponibilidad', exact: true }).check();
+    await dialog.getByRole('button', { name: 'Ver pruebas de Funcional web', exact: true }).click();
     await dialog.getByRole('checkbox', { name: scenarios[0].title, exact: true }).check();
     await expect(dialog).toHaveAccessibleName('Ejecutar suite (4)');
     await expect(authorize).not.toBeChecked();
@@ -998,6 +1048,41 @@ async function verifyQualityScenarios(page) {
       const config = dialog.locator('.suite-quality-settings li').filter({ has: page.getByRole('heading', { name: row.title, exact: true }) });
       await expect(config.getByText(qualityUrl, { exact: true })).toBeVisible();
     }
+    await expect(dialog.getByRole('button', { name: /Editar configuración de Revisar usabilidad/ })).toHaveCount(0);
+    const monitor = chosenQuality.find(row => row.quality.kind === 'availability');
+    const monitorSettings = dialog.locator('.suite-quality-settings li').filter({ has: page.getByRole('heading', { name: monitor.title, exact: true }) });
+    await authorize.check();
+    await monitorSettings.getByRole('button', { name: 'Editar configuración de ' + monitor.title }).click();
+    await expect(confirm).toBeDisabled();
+    await expect(monitorSettings.getByRole('checkbox', { name: 'Monitor activo' })).toBeChecked();
+    const urlField = monitorSettings.getByLabel('URL objetivo');
+    await expect(urlField).toHaveValue(qualityUrl);
+    await urlField.fill('https://outside.test/catalogo');
+    await monitorSettings.getByRole('button', { name: 'Guardar configuración' }).click();
+    await expect(monitorSettings.getByRole('alert')).toContainText('fuera del alcance autorizado');
+    assert.equal(qualityExecutionRequests.size, 0);
+    const updatedUrl = qualityUrl + '/carrito';
+    await urlField.fill(updatedUrl);
+    await monitorSettings.getByLabel('Método HTTP').selectOption('HEAD');
+    await monitorSettings.getByLabel('Código HTTP final').fill('204');
+    await monitorSettings.getByLabel('Intervalo del monitor (min)').fill('25');
+    await monitorSettings.getByLabel('Tiempo máximo de respuesta (ms)').fill('8500');
+    await monitorSettings.getByRole('checkbox', { name: 'Monitor activo' }).uncheck();
+    await monitorSettings.getByRole('button', { name: 'Guardar configuración' }).click();
+    for (const value of [updatedUrl, 'HTTP HEAD · códigos 200 a 204', '25 min', '8500 ms', 'En pausa']) {
+      await expect(monitorSettings.getByText(value, { exact: true })).toBeVisible();
+    }
+    const load = chosenQuality.find(row => row.quality.kind === 'load');
+    const loadSettings = dialog.locator('.suite-quality-settings li').filter({ has: page.getByRole('heading', { name: load.title, exact: true }) });
+    await loadSettings.getByRole('button', { name: 'Editar configuración de ' + load.title }).click();
+    await loadSettings.getByLabel('Duración de etapa 1').fill('30s');
+    await loadSettings.getByRole('button', { name: 'Guardar configuración' }).click();
+    await expect(loadSettings.getByText('30s · 2 usuarios virtuales', { exact: true })).toBeVisible();
+    await expect(authorize).not.toBeChecked();
+    assert.equal(qualityExecutionRequests.size, 0);
+    assert.deepEqual(monitor.quality.executionConfig.monitor, {
+      intervalMinutes: 25, timeoutMs: 8500, active: false, method: 'HEAD', minStatus: 200, maxStatus: 204,
+    });
     await authorize.check();
     await confirm.click();
     await expect(dialog.getByText('Finalizada', { exact: true })).toHaveCount(2);
@@ -1012,8 +1097,10 @@ async function verifyQualityScenarios(page) {
     await page.getByRole('tab', { name: 'Automatización', exact: true }).click();
     await automation.getByRole('button', { name: 'Calidad (4)', exact: true }).click();
     await page.getByRole('button', { name: 'Ejecutar suite (4)', exact: true }).click();
-    await dialog.getByRole('checkbox', { name: 'Seleccionar todas' }).uncheck();
-    await dialog.getByRole('checkbox', { name: qualityOnly.title, exact: true }).check();
+    await expect(dialog.getByRole('checkbox', { name: 'Seleccionar Funcional web', exact: true })).not.toBeChecked();
+    await dialog.getByRole('checkbox', { name: 'Seleccionar Disponibilidad', exact: true }).uncheck();
+    await dialog.getByRole('checkbox', { name: 'Seleccionar Performance', exact: true }).uncheck();
+    await expect(dialog.getByRole('checkbox', { name: 'Seleccionar UX', exact: true })).toBeChecked();
     await expect(dialog.getByRole('combobox', { name: 'Entorno autorizado' })).toHaveCount(0);
     await authorize.check();
     await confirm.click();
@@ -1029,15 +1116,37 @@ async function verifyQualityScenarios(page) {
     for (const row of qualityScenarioRows) {
       await expect(qualityReport.getByText(row.quality.result, { exact: true })).toBeVisible();
     }
+    const qualityTable = qualityReport.getByRole('table', { name: 'Ejecuciones de calidad' });
+    await expect(qualityTable.getByRole('row')).toHaveCount(qualityScenarioRows.length + 1);
     const filterQuality = qualityReport.getByRole('combobox', { name: 'Tipo de prueba' });
     await filterQuality.selectOption('availability');
-    await qualityReport.getByRole('button', { name: 'Historial del monitor' }).click();
-    await expect(qualityReport.getByRole('table', { name: 'Historial de disponibilidad' })).toBeVisible();
-    await expect(qualityReport.getByRole('cell', { name: '0 ms', exact: true })).toBeVisible();
-    await filterQuality.selectOption('ux');
-    await qualityReport.getByRole('button', { name: 'Hallazgos UX' }).click();
-    await expect(qualityReport.getByText('Mayor · Campo sin etiqueta')).toBeVisible();
-    await expect(qualityReport.getByRole('link', { name: 'Descargar captura UX' })).toBeVisible();
+    const monitorRow = qualityTable.getByRole('row').filter({ hasText: monitor.title });
+    const openMonitor = monitorRow.getByRole('button', { name: 'Monitoreo de ' + monitor.title, exact: true });
+    await expect(monitorRow.getByText('Disponible', { exact: true })).toBeVisible();
+    const reportUrl = page.url();
+    await openMonitor.click();
+    const monitorDetail = page.getByRole('dialog', { name: 'Monitoreo de ' + monitor.title });
+    await expect(monitorDetail.getByRole('heading', { name: 'Historial del monitor' })).toBeVisible();
+    await expect(monitorDetail.getByText(monitor.quality.executionConfig.url, { exact: true })).toBeVisible();
+    const history = monitorDetail.getByRole('table', { name: 'Historial de disponibilidad' });
+    await expect(history.getByRole('cell', { name: '204', exact: true })).toBeVisible();
+    await expect(history.getByRole('cell', { name: '0 ms', exact: true })).toBeVisible();
+    assert.equal(page.url(), reportUrl);
+    await monitorDetail.getByRole('button', { name: 'Cerrar detalle', exact: true }).click();
+    await expect(monitorDetail).toHaveCount(0);
+    await expect(openMonitor).toBeFocused();
+    await expect(filterQuality).toHaveValue('availability');
+
+    for (const [kind, link] of [['lighthouse', 'Descargar informe Lighthouse'], ['load', 'Descargar resumen k6'], ['ux', 'Descargar captura UX']]) {
+      const row = qualityScenarioRows.find(item => item.quality.kind === kind);
+      await filterQuality.selectOption(kind);
+      await qualityTable.getByRole('button', { name: 'Evidencias de ' + row.title, exact: true }).click();
+      const detail = page.getByRole('dialog', { name: 'Detalle de calidad de ' + row.title, exact: true });
+      await expect(detail.getByRole('link', { name: link, exact: true })).toBeVisible();
+      if (kind === 'ux') await expect(detail.getByText('Mayor · Campo sin etiqueta')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(detail).toHaveCount(0);
+    }
     const [qualityDownload] = await Promise.all([page.waitForEvent('download'),
       qualityReport.getByRole('button', { name: 'Exportar resultados de calidad' }).click()]);
     assert.equal(qualityDownload.suggestedFilename(), 'autoqa-resultados-calidad.json');
@@ -1082,7 +1191,7 @@ async function verifyGenerationForBrowserTypes(page) {
     { title: 'Caso funcional web', tag: '@funcional', tags: ['@funcional'] },
     { title: 'Caso móvil emulado', tag: '@mobile', tags: ['@mobile'] },
     { title: '[COMPAT:FIREFOX] Caso de compatibilidad', tag: '@compatibilidad',
-      tags: ['@funcional', '@flujoBasico', '@regresion', '@compatibilidad', '@firefox'] },
+      tags: ['@funcional', '@mobile', '@flujoBasico', '@regresion', '@compatibilidad', '@firefox'] },
   ].map(item => ({
     ...item, id: randomUUID(), expectedResult: 'El catálogo está disponible.',
     steps: [{ ordinal: 1, action: 'goto: /' }, { ordinal: 2, action: 'expect-text: Catálogo' }],
@@ -1105,7 +1214,29 @@ async function verifyGenerationForBrowserTypes(page) {
     await expect(panel.getByText('3 con código guardado.', { exact: true })).toBeVisible();
     for (const item of cases) assert.ok(savedPlaywright.has(item.id), item.title + ' debe recibir código.');
     await expect(generate).toBeDisabled();
-    console.log('PASS Generar seleccionados prepara Funcional web, Mobile emulado y Compatibilidad en el mismo lote.');
+    await page.getByRole('button', { name: 'Ejecutar suite (3)', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: /^Ejecutar suite/ });
+    await dialog.getByRole('button', { name: 'Ver pruebas de Compatibilidad', exact: true }).click();
+    await expect(dialog.getByRole('checkbox', { name: cases[2].title, exact: true })).toBeChecked();
+    await dialog.getByRole('checkbox', { name: 'Seleccionar Compatibilidad', exact: true }).uncheck();
+    await expect(dialog).toHaveAccessibleName('Ejecutar suite (2)');
+    for (const type of ['Funcional web', 'Mobile emulado']) {
+      await expect(dialog.getByRole('checkbox', { name: 'Seleccionar ' + type, exact: true })).toBeChecked();
+    }
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    await page.getByRole('tab', { name: 'Escenarios (3)', exact: true }).click();
+    const scenarioList = page.getByRole('list', { name: 'Escenarios del proyecto', exact: true });
+    for (const item of cases.slice(1)) {
+      await scenarioList.getByRole('checkbox', { name: 'Seleccionar ' + item.title, exact: true }).uncheck();
+    }
+    await page.getByRole('button', { name: 'Ejecutar suite (1)', exact: true }).click();
+    await expect(dialog.getByRole('checkbox', { name: 'Seleccionar Funcional web', exact: true })).toBeChecked();
+    const mobile = dialog.getByRole('checkbox', { name: 'Seleccionar Mobile emulado', exact: true });
+    await expect(mobile).not.toBeChecked();
+    await mobile.check();
+    await expect(dialog).toHaveAccessibleName('Ejecutar suite (2)');
+    await dialog.getByRole('button', { name: 'Cancelar', exact: true }).click();
+    console.log('PASS Funcional web, Mobile emulado y Compatibilidad se seleccionan por tipo desde Automatización y Escenarios.');
   } finally {
     scenarios = original;
     for (const item of cases) savedPlaywright.delete(item.id);
@@ -1946,12 +2077,17 @@ async function verifyReportEvidence(page) {
     const table = report.getByRole('table', { name: 'Ejecuciones registradas' });
     const row = table.getByRole('row').filter({ hasText: reportRuns[0].id.slice(0, 8) });
     const evidence = row.getByRole('button', { name: /^Ver evidencias de/ });
+    await expect(row.getByRole('link', { name: /traza/i })).toHaveCount(0);
     await evidence.click();
     const dialog = page.getByRole('dialog', { name: /^Evidencias de/ });
     await expect(dialog.getByRole('heading', { name: 'Capturas por paso' })).toBeVisible();
     await expect(dialog.getByRole('link', { name: 'Descargar imagen' })).toBeVisible();
     await expect(dialog.getByRole('link', { name: 'Descargar video' })).toBeVisible();
-    await expect(dialog.getByRole('link', { name: 'Descargar traza (.zip)' })).toBeVisible();
+    const trace = dialog.getByRole('link', { name: 'Descargar traza (.zip)', exact: true });
+    await expect(trace).toBeVisible();
+    const traceResponse = await page.request.get(new URL(await trace.getAttribute('href'), page.url()).href);
+    assert.equal(traceResponse.status(), 200);
+    assert.ok((await JSZip.loadAsync(await traceResponse.body(), { checkCRC32: true })).file('trace.fixture.json'));
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(evidence).toBeFocused();
@@ -1959,6 +2095,98 @@ async function verifyReportEvidence(page) {
   } finally {
     reportMode = false;
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+  }
+}
+
+async function verifyManualEvidenceDialog(page) {
+  const savedRuns = scenarioRuns;
+  const id = randomUUID();
+  const viewport = page.viewportSize();
+  scenarioRuns = [{
+    ...savedRuns[0], id: 'manual-pending-' + id, scenarioId: id,
+    scenario: { id, title: 'Verificar producto manualmente', tags: ['@manual'] },
+    results: [{ id: 'manual-result-' + id, status: 'SKIPPED', durationMs: null, errorMessage: null, evidenceKey: null }],
+  }];
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+    const trigger = page.getByRole('button', { name: 'Adjuntar evidencia', exact: true });
+    await trigger.click();
+    const modal = page.getByRole('dialog', { name: 'Adjuntar evidencia manual' });
+    const save = modal.getByRole('button', { name: 'Guardar evidencia', exact: true });
+    const selector = modal.getByRole('button', { name: 'Seleccionar imágenes', exact: true });
+    const fileInput = modal.locator('input[type="file"]');
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole('combobox', { name: 'Estado del escenario' })).toHaveValue('SKIPPED');
+    await expect(fileInput).toBeHidden();
+    await expect(save).toBeDisabled();
+    const background = await modal.evaluate(element => getComputedStyle(element).backgroundColor);
+    assert.match(background, /^rgb\(/, 'El fondo del diálogo debe ser opaco.');
+    await modal.getByRole('textbox', { name: 'Notas (opcional)' }).fill('El resultado quedó registrado.');
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), selector.click()]);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRAAAAABJRU5ErkJggg==', 'base64');
+    await chooser.setFiles({ name: 'evidencia.png', mimeType: 'image/png', buffer: png });
+    await expect(modal.getByRole('img', { name: 'Evidencia 1', exact: true })).toBeVisible();
+    await expect(save).toBeEnabled();
+
+    await page.setViewportSize({ width: 390, height: 620 });
+    const panel = await modal.boundingBox();
+    const footer = await save.boundingBox();
+    assert.ok(panel.x >= 12 && panel.x + panel.width <= 378, 'El diálogo conserva márgenes en móvil.');
+    assert.ok(footer.y + footer.height <= panel.y + panel.height, 'La acción de guardar queda dentro del diálogo.');
+    await modal.getByRole('button', { name: 'Quitar imagen 1', exact: true }).click();
+    await expect(save).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(modal).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    console.log('PASS El formulario manual tiene fondo opaco, selector único, vista previa y controles accesibles en móvil.');
+  } finally {
+    scenarioRuns = savedRuns;
+    await page.setViewportSize(viewport);
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.reload();
+  }
+}
+
+async function verifyReportPagination(page) {
+  const savedRuns = scenarioRuns;
+  const cases = Array.from({ length: 13 }, (_, index) => {
+    const id = randomUUID();
+    return {
+      ...savedRuns[0], id: randomUUID(), scenarioId: id,
+      scenario: { id, title: (index === 12 ? 'Caso omitible ' : 'Caso de reporte ') + (index + 1) },
+      status: 'COMPLETED', createdAt: new Date(Date.UTC(2026, 10, 19, 12, 20 - index)).toISOString(),
+    };
+  });
+  scenarioRuns = cases;
+  try {
+    await page.reload();
+    await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+    const report = page.getByRole('region', { name: 'Resultados de escenarios' });
+    const navigation = report.getByRole('navigation', { name: 'Paginación del reporte' });
+    const indicator = navigation.getByRole('status');
+    const next = navigation.getByRole('button', { name: 'Página siguiente' });
+    const previous = navigation.getByRole('button', { name: 'Página anterior' });
+    const table = report.getByRole('table', { name: 'Ejecuciones registradas' });
+    await expect(indicator).toHaveText('1–10 de 13 · Página 1 de 2');
+    await next.click();
+    await expect(indicator).toHaveText('11–13 de 13 · Página 2 de 2');
+    await expect(table.getByRole('row')).toHaveCount(4);
+    await expect(table.getByText(cases[10].scenario.title, { exact: true })).toBeVisible();
+    await expect(next).toBeDisabled();
+    await previous.click();
+    await expect(indicator).toHaveText('1–10 de 13 · Página 1 de 2');
+
+    await next.click();
+    await report.getByRole('searchbox', { name: 'Buscar ejecuciones' }).fill('Caso de reporte');
+    await expect(indicator).toHaveText('1–10 de 12 · Página 1 de 2');
+    await next.click();
+    await expect(indicator).toHaveText('11–12 de 12 · Página 2 de 2');
+    console.log('PASS Reportes permite avanzar, retroceder y volver a la primera página al filtrar.');
+  } finally {
+    scenarioRuns = savedRuns;
+    await page.getByRole('tab', { name: 'Datos', exact: true }).click();
+    await page.reload();
   }
 }
 
@@ -2010,11 +2238,7 @@ async function verifyRunReport(page, screenshots) {
   await expect(section.getByRole('region', { name: 'Flakiness y reintentos', exact: true }).getByText('No disponible', { exact: true })).toBeVisible();
   await expect(section.getByRole('region', { name: 'Cobertura de aserciones', exact: true }).getByText('No disponible', { exact: true })).toBeVisible();
   await expect(table.getByText('CHROMIUM', { exact: true })).toBeVisible();
-  const evidence = table.getByRole('link', { name: /Descargar traza/ });
-  const traceResponse = await page.request.get(new URL(await evidence.getAttribute('href'), page.url()).href);
-  assert.equal(traceResponse.status(), 200);
-  const traceZip = await JSZip.loadAsync(await traceResponse.body(), { checkCRC32: true });
-  assert.ok(traceZip.file('trace.fixture.json'));
+  await expect(table.getByRole('link', { name: /traza/i })).toHaveCount(0);
   assert.ok(!(await section.textContent()).includes('private-internal-key'));
   await page.setViewportSize({ width: 1170, height: 1000 });
   await page.mouse.move(0, 0);
@@ -2387,6 +2611,8 @@ async function run() {
     await verifyRequirementClarification(page);
     await verifyQualityScenarios(page);
     await verifyReportEvidence(page);
+    await verifyManualEvidenceDialog(page);
+    await verifyReportPagination(page);
     await verifyGenerationForBrowserTypes(page);
     await verifyScenarioPagination(page);
     await verifyScenarioPagination(page, true);

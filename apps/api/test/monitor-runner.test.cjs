@@ -14,6 +14,7 @@ before(async () => {
   server = createServer((req, res) => {
     if (req.url === '/ok') { res.writeHead(200); res.end('ok'); return; }
     if (req.url === '/not-found') { res.writeHead(404); res.end('nope'); return; }
+    if (req.url === '/head') { res.writeHead(req.method === 'HEAD' ? 204 : 405); res.end(); return; }
     if (req.url === '/server-error') { res.writeHead(500); res.end('boom'); return; }
     if (req.url === '/slow') {
       setTimeout(() => { res.writeHead(200); res.end('late'); }, 500);
@@ -40,6 +41,17 @@ test('performCheck: 404 → status DOWN con errorCode http-404', async () => {
   assert.equal(outcome.status, 'DOWN');
   assert.equal(outcome.httpStatus, 404);
   assert.equal(outcome.errorCode, 'http-404');
+});
+
+test('performCheck aplica el método y el rango de códigos guardados', async () => {
+  const url = `http://127.0.0.1:${port}/head`;
+  const options = { method: 'HEAD', minStatus: 204, maxStatus: 204 };
+  const outcome = await performCheck(url, 3000, undefined, options);
+  assert.equal(outcome.status, 'UP');
+  assert.equal(outcome.httpStatus, 204);
+  const outsideRange = await performCheck(url, 3000, undefined, { ...options, minStatus: 200, maxStatus: 200 });
+  assert.equal(outsideRange.status, 'DOWN');
+  assert.equal(outsideRange.errorCode, 'http-204');
 });
 
 test('performCheck: 500 → DOWN', async () => {
