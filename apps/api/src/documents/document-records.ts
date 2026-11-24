@@ -80,7 +80,7 @@ export async function persistFindings(
   }
   await tx.requirement.createMany({
     data: [...linkIds].map(([fact, ids]) => ({
-      id: ids.requirementId, projectId, analysisId, kind: fact.kind, externalKey: fact.key, title: fact.text,
+      id: ids.requirementId, projectId, analysisId, kind: fact.kind, externalKey: fact.key, module: fact.module, title: fact.text,
     })),
   });
 
@@ -119,7 +119,7 @@ export async function currentScenarioRequirements(tx: Prisma.TransactionClient, 
       where: { criteria: { some: {} }, sources: { some: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false } } },
       orderBy: { id: 'asc' as const },
       select: {
-        id: true, externalKey: true, title: true,
+        id: true, externalKey: true, module: true, title: true,
         criteria: { take: 6, orderBy: { id: 'asc' as const }, select: { text: true } },
         sources: includeCoverage && {
           where: { kind: { in: REQUIREMENT_KINDS }, pendingConfirmation: false },

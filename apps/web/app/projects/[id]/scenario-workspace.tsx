@@ -70,11 +70,11 @@ export function ScenarioWorkspace({ items, requirements, runs, runsAvailable, ch
             const quality = item.quality;
             const status = quality ? null : runPresentation(run, runsAvailable);
             const runAt = quality ? null : run?.createdAt;
-            const displayId = quality?.resourceId ?? item.id;
+            const displayId = item.caseCode ?? quality?.resourceId ?? item.id;
             return <li key={item.id} className={`scenario-result${item.id === activeId ? ' scenario-result--active' : ''}`}>
               <input type="checkbox" aria-label={`Seleccionar ${item.title}`} checked={checked.has(item.id)} disabled={!!quality && !hasRunnableSpec(item)} onChange={() => toggle(item.id)} />
               <div className="scenario-result__content">
-                <div className="scenario-result__meta"><span className="scenario-short-id" title={displayId}>{displayId.slice(0, 8)}</span>
+                <div className="scenario-result__meta"><span className="scenario-short-id" title={displayId}>{item.caseCode ?? displayId.slice(0, 8)}</span>
                   {item.id === activeId && <span className="scenario-focused-label">En detalle</span>}
                   {status && <span className={`scenario-run-state scenario-run-state--${status.tone}`}>{status.label}{status.duration !== null && ` · ${durationLabel(status.duration)}`}</span>}
                 </div>
@@ -93,7 +93,7 @@ export function ScenarioWorkspace({ items, requirements, runs, runsAvailable, ch
         <ScenarioPagination label="Paginación de escenarios" {...pagination} />
       </div>
       {active && <aside className="scenario-detail" aria-label="Detalle del escenario seleccionado">
-        <header className="scenario-detail__head"><div><span>{(active.quality?.resourceId ?? active.id).slice(0, 8)}</span><h2>Detalle del escenario</h2></div>
+        <header className="scenario-detail__head"><div><span>{active.caseCode ?? (active.quality?.resourceId ?? active.id).slice(0, 8)}</span><h2>Detalle del escenario</h2></div>
           <div className="scenario-detail__controls">
             {!active.quality && onRun && <button type="button" aria-label="Ejecutar escenario seleccionado" disabled={!hasRunnableSpec(active)} title={isManualScenario(active) ? MANUAL_SCENARIO_MESSAGE : undefined} onClick={() => onRun([active])}><PlayCircle size={16} /></button>}
             {!active.quality && onDelete && <button type="button" className="scenario-detail__delete" aria-label="Eliminar escenario"

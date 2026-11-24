@@ -107,7 +107,7 @@ let scenarios = [
   { id: scenarioA, title: 'Pago exitoso con tarjeta tokenizada 3DS', requirementId: requirement.id,
     expectedResult: 'La pasarela sandbox confirma la transacción.', requirement, tags: ['@flujoBasico', '@smoke'], _count: { results: 1 },
     steps: [{ ordinal: 1, action: 'goto: /checkout' }, { ordinal: 2, action: 'click: #confirmar-pago' }, { ordinal: 3, action: 'expect-text: Confirmación', expected: 'Transacción confirmada' }] },
-  { id: scenarioB, title: 'Rechazo por fondos insuficientes con callback asíncrono', requirementId: requirement.id,
+  { id: scenarioB, caseCode: 'TC-PAG-002', title: 'Rechazo por fondos insuficientes con callback asíncrono', requirementId: requirement.id,
     expectedResult: 'Se informa el rechazo sin duplicar la transacción.', requirement, tags: ['@flujoAlterno', '@apiRest'], _count: { results: 1 },
     steps: [{ ordinal: 1, action: 'goto: /checkout/rechazo' }, { ordinal: 2, action: 'expect-text: Fondos insuficientes' }] },
   { id: '31000003-0000-4000-8000-000000000003', title: 'Timeout en pasarela y reintento pendiente de especificación', requirementId: null,
@@ -1464,6 +1464,10 @@ async function verifyScenarios(page, screenshots) {
   const search = page.getByRole('searchbox', { name: 'Buscar escenarios' });
   await page.keyboard.press('Control+k');
   await expect(search).toBeFocused();
+  await search.fill('tc-pag-002');
+  await expect(list.locator('.scenario-result')).toHaveCount(1);
+  await expect(list.getByText('TC-PAG-002', { exact: true })).toBeVisible();
+  await expect(detail.getByText('TC-PAG-002', { exact: true })).toBeVisible();
   await search.fill('fondos insuficientes');
   await expect(list.locator('.scenario-result')).toHaveCount(1);
   await expect(detail.getByRole('heading', { name: scenarios[1].title, exact: true })).toBeVisible();

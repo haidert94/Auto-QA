@@ -6,6 +6,7 @@ import { type DocumentType, Prisma } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { convertDocument } from '../automation/document-converter';
+import { attachDeclaredModules } from './document-modules';
 import { analyzeFindings, classifyDocument, isRequirement, type DocumentAnalysisProvider, type Finding } from './document-analysis';
 import { documentFormat, MAX_PROJECT_VERSIONS, parseDocument } from './document-files';
 import { analysisSelect, describeAnalysis, documentAnalysisSignature, documentSelect, metadata, persistFindings, readDocumentSnapshot } from './document-records';
@@ -373,6 +374,7 @@ export class DocumentsService {
           ).catch(() => {
             throw new UnprocessableEntityException('Un documento supera el límite de elementos para el análisis.');
           });
+          attachDeclaredModules(findings, blocks);
           facts.push(...findings);
           if (facts.length > 1200) throw new UnprocessableEntityException('El análisis supera el límite de 1200 elementos de origen.');
           if (!blocks.length) warnings.push(file.document.filename + ' · sin texto extraíble.');

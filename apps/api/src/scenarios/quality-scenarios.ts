@@ -44,7 +44,7 @@ const runStatuses: Record<RunStatus, Status> = {
   CANCELED: { label: 'Cancelada', tone: 'unknown' },
 };
 
-const requirementFields = { requirementId: true, requirement: { select: { title: true, externalKey: true } } } as const;
+const requirementFields = { caseCode: true, requirementId: true, requirement: { select: { title: true, externalKey: true } } } as const;
 const runFields = { ...qualityAutomationSource, ...requirementFields, id: true, status: true, startedAt: true, completedAt: true } as const;
 
 function publicTarget(raw: string) {
@@ -86,11 +86,12 @@ function runInfo(run: Run) {
 
 function scenario(
   kind: Kind, title: string, target: string, context: string, action: string, expectedResult: string,
-  row: { requirementId: string | null; requirement: { title: string; externalKey: string | null } | null },
+  row: { caseCode: string | null; requirementId: string | null; requirement: { title: string; externalKey: string | null } | null },
   origin: Omit<QualityScenarioOrigin, 'label' | 'kind'>,
 ) {
   return {
     id: kind + ':' + origin.resourceId,
+    caseCode: row.caseCode,
     title,
     tags: kinds[kind].tags,
     requirementId: row.requirementId,

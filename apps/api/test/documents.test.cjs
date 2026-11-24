@@ -557,10 +557,12 @@ test('reintenta Móvil y Manual sin repetir Funcional y usa la categoría de cad
 test('los siete tipos se guardan juntos y el lote entero sigue pendiente si un tipo o el guardado falla', async () => {
   const types = ['functional_web', 'mobile_emulated', 'compatibility', 'availability', 'performance', 'ux', 'manual'];
   const source = [
+    '## Módulo: Catálogo',
     'HU-1: Consultar el catálogo web.',
     'Criterio de aceptación: [HU-1] La página muestra el título Catálogo.',
     'HU-2: Consultar el catálogo en navegador móvil.',
     'Criterio de aceptación: [HU-2] Se muestra Catálogo en pantalla móvil.',
+    '## Módulo: [ACC] Acciones Contratista',
     'HU-3: Revisar el comprobante.',
     'Criterio de aceptación: [HU-3] El comprobante contiene la fecha del pedido.',
   ].join('\n');
@@ -651,6 +653,7 @@ test('los siete tipos se guardan juntos y el lote entero sigue pendiente si un t
     assert.equal(await prisma.performanceAudit.count({ where }), 0);
     assert.equal(await prisma.loadTest.count({ where }), 0);
     assert.equal(await prisma.uxAudit.count({ where }), 0);
+    assert.equal(await prisma.scenarioModuleSequence.count({ where }), 0);
     assert.deepEqual((await read(base + '/types/pending')).data.types.map(type => type.code), types);
   }
 
@@ -692,4 +695,16 @@ test('los siete tipos se guardan juntos y el lote entero sigue pendiente si un t
   assert.ok(finished.data.result.generation.outcomes.every(({ created, errorCount }) => created > 0 && errorCount === 0));
   assert.deepEqual((await read(base + '/types/pending')).data.types, []);
   assert.equal(await prisma.testScenario.count({ where: { projectId: existing.id } }), 1);
+  const scenarioPath = '/' + fresh.id + '/scenarios';
+  const scenarios = await read(scenarioPath);
+  const quality = await read(scenarioPath + '/quality');
+  assert.equal(scenarios.status, 200);
+  assert.equal(quality.status, 200);
+  const cases = [...scenarios.data, ...quality.data];
+  assert.equal(cases.find(item => item.id === extraScenario.id).caseCode, null);
+  assert.equal(cases.find(item => item.requirement?.externalKey === 'HU-3').caseCode, 'TC-ACC-001');
+  assert.ok(quality.data.every(item => /^TC-CAT-/.test(item.caseCode)));
+  const catalogCodes = cases.map(item => item.caseCode).filter(code => code?.startsWith('TC-CAT-')).sort();
+  assert.deepEqual(catalogCodes, Array.from({ length: 12 }, (_, i) => 'TC-CAT-' + String(i + 1).padStart(3, '0')));
+  assert.equal(await prisma.scenarioModuleSequence.count({ where: { projectId: existing.id } }), 0);
 });

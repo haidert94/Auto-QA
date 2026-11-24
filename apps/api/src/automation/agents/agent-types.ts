@@ -22,7 +22,7 @@ export type AgentContext = {
   documentGenerationSources?: import('../document-generation').DocumentGenerationSources;
   documentRequirementTypes?: import('../document-requirement-types').DocumentRequirementTypes;
   requirements?: Array<{
-    id: string; externalKey?: string | null; title: string; criteria: Array<{ text: string }>;
+    id: string; externalKey?: string | null; module?: string | null; title: string; criteria: Array<{ text: string }>;
     scenarios?: Array<{ tags: string[] }>; documentVersionIds?: string[];
   }>;
 };
@@ -85,6 +85,7 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
     .map(story => '- ' + story.title + ' [' + story.coverage + ']' + (story.notes ? ' · ' + story.notes : ''));
   const requirements = (ctx.requirements ?? []).map(requirement =>
     '- ' + requirement.id + (requirement.externalKey ? ` [${requirement.externalKey}]` : '') + ' · ' + requirement.title.slice(0, 350)
+    + (requirement.module ? ' · Módulo: ' + requirement.module : '')
     + requirement.criteria.map(criterion => '\n  - ' + criterion.text.slice(0, 250)).join(''),
   );
   const context = ctx.documentTestTypesConfirmed ? requirements : [...stories, ...requirements];

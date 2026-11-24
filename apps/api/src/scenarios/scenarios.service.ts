@@ -156,7 +156,7 @@ export class ScenariosService {
       where: { projectId, archivedAt: null },
       orderBy: { title: 'asc' },
       select: {
-        id: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true, automation: true,
+        id: true, caseCode: true, title: true, requirementId: true, expectedResult: true, steps: true, tags: true, automation: true,
         requirementReviewRequiredAt: true,
         requirement: { select: { title: true, externalKey: true } },
         _count: { select: { results: true } },
@@ -248,7 +248,7 @@ export class ScenariosService {
       return await this.prisma.testScenario.update({
         where: { id: scenarioId, projectId, archivedAt: null, requirementReviewRequiredAt: reviewedAt },
         data,
-        select: { id: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true, requirementReviewRequiredAt: true,
+        select: { id: true, caseCode: true, title: true, requirementId: true, expectedResult: true, tags: true, steps: true, requirementReviewRequiredAt: true,
           requirement: { select: { title: true, externalKey: true } } },
       });
     } catch (error) {

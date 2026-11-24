@@ -69,7 +69,7 @@ export function isSensitiveScenarioStep(step: ScenarioStep) {
 
 export function matchesScenarioQuery(item: ScenarioListItem, normalized: string, extra = '') {
   if (!normalized) return true;
-  return [item.title, item.id, item.expectedResult, item.requirement?.title, item.requirement?.externalKey,
+  return [item.title, item.id, item.caseCode, item.expectedResult, item.requirement?.title, item.requirement?.externalKey,
     ...(item.steps ?? []).map(step => [step.action, step.data, step.expected].join(' ')), ...(item.tags ?? []), ...(extra ? [extra] : [])]
     .join(' ').toLocaleLowerCase('es').includes(normalized);
 }

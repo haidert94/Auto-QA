@@ -5,6 +5,26 @@ const { test } = require('node:test');
 const { documentFormat, parseDocument } = require('../dist/documents/document-files');
 const { RuleBasedDocumentAnalyzer, analyzeFindings } = require('../dist/documents/document-analysis');
 
+const { attachDeclaredModules } = require('../dist/documents/document-modules');
+
+test('asocia un módulo declarado con la historia y distingue historias sin módulo', async () => {
+  const ExcelJS = require('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Historias');
+  sheet.addRows([
+    ['ID', 'Tipo', 'Historia de usuario', 'Módulo', 'Código de módulo'],
+    ['HU-1', 'Historia de usuario', 'Como editor quiero guardar un contrato.', 'Acciones Contratista', 'ACC'],
+    ['HU-2', 'Historia de usuario', 'Como editor quiero consultar un contrato.', '', ''],
+  ]);
+  const blocks = await parseDocument('XLSX', Buffer.from(await workbook.xlsx.writeBuffer()));
+  const aiFindings = [
+    { kind: 'USER_STORY', key: 'HU-1', text: 'Como editor quiero guardar un contrato.', source: { locator: 'ai#1' } },
+    { kind: 'USER_STORY', key: 'HU-2', text: 'Como editor quiero consultar un contrato.', source: { locator: 'ai#2' } },
+  ];
+  attachDeclaredModules(aiFindings, blocks);
+  assert.deepEqual(aiFindings.map(finding => finding.module), ['[ACC]', undefined]);
+});
+
 function pdfFixture() {
   const stream = 'BT /F1 12 Tf 20 100 Td (RF-3: Mostrar el total.) Tj ET\n';
   const objects = [

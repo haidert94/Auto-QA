@@ -230,7 +230,7 @@ async function runGenerationPhase(
         });
         return false;
       }
-      await saveGeneratedBatch(tx, batch);
+      await saveGeneratedBatch(tx, claim.projectId, batch, requirements);
       await tx.automationJob.update({
         where: { id: claim.id, stage: 'generating' },
         data: { status: 'COMPLETED', stage: 'generated', errorCode: null, completedAt: new Date(), result: result as never },

@@ -14,6 +14,7 @@ export type RequirementOption = { id: string; title: string; externalKey: string
 
 export type ScenarioListItem = {
   id: string;
+  caseCode?: string | null;
   title: string;
   requirementId: string | null;
   requirementReviewRequiredAt?: string | null;
@@ -129,7 +130,7 @@ export function ScenarioCard({ projectId, scenario, scenarios, requirements, onC
           <div style={{ flex: 1 }}>
             <h3><Link href={`/projects/${projectId}/scenarios/${scenario.id}`}>{scenario.title}</Link></h3>
             <p className="muted">
-              <small>ID <code>{scenario.id.slice(0, 8)}</code></small>
+              <small>ID <code>{scenario.caseCode ?? scenario.id.slice(0, 8)}</code></small>
               {scenario.requirement && <> · <small>Requisito{scenario.requirement.externalKey
                 ? ` [${scenario.requirement.externalKey}]`
                 : ''}: {scenario.requirement.title}</small></>}
@@ -166,7 +167,7 @@ export function ScenarioCard({ projectId, scenario, scenarios, requirements, onC
   return (
     <li className="scenario-card scenario-card--editing">
       <header className="scenario-card__head">
-        <strong>Editando · ID <code>{scenario.id.slice(0, 8)}</code></strong>
+        <strong>Editando · ID <code>{scenario.caseCode ?? scenario.id.slice(0, 8)}</code></strong>
       </header>
 
       <label className="scenario-edit-field">

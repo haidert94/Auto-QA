@@ -9,6 +9,7 @@ export type Finding = {
   relatedSource?: Source;
   key?: string;
   requirementKey?: string;
+  module?: string;
   pendingConfirmation: boolean;
   // Explicación corta del motivo cuando pendingConfirmation es true. La IA
   // la devuelve; el analizador por reglas la deja undefined.
