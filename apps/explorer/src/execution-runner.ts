@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, generateSharedSteps, readAutomationSteps, SHARED_STEPS_FILENAME, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
+import { SecretCipher } from '../../api/src/commerce/secret-cipher';
 import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
 import { validationScopeSignature } from '../../api/src/runs/validation-scope';
 import { RUN_CANCELED_BY_USER, RUN_STOP_REQUESTED } from '../../api/src/runs/run-cancellation';
@@ -62,6 +63,11 @@ type Logger = (level: 'INFO' | 'WARN' | 'ERROR', detail: string) => void;
 
 function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : [];
+}
+
+function isStorageStateExpired(expiresAt: Date | null | undefined): boolean {
+  if (!expiresAt) return false;
+  return expiresAt.getTime() <= Date.now();
 }
 
 function toHarnessPaths(value: unknown): HarnessEnvironment['allowedPaths'] {
@@ -116,6 +122,7 @@ export async function runTestRun(
       select: {
         type: true, baseUrl: true, allowedHosts: true, allowedPaths: true, excludedPaths: true,
         authorizationConfirmed: true, authorizedAt: true, readOnly: true, prohibitedActions: true,
+        storageStateCipher: true, storageStateExpiresAt: true,
       },
     });
     if (!environment) {
@@ -155,9 +162,6 @@ export async function runTestRun(
       allowWrites: !environment.readOnly,
     };
     const targetBrowser = claim.targetBrowser ?? 'CHROMIUM';
-    const spec = generateHarnessedSpec({
-      id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
-    }, harness, { browser: targetBrowser, device: claim.targetDevice, sharedSteps: !!prepared });
 
     // Directorio de trabajo aislado; limpiamos al final (éxito o error).
     workdir = await mkdtemp(join(tmpdir(), 'autoqa-run-'));
@@ -165,6 +169,35 @@ export async function runTestRun(
     const specPath = join(workdir, 'scenario.spec.ts');
     const configPath = join(workdir, 'playwright.config.ts');
     await mkdir(outputDir, { recursive: true });
+
+    // storageState importado: materializamos el blob descifrado dentro del
+    // workdir para que Playwright lo lea con test.use({ storageState }). Vive
+    // solo lo que dura este run; se borra con el workdir. No logueamos su
+    // contenido ni su ruta en logs operativos.
+    let storageStatePath: string | null = null;
+    if (environment.storageStateCipher && !isStorageStateExpired(environment.storageStateExpiresAt)) {
+      try {
+        const plaintext = new SecretCipher().decrypt(environment.storageStateCipher);
+        // Validación mínima: debe parsear como JSON. Si está corrupto o fue
+        // cifrado con otra clave, lo ignoramos y seguimos sin sesión.
+        JSON.parse(plaintext);
+        storageStatePath = join(workdir, 'storage-state.json');
+        await writeFile(storageStatePath, plaintext, { encoding: 'utf8' });
+        log('INFO', 'sesión reusable aplicada');
+      } catch {
+        log('WARN', 'sesión reusable ignorada: no se pudo descifrar o parsear');
+        storageStatePath = null;
+      }
+    } else if (environment.storageStateCipher) {
+      log('INFO', 'sesión reusable expirada; tests correrán sin ella');
+    }
+
+    const spec = generateHarnessedSpec({
+      id: scenario.id, title: prepared?.title ?? scenario.title, expectedResult: scenario.expectedResult, steps,
+    }, harness, {
+      browser: targetBrowser, device: claim.targetDevice, sharedSteps: !!prepared,
+      storageStatePath,
+    });
     const sharedSteps = prepared ? generateSharedSteps(steps) : null;
     if (validationScope) {
       const ts = await import('typescript');

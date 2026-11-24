@@ -336,6 +336,33 @@ test('fallback: shared steps distinguen por fallbacks (hash distinto)', () => {
   assert.equal(shared.split('.or(').length - 1, 1, 'solo una función debe tener .or()');
 });
 
+test('storageState: generateHarnessedSpec inyecta storageState cuando hay path', () => {
+  const env = { baseUrl: 'https://app.test', allowedHosts: ['app.test'], allowedPaths: [], excludedPaths: [] };
+  const scenario = { id: 'x', title: 'Panel', expectedResult: null, steps: [{ ordinal: 1, action: 'navigate: /' }] };
+  const spec = generateHarnessedSpec(scenario, env, { storageStatePath: '/tmp/autoqa-run-abc/storage-state.json' });
+  assert.match(spec, /test\.use\(\{ baseURL: 'https:\/\/app\.test', storageState: '\/tmp\/autoqa-run-abc\/storage-state\.json' \}\);/);
+});
+
+test('storageState: sin path, el test.use() queda sin storageState', () => {
+  const env = { baseUrl: 'https://app.test', allowedHosts: ['app.test'], allowedPaths: [], excludedPaths: [] };
+  const scenario = { id: 'x', title: 'Panel', expectedResult: null, steps: [{ ordinal: 1, action: 'navigate: /' }] };
+  const spec = generateHarnessedSpec(scenario, env, {});
+  assert.doesNotMatch(spec, /storageState:/);
+});
+
+test('storageState: escapa el path para evitar inyección en el literal', () => {
+  const env = { baseUrl: 'https://app.test', allowedHosts: ['app.test'], allowedPaths: [], excludedPaths: [] };
+  const scenario = { id: 'x', title: 'X', expectedResult: null, steps: [{ ordinal: 1, action: 'navigate: /' }] };
+  const spec = generateHarnessedSpec(scenario, env, { storageStatePath: "/tmp/x'; evil()//" });
+  // El valor se escribe como literal JS escapado; la comilla simple interna
+  // queda prefijada con backslash para que el parser no cierre el string.
+  assert.match(spec, /storageState: '\/tmp\/x\\'; evil\(\)\/\/'/);
+  // Prueba definitiva: que el spec sea JS parseable sin que "evil" quede como
+  // identificador suelto. Buscamos la secuencia ';[espacios]evil' SIN el \\'
+  // delante (si apareciera, el escape habría fallado).
+  assert.equal(/[^\\]'; evil\(\)/.test(spec), false);
+});
+
 test('suggestedFilename produce slug seguro', () => {
   assert.equal(suggestedFilename({ id: 'x', title: 'Login válido' }), 'login-valido.spec.ts');
   assert.equal(suggestedFilename({ id: 'x', title: '  Foo!! Bar??  ' }), 'foo-bar.spec.ts');

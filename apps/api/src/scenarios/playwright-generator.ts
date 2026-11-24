@@ -368,6 +368,10 @@ export type HarnessTarget = {
   // Nombre de un preset de Playwright: 'iPhone 13', 'Pixel 7', etc. Null = desktop.
   device?: string | null;
   sharedSteps?: boolean;
+  // Ruta ABSOLUTA en el worker a un archivo JSON con el storageState exportado.
+  // Si viene, el spec lo consume vía test.use({ storageState }). El worker lo
+  // materializa dentro del workdir temporal y lo borra junto con el workdir.
+  storageStatePath?: string | null;
 };
 
 // Lista blanca de dispositivos soportados; coincide con los presets estables
@@ -464,10 +468,17 @@ export function generateHarnessedSpec(
       "import type { Frame, Page } from '@playwright/test';");
   }
   lines.push('');
+  // Si hay storageState importado por el QA, lo inyectamos en el test.use().
+  // Playwright carga cookies+localStorage antes del primer navigate y así el
+  // escenario arranca ya autenticado, sin pasos de login. El worker se
+  // encargó de validar la ruta y de borrar el archivo con el workdir.
+  const storageClause = target.storageStatePath
+    ? `, storageState: '${escapeJsString(target.storageStatePath)}'`
+    : '';
   if (device) {
-    lines.push(`test.use({ ...devices['${escapeJsString(device)}'], baseURL: '${baseURL}' });`);
+    lines.push(`test.use({ ...devices['${escapeJsString(device)}'], baseURL: '${baseURL}'${storageClause} });`);
   } else {
-    lines.push(`test.use({ baseURL: '${baseURL}' });`);
+    lines.push(`test.use({ baseURL: '${baseURL}'${storageClause} });`);
   }
   lines.push('');
   lines.push('// Filtro de requests según el alcance y el modo autorizado del entorno.');
