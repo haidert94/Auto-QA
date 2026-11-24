@@ -69,6 +69,8 @@ En **Calidad**, las tarjetas IPA e ICSP muestran los índices calculados por la 
 
 **Salud del código** muestra las alertas de CodeQL y Dependabot, incluidos errores, avisos y notas de código. CodeQL usa la severidad de seguridad cuando GitHub la incluye. El detalle de CI indica cuántas de las últimas 20 ejecuciones se evaluaron y enlaza a la última fallida. La tasa usa ejecuciones completadas con resultado de éxito, fallo, tiempo agotado o fallo de inicio. El CI genera los tipos de ruta de Next.js antes de verificar TypeScript y migra una instancia PostgreSQL temporal para las pruebas de escenarios y planes.
 
+Las actualizaciones de seguridad de las dependencias forman parte de `package-lock.json`. El estado de cada alerta se verifica en GitHub después del análisis de la rama principal.
+
 Para comprobar la interfaz en Windows, con Node.js y Google Chrome instalados:
 
 ```powershell

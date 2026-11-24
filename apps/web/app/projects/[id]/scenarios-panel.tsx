@@ -66,7 +66,6 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const canCreate = can(role, 'scenario.create');
   const canDelete = can(role, 'scenario.delete');
   const canRun = can(role, 'run.execute');
-  const canSuggest = can(role, 'scenario.suggest');
   const canGenerate = can(role, 'automation.generate');
   const projectId = project.id;
   const projectBaseUrl = project.environments.find(environment => environment.authorizationConfirmed)?.baseUrl ?? null;
@@ -90,9 +89,6 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [firstAction, setFirstAction] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [suggesting, setSuggesting] = useState(false);
-  const [suggestions, setSuggestions] = useState<Array<{ title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }> | null>(null);
-  const [suggestionMeta, setSuggestionMeta] = useState<{ model: string; usedFallback: boolean } | null>(null);
   const [ipaScore, setIpaScore] = useState<number | null>(null);
   const [ipaBlockers, setIpaBlockers] = useState<string[]>([]);
   const [ipaStatus, setIpaStatus] = useState<'ASSESSED' | 'BLOCKED' | null>(null);
@@ -112,42 +108,6 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     } catch { setRunsAvailable(false); setRunsWarning('No se pudo consultar el historial. Los estados de ejecución no están disponibles.'); }
   }, [projectId]);
   useEffect(() => { void loadRuns(); }, [loadRuns, runner?.historyVersion]);
-
-  async function suggest() {
-    if (!requirementId) { setError('Selecciona primero un requisito para sugerir escenarios.'); return; }
-    setSuggesting(true); setError(''); setSuggestions(null);
-    try {
-      const response = await fetch(`/api/projects/${projectId}/scenarios/suggest`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirementId }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) { setError(payload.message ?? 'No se pudo generar sugerencias.'); return; }
-      setSuggestions(Array.isArray(payload.scenarios) ? payload.scenarios : []);
-      setSuggestionMeta({ model: payload.model ?? 'rule-based', usedFallback: !!payload.usedFallback });
-    } catch { setError('No se pudo generar sugerencias.'); }
-    finally { setSuggesting(false); }
-  }
-
-  async function createFromSuggestion(suggestion: { title: string; expectedResult?: string; steps: Array<{ action: string; data?: string; expected?: string }> }) {
-    setBusy(true); setError('');
-    try {
-      const response = await fetch(`/api/projects/${projectId}/scenarios`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: suggestion.title.trim(),
-          requirementId: requirementId || undefined,
-          expectedResult: suggestion.expectedResult?.trim() || undefined,
-          steps: suggestion.steps.map((s, i) => ({ ordinal: i + 1, action: s.action, data: s.data, expected: s.expected })),
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) { setError(payload.message ?? 'No se pudo crear el escenario sugerido.'); return; }
-      setSuggestions(prev => prev?.filter(s => s !== suggestion) ?? null);
-      await load();
-    } catch { setError('No se pudo crear el escenario sugerido.'); }
-    finally { setBusy(false); }
-  }
 
   async function load() {
     setListError('');

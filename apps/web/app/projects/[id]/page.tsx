@@ -40,7 +40,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
   }
   const project: Project = await response.json();
 
-  let showExploration = true;
+  let showExploration: boolean;
   let role: OrgRole = 'VIEWER';
   let canExplainFailures = false;
   try {

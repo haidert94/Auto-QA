@@ -179,7 +179,7 @@ export async function runTestRun(
     }
     const report = await readReport(workdir).catch(() => null);
     const summary = summariseReport(report, outcome.exitCode);
-    const { evidence, evidenceKey } = await uploadEvidence(workdir, outputDir, report, storage, summary.status, log);
+    const { evidence, evidenceKey } = await uploadEvidence(workdir, report, storage, summary.status, log);
 
     const providerSessionUrl = extractProviderSessionUrl(report, claim.targetProvider);
     await finishRun(prisma, claim, startedAt, {
@@ -315,7 +315,7 @@ function summariseReport(report: any, exitCode: number | null): { status: 'PASSE
   }
 }
 
-function extractProviderSessionUrl(report: any, provider: string | null): string | null {
+export function extractProviderSessionUrl(report: any, provider: string | null): string | null {
   if (!provider || provider.toUpperCase() === 'LOCAL') return null;
   // BrowserStack adjunta la URL de la sesión en los stdout/stderr del test
   // con un prefijo bs:// o la emite como attachment. Acá miramos los
@@ -324,10 +324,14 @@ function extractProviderSessionUrl(report: any, provider: string | null): string
     s?.specs?.flatMap((spec: any) =>
       spec?.tests?.flatMap((t: any) =>
         t?.results?.flatMap((r: any) => r?.attachments ?? []) ?? []) ?? []) ?? []) ?? [];
-  const link = attachments.find(a => typeof a?.body === 'string' && /browserstack\.com\/sessions/.test(a.body));
-  if (link) {
-    const match = /https?:\/\/[^\s"]+browserstack\.com\/sessions\/[a-f0-9-]+/i.exec(link.body);
-    if (match) return match[0];
+  for (const attachment of attachments) {
+    if (typeof attachment?.body !== 'string') continue;
+    for (const candidate of attachment.body.match(/https:\/\/[^\s"'<>]+/gi) ?? []) {
+      const url = URL.parse(candidate);
+      if (!url || url.protocol !== 'https:' || url.username || url.password || url.port) continue;
+      if (url.hostname !== 'browserstack.com' && !url.hostname.endsWith('.browserstack.com')) continue;
+      if (/^\/sessions\/[a-f0-9-]+\/?$/i.test(url.pathname)) return url.origin + url.pathname;
+    }
   }
   return null;
 }
@@ -363,7 +367,6 @@ async function readStepScreenshots(workdir: string): Promise<Array<{ step: numbe
 // (hex32 del trace zip) para compatibilidad con clientes antiguos.
 async function uploadEvidence(
   workdir: string,
-  outputDir: string,
   report: any,
   storage: ScreenshotStorage,
   status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED',
@@ -432,7 +435,6 @@ async function uploadEvidence(
   }
   const hasAnything = manifest.trace || manifest.video || manifest.screenshots.length || manifest.frameRepair;
   return { evidence: hasAnything ? manifest : null, evidenceKey: manifest.trace };
-  void outputDir;
 }
 
 async function finishRun(

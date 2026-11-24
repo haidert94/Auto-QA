@@ -2,7 +2,18 @@ const assert = require('node:assert/strict');
 const { existsSync } = require('node:fs');
 const { test } = require('node:test');
 const { chromium, firefox, webkit } = require('playwright-core');
-const { runTestRun } = require('../dist/explorer/src/execution-runner');
+const { extractProviderSessionUrl, runTestRun } = require('../dist/explorer/src/execution-runner');
+
+test('Explorer guarda solo enlaces HTTPS a sesiones válidas de BrowserStack', () => {
+  const report = (...urls) => ({
+    suites: [{ specs: [{ tests: [{ results: [{ attachments: urls.map(body => ({ body })) }] }] }] }],
+  });
+  const session = 'https://dashboard.browserstack.com/sessions/a1b2-c3d4';
+  const other = 'https://example.test/sessions/a1b2-c3d4';
+  assert.equal(extractProviderSessionUrl(report(other), 'BROWSERSTACK'), null);
+  assert.equal(extractProviderSessionUrl(report(other, session), 'BROWSERSTACK'), session);
+  assert.equal(extractProviderSessionUrl(report(session), 'LOCAL'), null);
+});
 
 for (const [targetBrowser, engine] of Object.entries({ CHROMIUM: chromium, FIREFOX: firefox, WEBKIT: webkit })) {
   test(`Explorer carga Playwright desde la carpeta temporal, ejecuta ${targetBrowser} y guarda el resultado`, {

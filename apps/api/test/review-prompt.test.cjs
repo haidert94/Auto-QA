@@ -19,7 +19,7 @@ test('buildReviewPrompt incluye proyecto y documentos', () => {
     documents: [{ filename: 'historias.md', markdown: '# Login\nComo usuario...' }],
   });
   assert.ok(prompt.includes('App de reservas'));
-  assert.ok(prompt.includes('https://app.ejemplo.com'));
+  assert.ok(prompt.split('\n').includes('URL base: https://app.ejemplo.com'));
   assert.ok(prompt.includes('historias.md'));
   assert.ok(prompt.includes('"score": 0-100'));
 });

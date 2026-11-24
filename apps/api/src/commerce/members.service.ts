@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { type OrgRole, Prisma } from '@prisma/client';
 import { AccountMail } from './account-mail';
 import { CONSENT_VERSION, digest, newToken, passwordHash, SESSION_SECONDS } from './account';

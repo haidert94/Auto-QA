@@ -6,7 +6,8 @@
 
 import { GetObjectCommand, NoSuchKey, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
 import { Injectable, Logger } from '@nestjs/common';
-import { readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createS3ClientFromConfig, isS3Enabled, KEY_PATTERN, readS3Config, resolveObjectKey, type S3Config } from './s3-config';
 
@@ -22,15 +23,18 @@ export class LocalScreenshotReader implements ScreenshotReader {
 
   async read(key: string): Promise<Buffer | null> {
     if (!KEY_PATTERN.test(key)) return null;
-    const path = join(this.root, key);
     try {
-      const info = await stat(path);
-      if (!info.isFile()) return null;
+      const file = await open(join(this.root, key), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      try {
+        return (await file.stat()).isFile() ? await file.readFile() : null;
+      } finally {
+        await file.close();
+      }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      const { code } = error as NodeJS.ErrnoException;
+      if (code === 'ENOENT' || code === 'ELOOP' || code === 'EISDIR') return null;
       throw error;
     }
-    return readFile(path);
   }
 }
 

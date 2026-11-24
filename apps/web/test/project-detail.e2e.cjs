@@ -2846,7 +2846,7 @@ async function run() {
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), environment.baseUrl);
     await page.getByLabel('Entorno seleccionado').selectOption(project.environments[1].id);
     await page.locator('.detail-fields').getByText('Pendiente de confirmación', { exact: true }).waitFor();
-    assert.ok((await page.locator('.detail-url').textContent()).includes('https://qa.example.test/'));
+    await expect(page.locator('.detail-url code')).toHaveText('https://qa.example.test/');
     await page.getByLabel('Entorno seleccionado').selectOption(environment.id);
     const exportSpec = page.getByRole('button', { name: 'Exportar especificación', exact: true });
     await expect(exportSpec).toHaveCount(0);

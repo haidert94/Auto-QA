@@ -120,7 +120,7 @@ function ManualEvidenceModal({ projectId, scenarioId, currentStatus, currentScre
         )}
       </div>
       {previews.length > 0 && <ol className="manual-evidence-previews">{previews.map((url, index) => <li key={index}>
-        <img src={url} alt={`Evidencia ${index + 1}`} />
+        <img src={url.startsWith('blob:') ? url : undefined} alt={`Evidencia ${index + 1}`} />
         <button type="button" aria-label={`Quitar imagen ${index + 1}`} onClick={() => setFiles(files.filter((_, i) => i !== index))}><Trash2 size={11} /></button>
       </li>)}</ol>}
       {error && <p className="error" role="alert">{error}</p>}

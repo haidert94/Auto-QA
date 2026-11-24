@@ -7,9 +7,12 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { Readable } = require('node:stream');
+const { mkdtemp, mkdir, rmdir, symlink, unlink, writeFile } = require('node:fs/promises');
+const { tmpdir } = require('node:os');
+const { join } = require('node:path');
 
 const { isS3Enabled, readS3Config, resolveObjectKey } = require('../dist/exploration/s3-config');
-const { S3ScreenshotReader } = require('../dist/exploration/screenshot-storage');
+const { LocalScreenshotReader, S3ScreenshotReader } = require('../dist/exploration/screenshot-storage');
 
 const { NoSuchKey, S3ServiceException } = require('@aws-sdk/client-s3');
 
@@ -45,6 +48,31 @@ function asBody(buffer) {
   stream.transformToByteArray = async () => new Uint8Array(buffer);
   return stream;
 }
+
+test('el lector local devuelve únicamente archivos de evidencia válidos', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'autoqa-reader-'));
+  const key = 'a'.repeat(32);
+  const directory = 'b'.repeat(32);
+  const link = 'c'.repeat(32);
+  try {
+    await writeFile(join(dir, key), 'evidencia');
+    await mkdir(join(dir, directory));
+    const reader = withEnv({ AUTOQA_EXPLORATIONS_DIR: dir }, () => new LocalScreenshotReader());
+    assert.equal((await reader.read(key)).toString(), 'evidencia');
+    assert.equal(await reader.read(directory), null);
+    assert.equal(await reader.read('d'.repeat(32)), null);
+    assert.equal(await reader.read('evidencia-inválida'), null);
+    if (process.platform !== 'win32') {
+      await symlink(join(dir, key), join(dir, link));
+      assert.equal(await reader.read(link), null);
+    }
+  } finally {
+    if (process.platform !== 'win32') await unlink(join(dir, link)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await unlink(join(dir, key));
+    await rmdir(join(dir, directory));
+    await rmdir(dir);
+  }
+});
 
 test('isS3Enabled reconoce AUTOQA_EXPLORATIONS_BACKEND=s3', () => {
   withEnv({ AUTOQA_EXPLORATIONS_BACKEND: 's3' }, () => assert.equal(isS3Enabled(), true));
