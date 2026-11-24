@@ -21,6 +21,7 @@ import { runDocumentAgents, runSelectedAgents } from './agents';
 import type { AgentContext } from './agents/agent-types';
 import { documentCoverageKey, readCoveredDocumentSources } from './document-coverage';
 import { isTestType } from './test-types';
+import { buildElementInventoryContext, latestExplorationInventory } from './element-inventory';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
 
 export type AutomationClaim = {
@@ -188,6 +189,14 @@ async function runGenerationPhase(
     : new Set<string>();
 
   const environmentId = project.environments[0]?.id ?? null;
+  // Exploración real del sitio, si existe, para que los agentes citen
+  // selectores reales en vez de inventarlos. Degrada a vacío sin bloquear
+  // la generación cuando no hay exploración COMPLETED del entorno.
+  const explorationPages = await latestExplorationInventory(prisma, claim.projectId, environmentId);
+  const elementInventory = explorationPages.length ? buildElementInventoryContext(explorationPages) : undefined;
+  log('INFO', explorationPages.length
+    ? `inventario de elementos · ${explorationPages.length} páginas exploradas`
+    : 'inventario de elementos · sin exploración previa del entorno, generando sin grounding de DOM');
   const batch: GeneratedCase[] = [];
   const context: AgentContext = {
     projectId: claim.projectId,
@@ -198,6 +207,7 @@ async function runGenerationPhase(
     url: inputs.url,
     description: inputs.description,
     review,
+    elementInventory,
     requirements: requirements.map(requirement => ({
       ...requirement,
       covered: requirement.sources.some(source => coveredSources.has(documentCoverageKey(source))),

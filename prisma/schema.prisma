@@ -971,6 +971,11 @@ model ExplorationPage {
   title         String?
   screenshotKey String?
   domSize       Int?
+  // Inventario de elementos interactivos (botones, links, inputs) con su
+  // mejor selector disponible. Ver apps/explorer/src/explorer.ts para la
+  // extracción y apps/api/src/automation/element-inventory.ts para el
+  // consumo. Nunca contiene valores de input, solo atributos estructurales.
+  elements      Json?
   visitedAt     DateTime    @default(now())
 
   @@index([explorationId, position])

@@ -5,7 +5,7 @@
 import type { Prisma } from '@prisma/client';
 import { recordGeneratedCase } from '../generated-cases';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -18,8 +18,10 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     LINKED_REQUIREMENT_INSTRUCTION,
     '',
     'Traslada las historias seleccionadas a un navegador móvil emulado. Prioriza los tamaños, orientación, controles y flujos declarados en los requisitos. No inventes gestos, controles ni endpoints.',
-    'Usa el vocabulario navigate:/click:/fill:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
-    'En cada fill, usa el selector en action y el valor de prueba en el campo data del mismo paso. Ejemplo: {"action":"fill: #codigo-postal","data":"110111"}.',
+    'Usa el vocabulario navigate:/click:/click-text:/fill:/fill-label:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
+    'En cada fill o fill-label, usa el selector/etiqueta en action y el valor de prueba en el campo data del mismo paso. Ejemplo: {"action":"fill-label: Código postal","data":"110111"}.',
+    'Prefiere click-text y fill-label sobre click y fill cuando el elemento tenga texto o etiqueta visible: sobreviven a cambios de clases/ids que un selector CSS no resiste.',
+    elementInventoryBlock(ctx),
     '',
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" para el camino feliz de la historia en móvil.',

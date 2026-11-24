@@ -156,6 +156,8 @@ export async function runExploration(
           await log('WARN', 'screenshot-failed', error instanceof Error ? error.message : undefined);
         }
 
+        const elements = await extractElementInventory(page).catch(() => []);
+
         position += 1;
         await prisma.explorationPage.create({
           data: {
@@ -165,6 +167,7 @@ export async function runExploration(
             title: title?.slice(0, 500) || null,
             domSize,
             screenshotKey,
+            elements: elements.length ? (elements as unknown as object) : undefined,
           },
         });
         await log('INFO', 'page-visited', (httpStatus ?? 'noresp') + ' ' + url);
@@ -230,6 +233,76 @@ async function discoverLinks(page: Page, baseUrl: string): Promise<string[]> {
       } catch { /* enlace mal formado */ }
     }
     return out;
+  } catch { return []; }
+}
+
+// Tipo crudo, un campo por candidato de selector. La prioridad entre ellos
+// (qué selector usar) se decide fuera del navegador, en
+// apps/api/src/automation/element-inventory.ts — así la lógica de selección
+// es pura, testeable, y compartida sin depender de Playwright.
+export type RawElement = {
+  tag: string; type?: string; testid?: string; testidAttr?: string; id?: string; name?: string;
+  text?: string; label?: string; href?: string;
+};
+
+const INVENTORY_SELECTOR = 'button, a[href], input, select, textarea, [role="button"]';
+const MAX_ELEMENTS_PER_PAGE = 80;
+
+// Extrae botones, links, inputs, selects y textareas visibles con los
+// atributos que sirven para construir un selector estable. Deliberadamente
+// NUNCA lee .value: el inventario es estructural, no debe filtrar datos que
+// el usuario haya escrito (contraseñas, PII) ni valores de prueba.
+async function extractElementInventory(page: Page): Promise<RawElement[]> {
+  try {
+    return await page.$$eval(
+      INVENTORY_SELECTOR,
+      (nodes, max) => {
+        function text(value: string | null | undefined, limit = 80): string | undefined {
+          const trimmed = (value ?? '').replace(/\s+/g, ' ').trim();
+          return trimmed ? trimmed.slice(0, limit) : undefined;
+        }
+        function labelFor(el: Element): string | undefined {
+          const id = el.getAttribute('id');
+          if (id) {
+            const associated = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+            const fromFor = text(associated?.textContent);
+            if (fromFor) return fromFor;
+          }
+          const wrapping = el.closest('label');
+          const fromWrap = text(wrapping?.textContent);
+          if (fromWrap) return fromWrap;
+          return text(el.getAttribute('aria-label')) ?? text(el.getAttribute('placeholder'));
+        }
+        const TESTID_ATTRS = ['data-testid', 'data-test-id', 'data-test', 'data-cy', 'data-qa'];
+        const out: Array<{
+          tag: string; type?: string; testid?: string; testidAttr?: string; id?: string; name?: string;
+          text?: string; label?: string; href?: string;
+        }> = [];
+        for (const el of nodes) {
+          if (out.length >= max) break;
+          const tag = el.tagName.toLowerCase();
+          let testid: string | undefined; let testidAttr: string | undefined;
+          for (const attr of TESTID_ATTRS) {
+            const value = el.getAttribute(attr);
+            if (value) { testid = value; testidAttr = attr; break; }
+          }
+          const id = el.getAttribute('id') ?? undefined;
+          const name = el.getAttribute('name') ?? undefined;
+          const visibleText = tag === 'button' || tag === 'a' || el.getAttribute('role') === 'button'
+            ? text((el as HTMLElement).innerText ?? el.textContent)
+            : undefined;
+          const label = tag === 'input' || tag === 'select' || tag === 'textarea' ? labelFor(el) : undefined;
+          const href = tag === 'a' ? (el.getAttribute('href') ?? undefined) : undefined;
+          const type = tag === 'input' ? (el.getAttribute('type') ?? 'text') : undefined;
+          // Descarta elementos sin ninguna pista usable: no sirven para
+          // construir un selector ni aportan contexto al agente.
+          if (!testid && !id && !name && !visibleText && !label) continue;
+          out.push({ tag, type, testid, testidAttr, id, name, text: visibleText, label, href: text(href, 200) });
+        }
+        return out;
+      },
+      MAX_ELEMENTS_PER_PAGE,
+    );
   } catch { return []; }
 }
 

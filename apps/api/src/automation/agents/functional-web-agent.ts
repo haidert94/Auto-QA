@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { recordGeneratedCase } from '../generated-cases';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
   const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
@@ -22,11 +22,14 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
       'Vocabulario de pasos para los casos automatizables:',
       '- navigate: <ruta relativa o URL>',
       '- click: <selector css>',
+      '- click-text: <texto exacto visible> (preferido sobre click cuando el elemento no tiene selector estable; coincide por accesibilidad, no por CSS)',
       '- fill: <selector css>   (+ "data": valor a escribir)',
+      '- fill-label: <etiqueta del campo>   (+ "data": valor a escribir; preferido sobre fill cuando el campo tiene una etiqueta visible)',
       '- press: <tecla>',
       '- expect-text: <texto visible>',
       '- expect-url: <ruta exacta>',
     ] : []),
+    !onlyManual ? elementInventoryBlock(ctx) : '',
     '',
     'Para cada escenario marca el flujo:',
     '- "flow": "basico" cuando sea el camino feliz principal de una historia.',

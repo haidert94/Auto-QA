@@ -26,6 +26,10 @@ export type AgentContext = {
     id: string; externalKey?: string | null; module?: string | null; title: string; criteria: Array<{ text: string }>;
     scenarios?: Array<{ tags: string[] }>; documentVersionIds?: string[]; covered?: boolean;
   }>;
+  // Texto ya condensado por buildElementInventoryContext(), listo para
+  // pegar en el prompt. Vacío si no hay una exploración COMPLETED del
+  // entorno — los agentes deben degradar con gracia, no bloquear.
+  elementInventory?: string;
 };
 
 export type ScenarioPayload = {
@@ -153,6 +157,21 @@ export const ASSERTION_INSTRUCTION = [
 ].join('\n');
 
 export const REGRESSION_INSTRUCTION = 'Para cada escenario indica "regression": true si debe volver a ejecutarse después de cambios para comprobar que un comportamiento existente identificado en el análisis sigue funcionando. Usa false en los demás casos. Decide de forma independiente del flujo y usa este campo para la clasificación de regresión.';
+
+// Bloque de prompt con el inventario real de la aplicación (ver
+// element-inventory.ts). Vacío cuando no hay exploración previa: en ese
+// caso el agente sigue generando con su mejor estimación, como hacía antes
+// de esta feature — no bloqueamos la generación por falta de inventario.
+export function elementInventoryBlock(ctx: AgentContext): string {
+  if (!ctx.elementInventory?.trim()) return '';
+  return [
+    '',
+    'Inventario real de elementos de la aplicación (extraído navegando el sitio). Cada línea es un paso DSL literal que puedes citar tal cual:',
+    ctx.elementInventory,
+    '',
+    'Para click/fill usa EXCLUSIVAMENTE una línea de este inventario cuando el elemento que necesitas aparezca ahí — no inventes selectores CSS ni textos distintos a los listados. Si el elemento que necesitas no está en el inventario (por ejemplo, aparece tras una interacción previa, o la exploración no llegó a esa página), usa tu mejor estimación como hasta ahora, pero prioriza siempre el inventario cuando exista una línea aplicable.',
+  ].join('\n');
+}
 
 // Formato Allure: @alfanumerico-con-guiones. Normalizamos y rechazamos lo
 // que no case con el patrón del DTO para que el backend no rechace al
