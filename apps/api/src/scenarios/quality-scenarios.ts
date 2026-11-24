@@ -108,28 +108,32 @@ function scenario(
   };
 }
 
-export async function readQualityScenarios(db: Prisma.TransactionClient, projectId: string, id?: string) {
+export async function readQualityScenarioSources(db: Prisma.TransactionClient, projectId: string, id?: string, includeCode = false) {
   // Los registros de herramientas e intentos antiguos se consultan en Reportes.
   const where = { projectId, ...(id && { id }), requirement: { is: { projectId } } };
-  const [monitors, audits, loads, uxAudits] = await Promise.all([
+  const code = includeCode ? { automationCode: true as const } : {};
+  return Promise.all([
     db.monitor.findMany({
       where,
       select: {
-        ...qualityAutomationSource, ...monitorHttpCheckFields, ...requirementFields, id: true, name: true, active: true, intervalMinutes: true, timeoutMs: true,
+        ...qualityAutomationSource, ...code, ...monitorHttpCheckFields, ...requirementFields, id: true, name: true, active: true, intervalMinutes: true, timeoutMs: true,
         lastCheckedAt: true, lastStatus: true, lastLatencyMs: true, lastHttpStatus: true,
       },
     }),
     db.performanceAudit.findMany({
-      where, select: { ...runFields, performanceScore: true },
+      where, select: { ...runFields, ...code, performanceScore: true },
     }),
     db.loadTest.findMany({
-      where, select: { ...runFields, name: true, stages: true, totalRequests: true, p95Ms: true, failRate: true },
+      where, select: { ...runFields, ...code, name: true, stages: true, totalRequests: true, p95Ms: true, failRate: true },
     }),
     db.uxAudit.findMany({
-      where, select: { ...runFields, totalFindings: true, criticalCount: true },
+      where, select: { ...runFields, ...code, totalFindings: true, criticalCount: true },
     }),
   ]);
+}
 
+export async function readQualityScenarios(db: Prisma.TransactionClient, projectId: string, id?: string) {
+  const [monitors, audits, loads, uxAudits] = await readQualityScenarioSources(db, projectId, id);
   const root = '/projects/' + projectId;
   const rows = [
     ...monitors.map(row => {

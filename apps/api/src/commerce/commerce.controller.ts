@@ -1,7 +1,7 @@
 import { Body, Controller, ForbiddenException, Get, Headers, HttpCode, Ip, Post } from '@nestjs/common';
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 import { AccountService } from './account';
-import { AdminService } from './admin';
+import { AdminService, canViewCodeHealth } from './admin';
 import { BillingService, SandboxPaymentProvider, subscriptionStatus } from './payments';
 import { publicPlan } from './plan-capabilities';
 import { UsageService } from './usage.service';
@@ -91,7 +91,7 @@ export class CommerceController {
     const { name, email, organization, role } = await this.accounts.identity(auth);
     const subscription = organization.subscription;
     return {
-      name, email, role, organization: { id: organization.id, name: organization.name },
+      name, email, role, canViewCodeHealth: canViewCodeHealth(email), organization: { id: organization.id, name: organization.name },
       subscription: {
         status: subscriptionStatus(subscription), plan: subscription ? publicPlan(subscription.plan) : undefined,
         checkoutPrepared: !!subscription?.reference && !!subscription?.quotedPriceCop,

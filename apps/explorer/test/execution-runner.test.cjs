@@ -3,6 +3,7 @@ const { existsSync } = require('node:fs');
 const { test } = require('node:test');
 const { chromium, firefox, webkit } = require('playwright-core');
 const { extractProviderSessionUrl, runTestRun } = require('../dist/explorer/src/execution-runner');
+const { validationScopeSignature } = require('../dist/api/src/runs/validation-scope');
 
 test('Explorer guarda solo enlaces HTTPS a sesiones válidas de BrowserStack', () => {
   const report = (...urls) => ({
@@ -20,11 +21,16 @@ for (const [targetBrowser, engine] of Object.entries({ CHROMIUM: chromium, FIREF
     skip: !existsSync(engine.executablePath()) && 'El motor de Playwright no está instalado.',
     timeout: 20000,
   }, async () => {
+    const environment = {
+      type: 'QA', authorizationConfirmed: true, readOnly: true, baseUrl: null,
+      authorizedAt: null, allowedHosts: [], allowedPaths: [], excludedPaths: [], prohibitedActions: [],
+    };
     const claim = {
       id: 'ejecucion', projectId: 'proyecto', scenarioId: 'caso', environmentId: 'qa',
       runKey: null, targetBrowser, targetDevice: null, targetProvider: 'LOCAL',
       automation: targetBrowser === 'CHROMIUM' ? {
         id: 'automatizacion', signature: 'version', title: 'Página vacía',
+        validationScopeSignature: validationScopeSignature(environment),
         steps: [{ ordinal: 1, action: 'expect-hidden: #elemento-ausente' }],
       } : undefined,
     };
@@ -39,7 +45,7 @@ for (const [targetBrowser, engine] of Object.entries({ CHROMIUM: chromium, FIREF
         return { id: claim.scenarioId, title: 'Página vacía', tags: [], steps: [{ ordinal: 1, action: 'expect-url: about:blank' }] };
       } },
       environment: { async findUnique() {
-        return { type: 'QA', authorizationConfirmed: true, readOnly: true, baseUrl: null };
+        return environment;
       } },
       testResult: { async create({ data }) { result = data; } },
       async $queryRaw() { return [{ errorCode: null }]; },

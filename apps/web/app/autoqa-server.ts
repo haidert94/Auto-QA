@@ -66,6 +66,7 @@ export type Plan = {
 export type OrgRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
 export type Account = {
   name: string; email: string; role: OrgRole;
+  canViewCodeHealth?: boolean;
   organization: { id: string; name: string };
   subscription: { status: string; plan?: Plan; checkoutPrepared: boolean; periodEndsAt?: string; quotedPriceCop?: number | null };
   sandbox: boolean;

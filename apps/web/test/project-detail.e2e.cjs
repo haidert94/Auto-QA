@@ -14,6 +14,8 @@ const JSZip = require('jszip');
 const root = resolve(__dirname, '../../..');
 const projectId = '10000000-0000-4000-8000-000000000001';
 const session = 'a'.repeat(64);
+let codeHealthOwner = false;
+let codeHealthReads = 0;
 const account = {
   name: 'Equipo demo', email: 'qa@example.test', role: 'OWNER', organization: { id: 'demo', name: 'AutoQA Demo' },
   subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { name: 'Pro', capabilities: [
@@ -197,7 +199,21 @@ const api = createServer(async (request, response) => {
   if (request.headers.authorization !== `Bearer ${session}`) return send({ message: 'Sesión requerida' }, 401);
   const requestUrl = new URL(request.url, 'http://localhost');
   const path = requestUrl.pathname;
-  if (path === '/api/commerce/me') return send(account);
+  if (path === '/api/commerce/me') return send({ ...account, canViewCodeHealth: codeHealthOwner });
+  if (path === '/api/quality/code-health') {
+    codeHealthReads++;
+    if (!codeHealthOwner) return send({ message: 'Not Found' }, 404);
+    return send({
+      configured: true, repository: 'example/autoqa',
+      workflow: { name: 'ci.yml', recent: [
+        { id: 1, status: 'completed', conclusion: 'failure', headSha: '1111111', createdAt: '2026-11-24', url: 'https://github.com/example/autoqa/actions/runs/1' },
+        { id: 2, status: 'completed', conclusion: 'success', headSha: '2222222', createdAt: '2026-11-23', url: 'https://github.com/example/autoqa/actions/runs/2' },
+        { id: 3, status: 'completed', conclusion: 'cancelled', headSha: '3333333', createdAt: '2026-11-22', url: 'https://github.com/example/autoqa/actions/runs/3' },
+      ], successRate: 0.5, evaluated: 2, succeeded: 1, url: 'https://github.com/example/autoqa/actions/workflows/ci.yml' },
+      codeql: { enabled: true, counts: { high: 1, error: 1, warning: 1, note: 1, other: 1, total: 5 }, top: [] },
+      dependabot: { enabled: true, counts: { medium: 1, total: 1 }, top: [] },
+    });
+  }
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
   if (path === '/api/projects' && request.method === 'GET') return send([project]);
   if (path === '/api/projects' && request.method === 'POST' && projectRegistrations) {
@@ -1428,6 +1444,66 @@ async function verifyScenarioPagination(page, automation = false) {
   await page.reload();
 }
 
+async function verifyManualScenarioDialog(page) {
+  const viewport = page.viewportSize();
+  const savedScenarios = [...scenarios];
+  const pattern = '**/api/projects/' + projectId + '/scenarios';
+  let submits = 0;
+  await page.route(pattern, async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    submits++;
+    const payload = route.request().postDataJSON();
+    assert.deepEqual(payload, {
+      title: 'Creado desde el modal', requirementId: requirement.id, expectedResult: 'Página visible',
+      steps: [{ ordinal: 1, action: 'Abre la página de QA' }],
+    });
+    return submits === 1
+      ? route.fulfill({ status: 400, json: { message: 'Verifica el escenario.' } })
+      : route.continue();
+  });
+  try {
+    await page.getByRole('tab', { name: /^Escenarios/ }).click();
+    const trigger = page.getByRole('button', { name: 'Nuevo escenario', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Nuevo escenario manual', exact: true });
+    const title = dialog.getByLabel('Título', { exact: true });
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+    await expect(title).toBeFocused();
+    assert.ok(await dialog.evaluate(element => element.matches(':modal')));
+    await expect(dialog.getByRole('heading', { name: 'Nuevo escenario manual' })).toHaveCSS('text-transform', 'uppercase');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await page.setViewportSize({ width: 390, height: 780 });
+    await trigger.click();
+    const bounds = await dialog.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390);
+    await dialog.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await trigger.click();
+    await title.fill('Creado desde el modal');
+    await dialog.getByLabel('Historia o requisito asociado').selectOption(requirement.id);
+    await dialog.getByLabel('Resultado esperado (opcional)').fill('Página visible');
+    await dialog.getByLabel('Primer paso', { exact: true }).fill('Abre la página de QA');
+    await dialog.getByRole('button', { name: 'Crear escenario' }).click();
+    await expect(dialog.getByRole('alert')).toHaveText('Verifica el escenario.');
+    await expect(title).toHaveValue('Creado desde el modal');
+    await dialog.getByRole('button', { name: 'Crear escenario' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Creado desde el modal', exact: true })).toBeVisible();
+    assert.equal(submits, 2);
+  } finally {
+    scenarios = savedScenarios;
+    await page.unroute(pattern);
+    await page.setViewportSize(viewport);
+    await page.reload();
+  }
+  console.log('PASS modal de escenario manual en escritorio y móvil, con errores y creación exitosa.');
+}
+
 async function verifyScenarios(page, screenshots) {
   async function headerGeometry() {
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -2568,6 +2644,108 @@ async function verifyRunReport(page, screenshots) {
   console.log('PASS reporte: métricas y denominadores, duración cero/ausente, selector/filtros, error seguro, trazas autorizadas, JUnit XML válido, JSON sin claves privadas, matriz/cronología, móvil, permisos y reintentos. API simulada.');
 }
 
+async function verifyAutomationValidation(page, website) {
+  const validationId = '73000001-0000-4000-8000-000000000001';
+  const version = 'b'.repeat(64);
+  const url = 'https://github.com/example/autoqa/actions/runs/4444';
+  let starts = 0;
+  const pattern = '**/api/projects/' + projectId + '/automation-validations';
+  await page.route(pattern, async route => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      starts++;
+      assert.deepEqual(request.postDataJSON(), { environmentId: environment.id, scenarioIds: [scenarioA] });
+      return route.fulfill({ status: 201, json: { id: validationId } });
+    }
+    return route.fulfill({ json: {
+      configured: true, ready: true, maxCases: 20,
+      codeHealth: { score: 80, analyzed: 5, clean: 4, pending: 1, errors: 0, warnings: 1, findings: [{
+        code: 'weak-secret-input', severity: 'warn', scenarioId: scenarioA, title: 'Revisión de formulario',
+        kind: 'playwright', message: 'Verifica que sea un dato de prueba.',
+      }] },
+      ciValidationId: starts ? validationId : null,
+      environments: [{ id: environment.id, type: 'QA', baseUrl: 'https://qa.example.test/', readOnly: true }],
+      scenarios: [{ id: scenarioA, title: 'Checkout confirmado' }],
+      history: starts ? [{ id: validationId, version, environmentType: 'QA', environmentId: environment.id, status: 'COMPLETED',
+        createdAt: '2026-11-24T03:00:00Z', completedAt: '2026-11-24T03:01:00Z', workflowUrl: url, reason: null,
+        counts: { passed: 1, failed: 0, blocked: 0, skipped: 0, pending: 0 },
+        cases: [{ scenarioId: scenarioA, title: 'Checkout confirmado', automationId: 'actual-version', status: 'passed', reason: null }],
+      }] : [],
+    } });
+  });
+  try {
+    await page.getByRole('tab', { name: 'Calidad', exact: true }).click();
+    const card = page.getByRole('region', { name: 'Validación de la automatización', exact: true });
+    const validate = card.getByRole('button', { name: 'Validar en GitHub Actions' });
+    await expect(card.getByRole('img', { name: 'Salud del código generado: 80 de 100' })).toBeVisible();
+    await expect(card.getByText('4 de 5 automatizaciones revisadas sin hallazgos.')).toBeVisible();
+    await expect(card.getByText(/Sin resultados de Playwright para las versiones actuales/)).toBeVisible();
+    await card.getByText('Ver hallazgos del código (1)').click();
+    await expect(card.getByText('Verifica que sea un dato de prueba.')).toBeVisible();
+    await expect(validate).toBeDisabled();
+    await card.getByLabel('Entorno de pruebas').selectOption(environment.id);
+    await card.getByText('Escenarios Playwright (0)', { exact: true }).click();
+    await card.getByRole('checkbox', { name: 'Checkout confirmado', exact: true }).check();
+    await validate.click();
+    await expect(card.getByRole('img', { name: 'Aprobadas 1' })).toBeVisible();
+    await expect(card.getByText(/100% de los casos Playwright seleccionados aprobados/)).toBeVisible();
+    await expect(card.getByText(version.slice(0, 10), { exact: true })).toBeVisible();
+    await expect(card.getByRole('link', { name: /Ver ejecución en GitHub/ })).toHaveAttribute('href', url);
+    await expect(card.getByRole('link', { name: /Ver Reportes/ })).toHaveAttribute('href', '/projects/' + projectId + '#reporte');
+    assert.equal(starts, 1);
+  } finally {
+    await page.unroute(pattern);
+    await page.goto(`${website}/projects/${projectId}`);
+  }
+  console.log('PASS Calidad inicia la validación y muestra la versión y los resultados de GitHub.');
+}
+
+async function verifyCodeHealth(page, website) {
+  const privatePage = '/admin/salud-del-codigo';
+  const previousPage = '/projects/' + projectId + '/code-health';
+  const menu = page.getByLabel('Menú de la cuenta', { exact: true });
+  const entry = page.getByRole('link', { name: 'Salud del código', exact: true });
+  const validationApi = '**/api/projects/*/automation-validations';
+  await page.route(validationApi, route => route.fulfill({ json: { configured: false, environments: [], scenarios: [], history: [] } }));
+  const before = codeHealthReads;
+  try {
+    await page.getByRole('tab', { name: 'Calidad', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Calidad del proyecto' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Salud del código' })).toHaveCount(0);
+    await menu.click();
+    await expect(entry).toHaveCount(0);
+    for (const path of [privatePage, previousPage]) {
+      assert.equal((await page.goto(website + path)).status(), 404);
+      await expect(page.getByText('example/autoqa', { exact: true })).toHaveCount(0);
+    }
+    assert.equal(codeHealthReads, before);
+    assert.equal((await page.request.get(website + '/api/quality/code-health')).status(), 404);
+
+    codeHealthOwner = true;
+    await page.goto(website + '/projects/' + projectId);
+    await menu.click();
+    await expect(entry).toBeVisible();
+    await entry.click();
+    await expect(page).toHaveURL(website + privatePage);
+    await expect(page.getByRole('heading', { name: 'Salud del código', exact: true })).toBeVisible();
+    const overview = page.getByRole('region', { name: 'Estado del repositorio' });
+    await expect(overview.getByText('6 alertas abiertas · CI 50% de éxito')).toBeVisible();
+    for (const text of ['Errores de código', 'Avisos de código', 'Notas', 'Otras alertas']) {
+      await expect(overview.getByText(text, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByText('50% de éxito (1/2) · 3 ejecuciones recientes')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Abrir última ejecución fallida' }))
+      .toHaveAttribute('href', 'https://github.com/example/autoqa/actions/runs/1');
+    await page.goto(website + previousPage);
+    await expect(page).toHaveURL(website + privatePage);
+  } finally {
+    codeHealthOwner = false;
+    await page.unroute(validationApi);
+    await page.goto(website + '/projects/' + projectId);
+  }
+  console.log('PASS Salud del código solo está disponible para la cuenta autorizada.');
+}
+
 async function verifyQuality(page, screenshots) {
   qualityMode = true;
   const initialQueues = queuedRequests.length;
@@ -2915,6 +3093,10 @@ async function run() {
     await page.keyboard.press('Home');
     assert.equal(await page.getByRole('tab', { name: 'Datos', exact: true }).getAttribute('aria-selected'), 'true');
     await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
+    // Orden de pestañas: Reportes, Calidad, Historial. Dos ArrowRight para
+    // llegar a Historial.
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('tab', { name: 'Calidad', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowRight');
     const historyTab = page.getByRole('tab', { name: 'Historial', exact: true });
     await expect(historyTab).toBeFocused();
@@ -2943,10 +3125,13 @@ async function run() {
     await expect(rolesDialog).toBeHidden();
     await expect(page.locator('.detail-roles').getByText('QA actualizado', { exact: true })).toBeVisible();
     assert.equal(saveCount, priorSaves + 1, 'El diálogo conserva el proxy de guardado.');
+    await verifyManualScenarioDialog(page);
     await verifyScenarios(page, screenshots);
     await verifyAutomation(page, screenshots);
     await verifyManualScenario(page);
     await verifyRunReport(page, screenshots);
+    await verifyAutomationValidation(page, website);
+    await verifyCodeHealth(page, website);
     await verifyQuality(page, screenshots);
     docsFail = true;
     await page.reload();

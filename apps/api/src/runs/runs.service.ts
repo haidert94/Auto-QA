@@ -232,6 +232,10 @@ export class RunsService {
     await this.ensureProject(projectId, workspace);
     return this.prisma.$transaction(async tx => {
       const completedAt = new Date();
+      await tx.automationValidation.updateMany({
+        where: { projectId, status: { in: ['QUEUED', 'RUNNING'] } },
+        data: { status: 'CANCELED', completedAt, errorCode: 'La validación fue detenida desde el proyecto.' },
+      });
       const queued = await tx.testRun.updateManyAndReturn({
         where: { projectId, status: 'QUEUED' },
         data: { status: 'CANCELED', completedAt, errorCode: RUN_CANCELED_BY_USER },
@@ -404,9 +408,11 @@ export class RunsService {
     });
   }
 
-  async create(projectId: string, scenarioId: string, dto: CreateRunDto, workspace: Workspace) {
-    await this.ensureProject(projectId, workspace);
-    const scenario = await this.prisma.testScenario.findFirst({
+  async create(projectId: string, scenarioId: string, dto: CreateRunDto, workspace: Workspace,
+    validation?: { tx: Prisma.TransactionClient; runId: string; scopeSignature: string }) {
+    const db = validation?.tx ?? this.prisma;
+    await this.ensureProject(projectId, workspace, db);
+    const scenario = await db.testScenario.findFirst({
       where: { id: scenarioId, projectId, archivedAt: null },
       select: { id: true, tags: true, title: true, expectedResult: true, steps: true, automation: true },
     });
@@ -417,7 +423,7 @@ export class RunsService {
       throw new ConflictException('La automatización cambió. Actualiza el código antes de ejecutar.');
     }
 
-    const environment = await this.prisma.environment.findFirst({
+    const environment = await db.environment.findFirst({
       where: { id: dto.environmentId, projectId },
     });
     if (!environment) throw new NotFoundException('Entorno no encontrado en este proyecto.');
@@ -431,7 +437,7 @@ export class RunsService {
     }
 
     const targetBrowser = dto.targetBrowser ?? defaultScenarioBrowser(scenario);
-    return this.prisma.$transaction(async tx => {
+    const queue = async (tx: Prisma.TransactionClient) => {
       const available = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM "TestScenario"
         WHERE id = ${scenarioId} AND "projectId" = ${projectId} AND "archivedAt" IS NULL FOR SHARE
@@ -448,13 +454,16 @@ export class RunsService {
 
       return tx.testRun.create({
         data: {
+          ...(validation && { id: validation.runId }),
           projectId,
           scenarioId,
           environmentId: environment.id,
           status: 'QUEUED',
           runKey,
           createdByUserId: workspace.userId ?? null,
-          automation: prepared ? (prepared as unknown as Prisma.InputJsonValue) : undefined,
+          automation: prepared ? ({
+            ...prepared, ...(validation && { validationScopeSignature: validation.scopeSignature }),
+          } as unknown as Prisma.InputJsonValue) : undefined,
           writeAuthorizationAt,
           targetBrowser,
           targetDevice: dto.targetDevice ?? null,
@@ -462,7 +471,8 @@ export class RunsService {
         },
         select: { id: true, status: true, scenarioId: true, environmentId: true, createdAt: true, runKey: true, targetBrowser: true, targetDevice: true, targetProvider: true },
       });
-    });
+    };
+    return validation ? queue(validation.tx) : this.prisma.$transaction(queue);
   }
 
   async trace(projectId: string, runId: string, resultId: string, workspace: Workspace): Promise<Buffer> {
@@ -596,8 +606,8 @@ export class RunsService {
     return { bytes, contentType: type === 'screenshot' ? 'image/png' : 'video/webm' };
   }
 
-  private async ensureProject(projectId: string, workspace: Workspace) {
-    const project = await this.prisma.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
+  private async ensureProject(projectId: string, workspace: Workspace, db: Prisma.TransactionClient = this.prisma) {
+    const project = await db.project.findFirst({ where: { id: projectId, ...projectScope(workspace) }, select: { id: true } });
     if (!project) throw new NotFoundException('Proyecto no encontrado.');
   }
 }

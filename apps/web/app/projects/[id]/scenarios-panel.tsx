@@ -3,7 +3,7 @@
 import { createPortal } from 'react-dom';
 import { ArrowRight, Plus } from 'lucide-react';
 import type { GenerationIssue, GenerationSummary, MissingGenerationRequirement } from '../../../../api/src/automation/generation-result';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 
 import type { RequirementOption, ScenarioListItem } from './scenario-card';
 import { scenarioRunEnvironmentError, type Project } from '../onboarding';
@@ -84,6 +84,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [runsWarning, setRunsWarning] = useState('');
   const [requirements, setRequirements] = useState<RequirementOption[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const createDialog = useRef<HTMLDialogElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
+  const createHeading = useId();
   const [title, setTitle] = useState('');
   const [requirementId, setRequirementId] = useState('');
   const [expectedResult, setExpectedResult] = useState('');
@@ -257,9 +261,22 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     } finally { setGenerating(false); }
   }
 
+  useEffect(() => {
+    const dialog = createDialog.current;
+    if (!showForm || !dialog) return;
+    const trigger = document.activeElement;
+    dialog.showModal();
+    titleInput.current?.focus();
+    return () => {
+      dialog.close();
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+    };
+  }, [showForm]);
+
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true); setError('');
+    if (busy) return;
+    setBusy(true); setCreateError('');
     try {
       const response = await fetch(`/api/projects/${projectId}/scenarios`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -269,13 +286,14 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
           expectedResult: expectedResult.trim() || undefined,
           steps: [{ ordinal: 1, action: firstAction.trim() || 'Describe el primer paso' }],
         }),
+        signal: AbortSignal.timeout(15000),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) { setError(payload.message ?? 'No se pudo crear el escenario.'); return; }
+      if (!response.ok) { setCreateError(payload.message ?? 'No se pudo crear el escenario.'); return; }
       setTitle(''); setRequirementId(''); setExpectedResult(''); setFirstAction('');
       setShowForm(false);
       await load();
-    } catch { setError('No se pudo crear el escenario.'); }
+    } catch { setCreateError('No se pudo crear el escenario.'); }
     finally { setBusy(false); }
   }
 
@@ -331,7 +349,9 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
     {header?.element && createPortal(<ProjectHeading project={project}
       summary={total !== null ? `${total} escenarios registrados. Consulta sus pasos y resultados.` : 'Consulta y prepara los escenarios del proyecto.'}
       actions={<>
-        {canCreate && <button type="button" className="secondary" onClick={() => setShowForm(value => !value)}><Plus size={14} />{showForm ? 'Cancelar nuevo escenario' : 'Nuevo escenario'}</button>}
+        {canCreate && <button type="button" className="secondary" aria-haspopup="dialog" onClick={() => {
+          setCreateError(''); setShowForm(true);
+        }}><Plus size={14} />Nuevo escenario</button>}
         {canDelete && !!items?.length && <button type="button" className="secondary"
           disabled={!selected.length || deletionDisabled}
           onClick={deleteSelected}>Eliminar escenarios</button>}
@@ -358,30 +378,38 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       onClose={() => setShowGenerationConfirmation(false)}
       onConfirm={types => { setShowGenerationConfirmation(false); void generate(types); }} />}
     {generateNotice && <p className="muted scenario-message" role="status">{generateNotice}</p>}
-    {showForm && <form onSubmit={create} className="scenario-form scenario-create-form" aria-label="Nuevo escenario manual">
-      <header><h2>Nuevo escenario manual</h2><p>Registra únicamente pasos y resultados definidos para tu aplicación.</p></header>
-      <label>Título<input value={title} onChange={event => setTitle(event.target.value)} required maxLength={300} autoFocus /></label>
-      <label>Historia o requisito asociado<select value={requirementId} required onChange={event => setRequirementId(event.target.value)}>
-        <option value="">Selecciona una historia o requisito</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>
-          {requirement.externalKey ? `[${requirement.externalKey}] ` : ''}{requirement.title}</option>)}
-      </select></label>
-      <label>Resultado esperado (opcional)<textarea value={expectedResult} onChange={event => setExpectedResult(event.target.value)} maxLength={2000} rows={2} /></label>
-      <label>Primer paso<input value={firstAction} onChange={event => setFirstAction(event.target.value)} maxLength={1000} />
-        {(() => {
-          // Aviso de duplicado: si el usuario está escribiendo un paso que ya
-          // existe (normalización idéntica) en otro escenario, listamos los
-          // escenarios que lo contienen para que decida reutilizar antes de
-          // crear otro escenario con el mismo paso.
-          const normalized = normalizeStepText(firstAction);
-          if (!normalized || normalized.length < 3) return null;
-          const matches = (items ?? []).filter(item => (item.steps ?? []).some(step => normalizeStepText(step.action) === normalized));
-          if (!matches.length) return null;
-          return <small className="scenario-duplicate-hint" role="status">Este paso ya aparece en: {matches.slice(0, 3).map(m => m.title).join(' · ')}{matches.length > 3 ? ` y ${matches.length - 3} más` : ''}.</small>;
-        })()}
-      </label>
-      <div className="actions"><button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear escenario'}</button>
-        <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancelar</button></div>
-    </form>}
+    {showForm && <dialog ref={createDialog} className="environments-dialog scenario-create-dialog" aria-labelledby={createHeading}
+      onCancel={event => { event.preventDefault(); if (!busy) setShowForm(false); }}>
+      <header className="environments-dialog__head">
+        <h2 id={createHeading}>Nuevo escenario manual</h2>
+        <button type="button" className="secondary" disabled={busy} aria-label="Cerrar" onClick={() => setShowForm(false)}>×</button>
+      </header>
+      <form onSubmit={create} className="environments-dialog__form" aria-label="Nuevo escenario manual">
+        <p className="muted">Registra únicamente pasos y resultados definidos para tu aplicación.</p>
+        <label>Título<input ref={titleInput} value={title} onChange={event => setTitle(event.target.value)} required maxLength={300} /></label>
+        <label>Historia o requisito asociado<select value={requirementId} required onChange={event => setRequirementId(event.target.value)}>
+          <option value="">Selecciona una historia o requisito</option>{requirements.map(requirement => <option key={requirement.id} value={requirement.id}>
+            {requirement.externalKey ? `[${requirement.externalKey}] ` : ''}{requirement.title}</option>)}
+        </select></label>
+        <label>Resultado esperado (opcional)<textarea value={expectedResult} onChange={event => setExpectedResult(event.target.value)} maxLength={2000} rows={2} /></label>
+        <label>Primer paso<input value={firstAction} onChange={event => setFirstAction(event.target.value)} maxLength={1000} />
+          {(() => {
+            // Aviso de duplicado: si el usuario está escribiendo un paso que ya
+            // existe (normalización idéntica) en otro escenario, listamos los
+            // escenarios que lo contienen para que decida reutilizar antes de
+            // crear otro escenario con el mismo paso.
+            const normalized = normalizeStepText(firstAction);
+            if (!normalized || normalized.length < 3) return null;
+            const matches = (items ?? []).filter(item => (item.steps ?? []).some(step => normalizeStepText(step.action) === normalized));
+            if (!matches.length) return null;
+            return <small className="scenario-duplicate-hint" role="status">Este paso ya aparece en: {matches.slice(0, 3).map(m => m.title).join(' · ')}{matches.length > 3 ? ` y ${matches.length - 3} más` : ''}.</small>;
+          })()}
+        </label>
+        {createError && <p className="error" role="alert">{createError}</p>}
+        <div className="actions"><button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear escenario'}</button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => setShowForm(false)}>Cancelar</button></div>
+      </form>
+    </dialog>}
     {error && <div className="error scenario-message" role="alert">
       {error}
       {missingCoverage.length > 0 && <details>

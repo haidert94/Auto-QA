@@ -42,6 +42,10 @@ Cada push a `main` dispara el build. Cambiar una env var se hace en hPanel → N
 
 Opcionales: `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` para activar el `AiRouter`; sin ellas se cae al `RuleBasedProvider` y los agentes de generación de escenarios funcionan con resultados mínimos.
 
+## Página privada de Salud del código
+
+Configura `AUTOQA_CODE_HEALTH_OWNER_EMAIL` en la API con el correo de inicio de sesión verificado de la cuenta que administrará AutoQA. Esa cuenta puede abrir **Salud del código** desde el menú de su perfil o en `/admin/salud-del-codigo`. El acceso a la página y a la consulta de GitHub depende de esa cuenta. Con la variable vacía, el acceso queda cerrado. Las métricas siguen usando `AUTOQA_GITHUB_TOKEN`, `AUTOQA_GITHUB_REPO` y `AUTOQA_GITHUB_WORKFLOW`.
+
 ## Conexión directa y bloqueos de migraciones (P1002)
 
 El error `Timed out trying to acquire a postgres advisory lock (SELECT pg_advisory_lock(72707369))` ocurre en `migrate deploy`, antes de compilar NestJS y Next.js. No es un fallo de estilos. El log del build fallido mostraba una conexión Neon con `-pooler`; eso es un hecho observado. Neon no admite bloqueos de sesión en conexiones agrupadas, y Prisma Migrate necesita ese mecanismo. Otro proceso también puede retener el bloqueo; el log por sí solo no identifica qué sesión lo tiene. Referencias: [pooling de Neon](https://neon.com/docs/connect/connection-pooling), [bloqueos de Prisma 6](https://www.prisma.io/docs/orm/v6/prisma-migrate/workflows/development-and-production#advisory-locking).
@@ -139,3 +143,14 @@ Antes de modificar `server.js` o cualquier cosa que corra en Hostinger, verifica
 4. Sus dependencias están en `dependencies`, no `devDependencies` (estas últimas se descartan en runtime).
 5. Si expone un nuevo endpoint externo de NestJS, tiene un Next route proxy en `apps/web/app/api/<path>/route.ts`.
 6. Si toca el parche de fetch, sigue drenando streams de `init.body` y leyendo `res.statusCode` del propio objeto.
+
+
+## Validación de la automatización con GitHub Actions
+
+1. Publica `.github/workflows/validate-automation.yml` en la rama predeterminada del repositorio de AutoQA y despliega la API, Web y la migración `20261124000000_automation_validation`.
+2. Actualiza Explorer para que compruebe el alcance y la sintaxis del código en las validaciones de CI.
+3. En la API, configura `AUTOQA_GITHUB_REPO` y `AUTOQA_GITHUB_VALIDATION_TOKEN` con permiso **Actions: write** para ese repositorio. `AUTOQA_GITHUB_VALIDATION_REF` usa `main` por defecto.
+4. Configura `AUTOQA_VALIDATION_SECRET` como secreto de al menos 32 caracteres en la API y en GitHub Actions. Crea la variable de repositorio `AUTOQA_VALIDATION_URL` con el origen HTTPS público de AutoQA.
+5. En **Calidad**, confirma el entorno y los escenarios con automatización guardada. El workflow recibe un identificador de validación. El código, las credenciales y las evidencias detalladas permanecen en AutoQA. Los resultados resumidos quedan en la ejecución de GitHub.
+
+La acción reutiliza las cuotas de navegador y el modo autorizado del entorno. Una regeneración que cambie el identificador de automatización antes de procesar el escenario deja ese caso bloqueado. Las ejecuciones normales de GitHub Actions sobre el repositorio de AutoQA siguen usando `ci.yml`.

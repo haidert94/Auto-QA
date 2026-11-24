@@ -32,10 +32,12 @@ import { ScenariosService } from './scenarios/scenarios.service';
 import { QualityExecutionService } from './scenarios/quality-execution.service';
 import { CodeHealthController } from './quality/code-health.controller';
 import { CodeHealthService } from './quality/code-health.service';
+import { AutomationValidationController } from './quality/automation-validation.controller';
+import { AutomationValidationService } from './quality/automation-validation.service';
 
 @Module({
   imports: [ConfigModule.forRoot({ envFilePath: ['../../.env', '.env'], isGlobal: true }), PrismaModule, CommerceModule, DocumentsModule],
-  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController, IpaController, IcspController, ReportsController, PerformanceController, MonitorsController, LoadController, AiController, AutomationController, CodeHealthController],
+  controllers: [ProjectsController, ExplorationsController, ScenariosController, RunsController, IpaController, IcspController, ReportsController, PerformanceController, MonitorsController, LoadController, AiController, AutomationController, CodeHealthController, AutomationValidationController],
   providers: [
     ProjectsService,
     ExplorationsService,
@@ -56,6 +58,7 @@ import { CodeHealthService } from './quality/code-health.service';
     // local, se deja apagado y se corre el worker externo con `pnpm dev`.
     InlineWorkerService,
     CodeHealthService,
+    AutomationValidationService,
   ],
 })
 export class AppModule {}

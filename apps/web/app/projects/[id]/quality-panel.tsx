@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { ArrowRight, Download, RefreshCw } from 'lucide-react';
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Project } from '../onboarding';
 import { ProjectHeading } from './project-heading';
 import { useQualityHeader } from './project-tabs';
@@ -12,7 +12,10 @@ import { REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/r
 import { levelFor, type IpaSummary } from './ipa-hero';
 import { dateText } from './run-report-data';
 import { useScenarioInsights } from './scenario-insights';
-import { CodeHealthCard } from './code-health';
+import { EvaluationCard, Score } from '../../quality-evaluation-card';
+import { AutomationValidationCard } from './automation-validation-card';
+import type { OrgRole } from '../../autoqa-server';
+import { can } from '../../permissions';
 import { IcspGapModal } from './icsp-gap-modal';
 import { QualityResultsLink } from './quality-results-link';
 
@@ -33,17 +36,9 @@ type Assessment = { id: string; score: number | null; createdAt: string; delta: 
 type Data<T> = { value: T | null; error: string; loading: boolean };
 const pending = <T,>(): Data<T> => ({ value: null, error: '', loading: true });
 
-export function Score({ value, label }: { value: number | null; label: string }) {
-  return <div className={`quality-score-ring${value === null ? ' quality-score-ring--empty' : ''}`} role="img" aria-label={`${label}: ${value === null ? 'sin evaluación' : `${value} de 100`}`}
-    style={{ '--quality-progress': `${Math.max(0, Math.min(100, value ?? 0)) * 3.6}deg` } as CSSProperties}>
-    <strong>{value ?? '—'}</strong><small>/ 100</small>
-  </div>;
-}
-export function EvaluationCard({ index, title, badge, children }: { index: string; title: string; badge: string; children: ReactNode }) {
-  return <section className="quality-evaluation" aria-label={title}><header><h2><span>{index} //</span> {title}</h2><span className="quality-badge">{badge}</span></header>{children}</section>;
-}
+export { EvaluationCard } from '../../quality-evaluation-card';
 
-export function QualityPanel({ project }: { project: Project }) {
+export function QualityPanel({ project, role }: { project: Project; role?: OrgRole }) {
   const header = useQualityHeader();
   const activity = useReportActivity(project.id, !!header?.active);
   const [ipa, setIpa] = useState<Data<{ ipa: Ipa; generatedAt?: string }>>(pending);
@@ -244,7 +239,7 @@ export function QualityPanel({ project }: { project: Project }) {
           </div>}
       </EvaluationCard>;
     })()}
-    <CodeHealthCard active={!!header?.active} projectId={project.id} />
+    <AutomationValidationCard active={!!header?.active} projectId={project.id} canRun={can(role, 'run.execute')} />
     </div>
     <div className="quality-history-grid">{([{ title: 'Histórico IPA', data: ipaHistory }, { title: 'Histórico ICSP', data: icspHistory }]).map(({ title, data }) => <section className="quality-history" key={title} aria-label={title}>
       <h2>{title}</h2>{data.loading ? <p>Consultando histórico…</p> : data.error ? <p className="muted">{data.error}</p> : !data.value?.length ? <p>Sin evaluaciones guardadas.</p>

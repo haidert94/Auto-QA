@@ -47,6 +47,12 @@ export function lintPreparedSteps(steps: GeneratorStep[]): LintIssue[] {
   return issues;
 }
 
+export function lintCredentialLiterals(code: string): LintIssue[] {
+  return SECRET_LITERAL.test(code)
+    ? [{ code: 'hardcoded-secret', severity: 'error', message: 'El código contiene un valor literal que parece una credencial. Usa variables de entorno.' }]
+    : [];
+}
+
 export function lintGeneratedCode(code: string, hasAssertions = code.includes('expect(')): LintIssue[] {
   const issues: LintIssue[] = [];
   if (!hasAssertions) {
@@ -55,9 +61,7 @@ export function lintGeneratedCode(code: string, hasAssertions = code.includes('e
   if (DEBUG_API.test(code)) {
     issues.push({ code: 'debug-left', severity: 'warn', message: 'Hay sentencias de depuración (console.log / debugger / eval) en el spec.' });
   }
-  if (SECRET_LITERAL.test(code)) {
-    issues.push({ code: 'hardcoded-secret', severity: 'error', message: 'El spec contiene un valor literal que parece credencial. Usa variables de entorno.' });
-  }
+  issues.push(...lintCredentialLiterals(code));
   if (FORBIDDEN_WAIT.test(code)) {
     issues.push({ code: 'wait-for-timeout', severity: 'warn', message: 'Evita page.waitForTimeout(): usa aserciones que esperan a que la UI esté lista.' });
   }

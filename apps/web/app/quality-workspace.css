@@ -255,3 +255,26 @@
 .icsp-gap-list li > a, .icsp-gap-list li > span { font: 500 12px/1.4 var(--sans); color: var(--ink); text-decoration: none; }
 .icsp-gap-list li > a:hover { color: var(--blue); text-decoration: underline; }
 .icsp-gap-list li > small { color: var(--muted); font: 400 10px/1.4 var(--mono); }
+
+
+.validation-form { display: grid; gap: 12px; margin-bottom: 16px; }
+.validation-form > label { display: grid; gap: 6px; font-weight: 600; }
+.validation-form > button { justify-self: start; }
+.validation-selection { border: 1px solid var(--line); padding: 10px 12px; }
+.validation-selection summary, .validation-history summary { cursor: pointer; }
+.validation-selection fieldset { display: grid; gap: 10px; margin: 8px 0 0; max-height: 240px; min-width: 0; overflow-y: auto; }
+.validation-selection fieldset label { display: flex; align-items: flex-start; gap: 8px; }
+.validation-selection input { width: auto; }
+.validation-history-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 14px; }
+.validation-history-list > li { border-top: 1px solid var(--line); padding-top: 12px; }
+.validation-history-heading, .validation-links { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; }
+.validation-history-heading time, .validation-history-heading span, .validation-links { font-size: 12px; }
+.validation-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.validation-segment { flex-basis: 0; }
+.validation-segment--passed { background: var(--success, #166534); }
+.validation-segment--failed { background: var(--danger, #b91c1c); }
+.validation-segment--blocked { background: var(--warn, #b45309); }
+.validation-segment--skipped { background: #64748b; }
+.validation-segment--pending { background: #94a3b8; }
+.validation-history-list > li > p { margin: 6px 0; }
+.validation-links { margin-top: 8px; }

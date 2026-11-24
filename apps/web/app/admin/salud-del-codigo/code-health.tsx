@@ -1,10 +1,5 @@
-'use client';
-
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { ExternalLink, GitBranch } from 'lucide-react';
-import { EvaluationCard, Score } from './quality-panel';
-
+import { AlertTriangle, CheckCircle2, ExternalLink, GitBranch, ShieldAlert } from 'lucide-react';
+import { EvaluationCard, Score } from '../../quality-evaluation-card';
 import type { AlertCounts, AlertDetail, CodeHealthResult, WorkflowRunSummary } from '../../../../api/src/quality/code-health.service';
 
 const alertLabels = {
@@ -42,7 +37,7 @@ function AlertBreakdown({ total, count }: { total: number; count: (severity: Ale
   </ol>;
 }
 
-export function AlertsChart({ title, counts, url, top }: { title: string; counts: AlertCounts; url: string | null; top: AlertDetail[] }) {
+function AlertsChart({ title, counts, url, top }: { title: string; counts: AlertCounts; url: string | null; top: AlertDetail[] }) {
   return <div className="code-health-alerts">
     <header><h4>{title}</h4><strong>{counts.total}</strong>
       {url && <a href={url} target="_blank" rel="noreferrer" aria-label={`Ver ${title} en GitHub`}><ExternalLink size={12} /></a>}</header>
@@ -57,7 +52,7 @@ export function AlertsChart({ title, counts, url, top }: { title: string; counts
   </div>;
 }
 
-export function RunsChart({ workflow }: { workflow: NonNullable<CodeHealthResult['workflow']> }) {
+function RunsChart({ workflow }: { workflow: NonNullable<CodeHealthResult['workflow']> }) {
   const { recent: runs, successRate, evaluated, succeeded, url } = workflow;
   const latestFailure = runs.find(isFailedRun);
   // Minigráfica: últimos 20 runs como barritas de alto fijo. No usamos
@@ -70,7 +65,7 @@ export function RunsChart({ workflow }: { workflow: NonNullable<CodeHealthResult
       {runs.slice().reverse().map((run, i) => <rect key={run.id}
         x={i * (barWidth + barGap)} y={6} width={barWidth} height={height - 12}
         fill={runColor(run)} rx={1}>
-        <title>{run.headSha} · {run.conclusion ?? run.status} · {new Date(run.createdAt).toLocaleString('es-CO')}</title>
+        <title>{`${run.headSha} · ${run.conclusion ?? run.status} · ${new Date(run.createdAt).toLocaleString('es-CO')}`}</title>
       </rect>)}
     </svg>
     <small>{successRate === null ? 'Sin ejecuciones evaluables.' : `${Math.round(successRate * 100)}% de éxito${evaluated ? ` (${succeeded}/${evaluated})` : ''}`}
@@ -80,32 +75,14 @@ export function RunsChart({ workflow }: { workflow: NonNullable<CodeHealthResult
   </div>;
 }
 
-export function CodeHealthCard({ active, projectId }: { active: boolean; projectId: string }) {
-  const [data, setData] = useState<CodeHealthResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!active) return;
-    const controller = new AbortController();
-    setLoading(true); setError('');
-    fetch('/api/quality/code-health', { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })
-      .then(async response => {
-        if (!response.ok) throw new Error('No se pudo consultar la salud del código.');
-        const body = await response.json();
-        if (!controller.signal.aborted) setData(body);
-      })
-      .catch((reason: unknown) => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'No disponible.'); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [active]);
-
-  const count = (key: keyof AlertCounts) => (data?.codeql?.counts[key] ?? 0) + (data?.dependabot?.counts[key] ?? 0);
+export function CodeHealthOverview({ data }: { data: CodeHealthResult }) {
+  const count = (key: keyof AlertCounts) => (data.codeql?.counts[key] ?? 0) + (data.dependabot?.counts[key] ?? 0);
   const alertsTotal = count('total');
   const critical = count('critical');
   const high = count('high');
   const medium = count('medium');
-  const workflowRate = data?.workflow?.successRate;
-  const alertsAvailable = !!(data?.codeql?.enabled || data?.dependabot?.enabled);
+  const workflowRate = data.workflow?.successRate;
+  const alertsAvailable = !!(data.codeql?.enabled || data.dependabot?.enabled);
   const hasData = alertsAvailable || workflowRate != null;
 
   // Score por niveles, no lineal: 100 si no hay nada; cada severidad
@@ -129,7 +106,7 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
     : medium > 0 || count('error') > 0 || (workflowRate != null && workflowRate < 1) ? 'SALUD PARCIAL'
     : alertsTotal > 0 ? 'SALUD BUENA'
     : 'SALUD EXCELENTE';
-  const badge = loading ? 'Consultando' : level ? `${level} · ${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'}` : 'Sin evaluación';
+  const badge = level ? `${level} · ${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'}` : 'Sin evaluación';
 
   const headline = !hasData ? 'No hay datos de GitHub disponibles para evaluar el código.'
     : critical > 0 ? 'Hay alertas críticas de seguridad por resolver.'
@@ -141,22 +118,38 @@ export function CodeHealthCard({ active, projectId }: { active: boolean; project
     : alertsAvailable ? 'Las fuentes consultadas no reportan alertas abiertas.'
     : 'Hay datos del CI. Las fuentes de alertas están pendientes de consulta.';
 
-  return <EvaluationCard index="05" title="Salud del código" badge={badge}>
-    {loading ? <p className="quality-message" role="status">Consultando GitHub…</p>
-      : error ? <p className="quality-message muted">{error}</p>
-      : !data ? null
-      : !data.configured ? <p className="quality-message muted">{data.message ?? 'Configura AUTOQA_GITHUB_TOKEN y AUTOQA_GITHUB_REPO para ver la salud del código.'}</p>
-      : <div className="quality-evaluation__body">
-        <div className="quality-score-summary"><Score label="Estado de salud del código" value={score} /><div>
-          <h3>{headline}</h3>
-          <p>{alertsAvailable ? `${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'} abierta${alertsTotal === 1 ? '' : 's'}` : 'Alertas sin datos'}
-            {workflowRate == null ? ' · CI sin resultado evaluable' : ` · CI ${Math.round(workflowRate * 100)}% de éxito`}</p>
-          {data.repository && <small><GitBranch size={12} /> {data.repository}</small>}
-        </div></div>
-        <AlertBreakdown total={alertsTotal} count={count} />
-        <Link className="quality-detail-link" href={`/projects/${projectId}/code-health`}>
-          {alertsTotal > 0 ? 'Ver detalle de CI, CodeQL y Dependabot →' : 'Ver estado del CI y del escáner →'}
-        </Link>
-      </div>}
+  return <EvaluationCard index="01" title="Estado del repositorio" badge={badge}>
+    <div className="quality-evaluation__body">
+      <div className="quality-score-summary"><Score label="Estado de salud del código" value={score} /><div>
+        <h3>{headline}</h3>
+        <p>{alertsAvailable ? `${alertsTotal} alerta${alertsTotal === 1 ? '' : 's'} abierta${alertsTotal === 1 ? '' : 's'}` : 'Alertas sin datos'}
+          {workflowRate == null ? ' · CI sin resultado evaluable' : ` · CI ${Math.round(workflowRate * 100)}% de éxito`}</p>
+        {data.repository && <small><GitBranch size={12} /> {data.repository}</small>}
+      </div></div>
+      <AlertBreakdown total={alertsTotal} count={count} />
+      <a className="quality-detail-link" href="#detalle">
+        {alertsTotal > 0 ? 'Ver detalle de CI, CodeQL y Dependabot →' : 'Ver estado del CI y del escáner →'}
+      </a>
+    </div>
   </EvaluationCard>;
+}
+
+export function CodeHealthDetail({ data }: { data: CodeHealthResult }) {
+  return <div className="code-health-grid">
+    <div className="code-health-widget">
+      <header>{data.workflow?.recent.some(r => r.conclusion === 'failure') ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+        <h3>CI · {data.workflow?.name ?? '—'}</h3></header>
+      {data.workflow ? <RunsChart workflow={data.workflow} /> : <p className="muted">Sin workflow configurado.</p>}
+    </div>
+    <div className="code-health-widget">
+      <header><ShieldAlert size={14} /><h3>CodeQL</h3></header>
+      {data.codeql?.enabled ? <AlertsChart title="Alertas CodeQL" counts={data.codeql.counts} url={data.codeql.url} top={data.codeql.top ?? []} />
+        : <p className="muted">CodeQL sin datos disponibles. Revisa el workflow <code>codeql.yml</code> y el acceso de AutoQA en GitHub.</p>}
+    </div>
+    <div className="code-health-widget">
+      <header><ShieldAlert size={14} /><h3>Dependabot</h3></header>
+      {data.dependabot?.enabled ? <AlertsChart title="Alertas Dependabot" counts={data.dependabot.counts} url={data.dependabot.url} top={data.dependabot.top ?? []} />
+        : <p className="muted">Dependabot sin datos disponibles. Revisa las alertas y el acceso de AutoQA en GitHub.</p>}
+    </div>
+  </div>;
 }

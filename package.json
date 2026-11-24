@@ -32,6 +32,7 @@
     "test:k6": "npm --workspace apps/api run build && node --test apps/api/test/k6-summary.test.cjs",
     "test:ai": "npm --workspace apps/api run build && node --test apps/api/test/ai-router.test.cjs",
     "test:automation": "npm --workspace apps/api run build && node --test apps/api/test/document-converter.test.cjs apps/api/test/review-prompt.test.cjs apps/api/test/automation-agents.test.cjs apps/api/test/scenario-automation.test.cjs",
+    "test:automation-validation": "npm --workspace apps/api run build && node --test apps/api/test/automation-validation.test.cjs",
     "test:request-filter": "npm --workspace apps/explorer run build && node --test apps/explorer/test/request-filter.test.cjs"
   },
   "workspaces": [

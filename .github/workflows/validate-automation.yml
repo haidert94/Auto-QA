@@ -1,0 +1,31 @@
+name: Validar automatización AutoQA
+run-name: Validación ${{ inputs.validation_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      validation_id:
+        description: Identificador de validación de AutoQA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Comprobar la automatización seleccionada
+        run: node scripts/automation-validation-ci.mjs
+        env:
+          AUTOQA_VALIDATION_ID: ${{ inputs.validation_id }}
+          AUTOQA_VALIDATION_URL: ${{ vars.AUTOQA_VALIDATION_URL }}
+          AUTOQA_VALIDATION_SECRET: ${{ secrets.AUTOQA_VALIDATION_SECRET }}

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 
 type NavAccount = {
   name: string; email: string;
+  canViewCodeHealth?: boolean;
   organization: { id: string; name: string };
   subscription: { status: string; plan?: { name: string } };
 };
@@ -86,6 +87,8 @@ export function AppNav({ account }: { account: NavAccount }) {
             <p>{account.email}</p>
             <p>Plan: {account.subscription.plan?.name ?? 'Sin plan asignado'}</p>
             <p>Suscripción: {account.subscription.status}</p>
+            {account.canViewCodeHealth === true && <p><Link href="/admin/salud-del-codigo" prefetch={false}
+              onClick={() => { if (accountMenu.current) accountMenu.current.open = false; }}>Salud del código</Link></p>}
             <button type="button" className="outline" onClick={logout} disabled={busy}>
               {busy ? 'Cerrando…' : 'Cerrar sesión'}
             </button>

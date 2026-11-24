@@ -14,6 +14,7 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightConfig, generateSharedSteps, readAutomationSteps, SHARED_STEPS_FILENAME, type HarnessEnvironment } from '../../api/src/scenarios/playwright-generator';
 import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
+import { validationScopeSignature } from '../../api/src/runs/validation-scope';
 import { RUN_CANCELED_BY_USER, RUN_STOP_REQUESTED } from '../../api/src/runs/run-cancellation';
 import { readPreparedAutomation } from '../../api/src/scenarios/automation-agent';
 import { readFrameRepair } from '../../api/src/scenarios/frame-repair-agent';
@@ -114,7 +115,7 @@ export async function runTestRun(
       where: { id: claim.environmentId, projectId: claim.projectId },
       select: {
         type: true, baseUrl: true, allowedHosts: true, allowedPaths: true, excludedPaths: true,
-        authorizationConfirmed: true, authorizedAt: true, readOnly: true,
+        authorizationConfirmed: true, authorizedAt: true, readOnly: true, prohibitedActions: true,
       },
     });
     if (!environment) {
@@ -129,6 +130,13 @@ export async function runTestRun(
     const currentAuthorization = environment.readOnly ? null : environment.authorizedAt?.getTime();
     if ((claim.writeAuthorizationAt?.getTime() ?? null) !== currentAuthorization) {
       await fail('environment-mode-changed', 'La autorización del entorno cambió después de encolar la prueba.');
+      return;
+    }
+
+    const validationScope = claim.automation && typeof claim.automation === 'object'
+      && 'validationScopeSignature' in claim.automation ? claim.automation.validationScopeSignature : null;
+    if (validationScope && validationScope !== validationScopeSignature(environment)) {
+      await fail('validation-scope-changed', 'El entorno cambió después de iniciar la validación.');
       return;
     }
 
@@ -157,8 +165,19 @@ export async function runTestRun(
     const specPath = join(workdir, 'scenario.spec.ts');
     const configPath = join(workdir, 'playwright.config.ts');
     await mkdir(outputDir, { recursive: true });
+    const sharedSteps = prepared ? generateSharedSteps(steps) : null;
+    if (validationScope) {
+      const ts = await import('typescript');
+      const hasSyntaxError = [spec, sharedSteps ?? ''].some(source =>
+        ts.transpileModule(source, { reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.ES2022 } })
+          .diagnostics?.some(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error));
+      if (hasSyntaxError) {
+        await fail('validation-compile-error', 'El código generado contiene un error de sintaxis TypeScript.');
+        return;
+      }
+    }
     await writeFile(specPath, spec, { encoding: 'utf8' });
-    if (prepared) await writeFile(join(workdir, SHARED_STEPS_FILENAME), generateSharedSteps(steps), 'utf8');
+    if (sharedSteps !== null) await writeFile(join(workdir, SHARED_STEPS_FILENAME), sharedSteps, 'utf8');
     const { wsEndpoint, error: providerError } = resolveWsEndpoint({ ...claim, targetBrowser });
     if (providerError) {
       await fail(providerError, 'El proveedor ' + (claim.targetProvider ?? '') + ' no está disponible.');

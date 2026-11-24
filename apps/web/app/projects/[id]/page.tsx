@@ -98,7 +98,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
             </section>
           </div>
         ),
-        calidad: <QualityPanel key={project.id} project={project} />,
+        calidad: <QualityPanel key={project.id} project={project} role={role} />,
         exploracion: showExploration
           ? <ExplorationPanel projectId={project.id} environments={readOnlyEnvs} project={project} role={role} />
           : undefined,

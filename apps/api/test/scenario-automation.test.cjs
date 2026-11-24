@@ -253,6 +253,11 @@ test('detener cancela la cola, libera solo sus reservas y solicita detener las a
   const qualityAudit = { async updateManyAndReturn() { return []; }, async updateMany() { return { count: 0 }; } };
   const tx = {
     performanceAudit: qualityAudit, loadTest: qualityAudit, uxAudit: qualityAudit, monitorCheck: qualityAudit,
+    automationValidation: { async updateMany({ where, data }) {
+      assert.equal(where.projectId, 'project');
+      assert.equal(data.status, 'CANCELED');
+      return { count: 0 };
+    } },
     testRun: {
       async updateManyAndReturn({ where, data, select }) {
         assert.deepEqual(where, { projectId: 'project', status: 'QUEUED' });

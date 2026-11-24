@@ -89,7 +89,7 @@ jobs:
         # Las suites e2e de navegador se ejecutan fuera de este workflow.
         run: |
           npm run test:ai
-          node --test apps/api/test/code-health.test.cjs
+          node --test apps/api/test/code-health.test.cjs apps/api/test/automation-validation.test.cjs
           npm run test:scenarios
           npm run test:playwright-generator
           npm run test:screenshot-storage

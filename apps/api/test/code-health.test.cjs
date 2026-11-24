@@ -51,3 +51,55 @@ test('un historial con cancelaciones y omisiones no produce un CI al cero por ci
   assert.equal(workflow.evaluated, 0);
   assert.equal(workflow.successRate, null);
 });
+
+
+test('solo la cuenta de plataforma configurada puede consultar la salud del código', async t => {
+  const { Module, UnauthorizedException } = require('@nestjs/common');
+  const { NestFactory } = require('@nestjs/core');
+  const { AccountService } = require('../dist/commerce/account');
+  const { CodeHealthController } = require('../dist/quality/code-health.controller');
+  const key = 'AUTOQA_CODE_HEALTH_OWNER_EMAIL';
+  const previous = process.env[key];
+  t.after(() => {
+    if (previous === undefined) delete process.env[key];
+    else process.env[key] = previous;
+  });
+  process.env[key] = ' Owner@Example.test ';
+  const sessions = new Map([
+    ['Bearer platform-owner', { email: 'owner@example.test', role: 'OWNER' }],
+    ['Bearer customer-owner', { email: 'customer@example.test', role: 'OWNER' }],
+    ['Bearer customer-admin', { email: 'admin@example.test', role: 'ADMIN' }],
+  ]);
+  const accounts = { async identity(auth) {
+    if (!sessions.has(auth)) throw new UnauthorizedException();
+    return sessions.get(auth);
+  } };
+  let reads = 0;
+  class TestModule {}
+  Module({
+    controllers: [CodeHealthController],
+    providers: [
+      { provide: AccountService, useValue: accounts },
+      { provide: CodeHealthService, useValue: { async read() { reads++; return { repository: 'example/autoqa' }; } } },
+    ],
+  })(TestModule);
+  const app = await NestFactory.create(TestModule, { logger: false });
+  t.after(() => app.close());
+  await app.listen(0, '127.0.0.1');
+  const url = (await app.getUrl()) + '/quality/code-health';
+  const request = token => fetch(url, { headers: token ? { Authorization: 'Bearer ' + token } : {} });
+
+  assert.equal((await request()).status, 401);
+  assert.equal((await request('customer-owner')).status, 404);
+  assert.equal((await request('customer-admin')).status, 404);
+  assert.equal(reads, 0);
+
+  const allowed = await request('platform-owner');
+  assert.equal(allowed.status, 200);
+  assert.match(allowed.headers.get('cache-control'), /private, no-store/);
+  assert.deepEqual(await allowed.json(), { repository: 'example/autoqa' });
+
+  delete process.env[key];
+  assert.equal((await request('platform-owner')).status, 404);
+  assert.equal(reads, 1);
+});

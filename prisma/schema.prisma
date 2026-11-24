@@ -109,6 +109,7 @@ model Project {
   monitors               Monitor[]
   loadTests              LoadTest[]
   automationJobs         AutomationJob[]
+  automationValidations  AutomationValidation[]
   uxAudits               UxAudit[]
   assessments            QualityAssessment[]
   explorations           Exploration[]
@@ -424,6 +425,26 @@ model AutomationJob {
 
   @@index([projectId, createdAt])
   @@index([status, createdAt])
+}
+
+model AutomationValidation {
+  id              String    @id @default(uuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environmentId   String
+  environmentType EnvironmentType
+  scopeSignature  String
+  createdByUserId String
+  repository      String
+  workflowRunId   String?
+  version         String
+  cases           Json
+  status          RunStatus @default(QUEUED)
+  errorCode       String?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([projectId, createdAt])
 }
 
 model LoadTest {

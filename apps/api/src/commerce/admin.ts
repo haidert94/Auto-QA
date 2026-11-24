@@ -5,6 +5,11 @@ import { PrismaService } from '../prisma.service';
 
 const tokenPattern = /^[a-f0-9]{64}$/;
 
+export function canViewCodeHealth(verifiedEmail: string): boolean {
+  const ownerEmail = process.env.AUTOQA_CODE_HEALTH_OWNER_EMAIL?.trim().toLowerCase();
+  return !!ownerEmail && verifiedEmail.toLowerCase() === ownerEmail;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
