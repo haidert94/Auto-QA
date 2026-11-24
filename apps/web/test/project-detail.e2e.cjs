@@ -16,7 +16,10 @@ const projectId = '10000000-0000-4000-8000-000000000001';
 const session = 'a'.repeat(64);
 const account = {
   name: 'Equipo demo', email: 'qa@example.test', role: 'OWNER', organization: { id: 'demo', name: 'AutoQA Demo' },
-  subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { name: 'Pro', capabilities: [{ code: 'BROWSER_TESTS', availability: 'BETA' }] } },
+  subscription: { status: 'ACTIVE', checkoutPrepared: false, plan: { name: 'Pro', capabilities: [
+    { code: 'BROWSER_TESTS', availability: 'BETA' },
+    { code: 'AI_FAILURE_EXPLANATION', availability: 'BETA' },
+  ] } },
 };
 const environment = {
   id: '10000000-0000-4000-8000-000000000002', type: 'STAGING', baseUrl: 'https://staging.example.test/checkout',
@@ -116,6 +119,10 @@ let scenarioRuns = scenarios.slice(0, 2).map((scenario, i) => ({
   results: [{ id: String(i), status: i ? 'FAILED' : 'PASSED', durationMs: i ? 3200 : 1400, errorMessage: null, evidenceKey: null }],
 }));
 const queuedRequests = [];
+const reportExplanationRequests = [];
+let reportRepairRequests = 0;
+const reportFrameRepair = { step: 3, frames: ['iframe[id="checkout"]'] };
+const reportExplanation = 'Descripción\nEl navegador no recibió la confirmación.\n\nPosible solución\nComprueba la respuesta del servicio de checkout.';
 const reportError = 'Timeout <checkout> & "callback" </failure><evil/>\u0000';
 const reportRuns = ['PASSED', 'FAILED', 'BLOCKED', 'SKIPPED', 'QUEUED', 'RUNNING', 'NO_RESULT'].map((status, i) => ({
   id: `6100000${i + 1}-0000-4000-8000-000000000001`, scenarioId: i % 2 ? scenarioB : scenarioA,
@@ -422,6 +429,20 @@ const api = createServer(async (request, response) => {
       if (run.scenarioId && !latest.has(run.scenarioId)) latest.set(run.scenarioId, run);
     }
     return send({ latest: [...latest.values()], history: recent.slice(0, 100) });
+  }
+  if (request.method === 'POST' && path === `${base}/runs/${reportRuns[1].id}/explain`) {
+    reportExplanationRequests.push(requestUrl.searchParams.get('resultId'));
+    return send(reportExplanationRequests.length === 1
+      ? { usedFallback: true, text: 'El servicio temporalmente no está disponible.' }
+      : { usedFallback: false, text: reportExplanation });
+  }
+  const failedEvidencePath = `${base}/runs/${reportRuns[1].id}/results/${reportRuns[1].results[0].id}`;
+  if (request.method === 'GET' && path === failedEvidencePath + '/evidence') {
+    return send({ status: 'FAILED', trace: null, video: null, screenshots: [], frameRepair: reportFrameRepair });
+  }
+  if (request.method === 'POST' && path === failedEvidencePath + '/apply-solution') {
+    reportRepairRequests++;
+    return send({ scenarioId: reportRuns[1].scenarioId, automationId: 'synthetic-repair' });
   }
   const evidenceBase = `${base}/runs/${reportRuns[0].id}/results/${reportRuns[0].results[0].id}`;
   if (path === evidenceBase + '/evidence') return send({
@@ -2147,6 +2168,8 @@ async function verifyAutomation(page, screenshots) {
 
 async function verifyReportEvidence(page) {
   reportMode = true;
+  reportExplanationRequests.length = 0;
+  reportRepairRequests = 0;
   try {
     await page.getByRole('tab', { name: 'Reportes', exact: true }).click();
     const report = page.getByRole('region', { name: 'Reporte de ejecuciones', exact: true });
@@ -2159,6 +2182,7 @@ async function verifyReportEvidence(page) {
     await expect(row.getByRole('link', { name: /traza/i })).toHaveCount(0);
     await evidence.click();
     const dialog = page.getByRole('dialog', { name: /^Evidencias de/ });
+    await expect(dialog.getByRole('button', { name: 'Ver error', exact: true })).toHaveCount(0);
     await expect(dialog.getByRole('heading', { name: 'Capturas por paso' })).toBeVisible();
     await expect(dialog.getByRole('link', { name: 'Descargar imagen' })).toBeVisible();
     await expect(dialog.getByRole('link', { name: 'Descargar video' })).toBeVisible();
@@ -2170,7 +2194,44 @@ async function verifyReportEvidence(page) {
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(evidence).toBeFocused();
-    console.log('PASS Reportes muestra calidad por defecto y abre las capturas, el video y la traza de una misma ejecución.');
+
+    const failedRun = reportRuns[1];
+    await report.getByRole('button', { name: 'Seleccionar ejecución ' + failedRun.id.slice(0, 8), exact: true }).click();
+    const failedEvidence = table.getByRole('row').filter({ hasText: failedRun.id.slice(0, 8) })
+      .getByRole('button', { name: /^Ver evidencias de/ });
+    await failedEvidence.click();
+    const detail = dialog.getByRole('region', { name: 'Error de la ejecución' });
+    await expect(detail).toContainText(reportError.replace(/\u0000/g, ''));
+    await expect(detail.locator('evil')).toHaveCount(0);
+    await expect(detail.getByText('El agente no pudo generar una explicación en este momento.')).toBeVisible();
+    await detail.getByRole('button', { name: 'Reintentar análisis' }).click();
+    await expect(detail).toContainText(reportExplanation);
+    await dialog.getByRole('button', { name: 'Ocultar error' }).click();
+    await expect(detail).toBeHidden();
+    await dialog.getByRole('button', { name: 'Ver error' }).click();
+    await expect(detail).toContainText('Comprueba la respuesta del servicio de checkout.');
+    await page.keyboard.press('Escape');
+    await failedEvidence.click();
+    await expect(detail).toContainText(reportExplanation);
+    assert.deepEqual(reportExplanationRequests, [failedRun.results[0].id, failedRun.results[0].id]);
+    await expect(detail).toContainText('iframe[id="checkout"]');
+    assert.equal(reportRepairRequests, 0);
+    const apply = detail.getByRole('button', { name: 'Aplicar solución', exact: true });
+    await apply.click();
+    await expect(detail).toContainText('Solución aplicada al código.');
+    await expect(apply).toBeDisabled();
+    assert.equal(reportRepairRequests, 1);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+
+    const blockedRun = reportRuns[2];
+    await report.getByRole('button', { name: 'Seleccionar ejecución ' + blockedRun.id.slice(0, 8), exact: true }).click();
+    await table.getByRole('row').filter({ hasText: blockedRun.id.slice(0, 8) }).getByRole('button', { name: /^Ver evidencias de/ }).click();
+    await expect(detail).toContainText('No se registró un mensaje de error para esta ejecución.');
+    await expect(detail.getByRole('heading', { name: 'Descripción y posible solución' })).toHaveCount(0);
+    await expect(detail.getByRole('button', { name: 'Aplicar solución' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    console.log('PASS Reportes abre el error y el análisis de la ejecución seleccionada, con reintento y reutilización.');
   } finally {
     reportMode = false;
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();

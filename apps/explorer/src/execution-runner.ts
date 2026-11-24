@@ -16,6 +16,9 @@ import { buildBrowserstackWsEndpoint, generateHarnessedSpec, generatePlaywrightC
 import { scenarioRunEnvironmentError } from '../../api/src/runs/environment-policy';
 import { RUN_CANCELED_BY_USER, RUN_STOP_REQUESTED } from '../../api/src/runs/run-cancellation';
 import { readPreparedAutomation } from '../../api/src/scenarios/automation-agent';
+import { readFrameRepair } from '../../api/src/scenarios/frame-repair-agent';
+import { FRAME_REPAIR_FILENAME } from '../../api/src/scenarios/frame-diagnostics-source';
+import type { EvidenceManifest } from '../../api/src/runs/evidence-types';
 import { isManualScenario, MANUAL_SCENARIO_MESSAGE } from '../../api/src/scenarios/scenario-tags';
 import { type ScreenshotStorage } from './screenshot-storage';
 
@@ -329,12 +332,6 @@ function extractProviderSessionUrl(report: any, provider: string | null): string
   return null;
 }
 
-type EvidenceManifest = {
-  trace: string | null;
-  video: string | null;
-  screenshots: Array<{ step: number; action: string; key: string; status: 'pass' | 'fail' }>;
-};
-
 function flatAttachments(report: any): any[] {
   return report?.suites?.flatMap((s: any) =>
     s?.specs?.flatMap((spec: any) =>
@@ -426,7 +423,14 @@ async function uploadEvidence(
     }
   }
 
-  const hasAnything = manifest.trace || manifest.video || manifest.screenshots.length;
+  if (status === 'FAILED') {
+    try {
+      const diagnostics = await readFile(join(workdir, FRAME_REPAIR_FILENAME), 'utf8');
+      const repair = readFrameRepair(JSON.parse(diagnostics));
+      if (repair) manifest.frameRepair = repair;
+    } catch { /* La ejecución puede no tener un diagnóstico de marcos. */ }
+  }
+  const hasAnything = manifest.trace || manifest.video || manifest.screenshots.length || manifest.frameRepair;
   return { evidence: hasAnything ? manifest : null, evidenceKey: manifest.trace };
   void outputDir;
 }

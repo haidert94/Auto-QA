@@ -51,7 +51,8 @@ export function findReusableAutomation(
   for (const candidate of candidates) {
     if (candidate.id === target.id || candidate.expectedResult !== target.expectedResult) continue;
     const prepared = currentAutomation(candidate);
-    if (!prepared || prepared.steps.length !== targetSteps.length) continue;
+    // Una ruta de iframe observada en una ejecución pertenece a ese escenario.
+    if (!prepared || prepared.steps.length !== targetSteps.length || prepared.steps.some(step => step.frames)) continue;
     const candidateSteps = readAutomationSteps(candidate.steps);
     if (candidateSteps.length !== targetSteps.length) continue;
     const score = sequenceScore(targetSteps, candidateSteps);

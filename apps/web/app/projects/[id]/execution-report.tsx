@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import { Activity, ChevronDown, Clock, Download, Filter, HelpCircle, Search, ShieldCheck } from 'lucide-react';
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Project } from '../onboarding';
 import type { ScenarioListItem } from './scenario-card';
 import { isReportableRunStatus, REPORT_WHILE_RUNNING, REPORT_WITHOUT_RUNS } from '../../../../api/src/runs/run-report-policy';
@@ -11,13 +11,13 @@ import { QualityResultsReport } from './quality-results-report';
 import { ProjectHeading } from './project-heading';
 import { useReportHeader } from './project-tabs';
 import { hasRunActivity, readRunActivity, useReportActivity } from './run-activity';
-import { primaryReportTags, dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ReportRun } from './run-report-data';
+import { primaryReportTags, dateText, downloadRunReport, durationText, outcome, reportStatistics, resultDuration, runTitle, type ExplainRunFailure, type ReportRun } from './run-report-data';
 import { category, filterLabels, RunDetail, RunMatrix, RunsTable, RunTimeline, type RunFilter } from './run-report-views';
 import { ScenarioPagination, useScenarioPagination } from './scenario-pagination';
 
 type ReportOverview = { latest: ReportRun[]; history: ReportRun[] };
 
-export function ExecutionReport({ project }: { project: Project }) {
+export function ExecutionReport({ project, canExplainFailures }: { project: Project; canExplainFailures: boolean }) {
   const header = useReportHeader();
   const activity = useReportActivity(project.id, !!header?.active);
   const [reportMode, setReportMode] = useState<'all' | 'scenarios' | 'quality'>('all');
@@ -45,6 +45,25 @@ export function ExecutionReport({ project }: { project: Project }) {
   const waiting = activity.waiting || latest.some(run => !isReportableRunStatus(run.status))
     || history.some(run => !isReportableRunStatus(run.status));
   const refreshOnActivity = waiting ? activity.counts : null;
+  const explanations = useRef(new Map<string, Promise<string>>());
+  const explainFailure = useCallback<ExplainRunFailure>((runId, resultId) => {
+    const key = runId + '/' + resultId;
+    const existing = explanations.current.get(key);
+    if (existing) return existing;
+    const request = fetch(`/api/projects/${project.id}/runs/${runId}/explain?resultId=${resultId}`, {
+      method: 'POST', signal: AbortSignal.timeout(32000),
+    }).then(async response => {
+      if (!response.ok) throw new Error();
+      const explanation = await response.json();
+      if (explanation.usedFallback || typeof explanation.text !== 'string' || !explanation.text.trim()) throw new Error();
+      return explanation.text.trim();
+    }).catch(error => {
+      explanations.current.delete(key);
+      throw error;
+    });
+    explanations.current.set(key, request);
+    return request;
+  }, [project.id]);
 
   useEffect(() => {
     if (!header?.active) return;
@@ -251,14 +270,14 @@ export function ExecutionReport({ project }: { project: Project }) {
               <div ref={listRef} tabIndex={-1} className="run-report-results" aria-label="Resultados del reporte">
                 {view === 'timeline' ? <RunTimeline runs={pagedRuns} onDetail={setDetailId} />
                   : view === 'matrix' ? <RunMatrix runs={pagedRuns} />
-                  : <RunsTable projectId={project.id} runs={pagedRuns} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
+                  : <RunsTable projectId={project.id} explainFailure={canExplainFailures ? explainFailure : undefined} runs={pagedRuns} tags={tags} tagsAvailable={scenarios !== null} detailId={detailId} onDetail={setDetailId} />}
               </div>
               <ScenarioPagination label="Paginación del reporte" {...pagination} />
             </>}
           <p className="run-report-data-note">Las etiquetas corresponden a la configuración actual de cada escenario.</p>
           {canGenerate && <Link className="run-report-consolidated" href={`/projects/${project.id}/report`}>Abrir reporte consolidado de calidad →</Link>}
         </div><aside className="run-report-aside" aria-label="Historial y detalle de ejecuciones">
-          {detail && <RunDetail run={detail} projectId={project.id} onClose={() => { setDetailId(null); setScope('latest'); }} />}
+          {detail && <RunDetail run={detail} projectId={project.id} explainFailure={canExplainFailures ? explainFailure : undefined} onClose={() => { setDetailId(null); setScope('latest'); }} />}
           <section className="run-report-history"><header><h2>Ejecuciones recientes</h2></header>
             {!history.length ? <p>No hay historial disponible.</p> : <ol>{history.slice(0, 8).map(run => { const status = outcome(run); return <li key={run.id}>
               <button type="button" aria-pressed={scope === run.id} aria-label={`Seleccionar ejecución ${run.id.slice(0, 8)}`} onClick={() => { setScope(run.id); setDetailId(run.id); setFilter('all'); setTag(''); setQuery(''); }}>

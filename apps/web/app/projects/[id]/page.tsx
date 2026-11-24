@@ -10,6 +10,7 @@ import { IPA_AUTOMATION_THRESHOLD, type IpaSummary } from './ipa-hero';
 import { ProjectTabs } from './project-tabs';
 import { ScenariosPanel } from './scenarios-panel';
 import { QualityPanel } from './quality-panel';
+import { can } from '../../permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,10 +42,13 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
 
   let showExploration = true;
   let role: OrgRole = 'VIEWER';
+  let canExplainFailures = false;
   try {
     const account = await requireAccount();
     showExploration = hasBrowserTests(account);
     role = account.role;
+    canExplainFailures = can(role, 'run.explain') && !!account.subscription.plan?.capabilities.some(capability =>
+      capability.code === 'AI_FAILURE_EXPLANATION' && ['OPERATIONAL', 'BETA'].includes(capability.availability));
   } catch { showExploration = false; }
 
   const readOnlyEnvs: PanelEnvironment[] = project.environments
@@ -72,7 +76,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ id: 
         datos: <DataTab project={project} ipa={ipa} role={role} />,
         escenarios: <ScenariosPanel key={project.id} project={project} role={role} />,
         automatizacion: <AutomationPanel key={project.id} project={project} role={role} />,
-        reporte: <ExecutionReport key={project.id} project={project} />,
+        reporte: <ExecutionReport key={project.id} project={project} canExplainFailures={canExplainFailures} />,
         historial: (
           <div className="project-overview">
             <section className="detail-card" aria-labelledby="project-finalized-versions-heading">

@@ -13,7 +13,11 @@ funcionan; las complementa cuando el plan del cliente la incluye.
 | Clasificación automática de documentos | `AI_DOCUMENT_ANALYSIS` | Detrás de escena cuando sube un documento |
 | Generación de escenarios desde requisitos | `AI_SCENARIO_GENERATION` | Botón "Sugerir escenarios" en un requisito |
 | Preparación de código Playwright | `AI_SCENARIO_GENERATION` | **Generar seleccionados** en Automatización, sobre los escenarios guardados |
-| Explicación de un fallo | `AI_FAILURE_EXPLANATION` | Botón "¿Por qué falló?" en un TestResult con status FAILED |
+| Explicación de un fallo | `AI_FAILURE_EXPLANATION` | Al abrir **Reportes → Evidencias** de un resultado fallido o bloqueado con un error registrado, o al pulsar **¿Por qué falló?** en el escenario |
+
+## Corrección de automatizaciones
+
+Tras un fallo de un escenario Playwright con código guardado, Explorer observa el localizador del paso fallido en los marcos del entorno autorizado. Cuando encuentra una coincidencia única y puede identificar la ruta del iframe, el agente de corrección prepara un cambio que conserva las acciones y aserciones del caso. **Aplicar solución** valida y guarda el cambio para la automatización que produjo el fallo. La comprobación funcional se realiza en la siguiente ejecución que confirme el usuario.
 
 ## Proveedores soportados
 

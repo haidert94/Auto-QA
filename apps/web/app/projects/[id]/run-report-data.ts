@@ -2,6 +2,8 @@ import { isReportableRunStatus } from '../../../../api/src/runs/run-report-polic
 import { COMPATIBILITY_SCENARIO_TAG, COMPATIBILITY_SCENARIO_TAGS, MANUAL_SCENARIO_TAG } from '../../../../api/src/scenarios/scenario-tags';
 import { runPresentation } from './scenario-presentation';
 
+export type ExplainRunFailure = (runId: string, resultId: string) => Promise<string>;
+
 export type RunResult = {
   id: string; status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED';
   durationMs: number | null; errorMessage: string | null; evidenceKey: string | null;

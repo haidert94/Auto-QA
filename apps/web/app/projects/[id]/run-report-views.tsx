@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { ExternalLink, Image as ImageIcon, X } from 'lucide-react';
-import { dateText, durationText, isManualRun, milliseconds, outcome, resultDuration, resultLabels, runLabels, runTitle, runtime, type ReportRun } from './run-report-data';
+import { dateText, durationText, isManualRun, milliseconds, outcome, resultDuration, resultLabels, runLabels, runTitle, runtime, type ExplainRunFailure, type ReportRun, type RunResult } from './run-report-data';
 import { RunEvidenceModal } from './evidence-modal';
 import { isReportableRunStatus } from '../../../../api/src/runs/run-report-policy';
 import { ManualEvidenceButton } from './manual-evidence';
@@ -19,25 +19,29 @@ export function category(run: ReportRun): Exclude<RunFilter, 'all'> {
   return run.results.length && run.results.every(result => result.status === 'PASSED') ? 'passed' : 'empty';
 }
 
-export function EvidenceAction({ projectId, run, result }: {
-  projectId: string; run: ReportRun; result: { id: string; status: string };
+export function EvidenceAction({ projectId, run, result, explainFailure }: {
+  projectId: string; run: ReportRun; result: RunResult; explainFailure?: ExplainRunFailure;
 }) {
   const [open, setOpen] = useState(false);
   if (!isReportableRunStatus(run.status)) return null;
   const label = runTitle(run);
   const manualScenarioId = isManualRun(run) ? run.scenarioId : null;
+  const failureMessage = result.status === 'FAILED' || result.status === 'BLOCKED'
+    ? result.errorMessage?.trim() || run.errorCode?.trim() || null
+    : undefined;
   return <>
     {!run.id.startsWith('manual-pending-') && <button type="button" className="run-trace-link" onClick={() => setOpen(true)}
       aria-label={`Ver evidencias de ${label}`}><ImageIcon size={12} /> Evidencias</button>}
     {manualScenarioId && <ManualEvidenceButton projectId={projectId} scenarioId={manualScenarioId}
-      resultId={result.id} currentStatus={result.status as 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED'}
+      resultId={result.id} currentStatus={result.status}
       onSaved={() => { if (typeof window !== 'undefined') window.location.reload(); }} />}
-    {open && <RunEvidenceModal projectId={projectId} runId={run.id} resultId={result.id} title={label} onClose={() => setOpen(false)} />}
+    {open && <RunEvidenceModal projectId={projectId} runId={run.id} resultId={result.id} title={label}
+      failureMessage={failureMessage} explainFailure={explainFailure} onClose={() => setOpen(false)} />}
   </>;
 }
 
-export function RunsTable({ projectId, runs, tags, tagsAvailable, detailId, onDetail }: {
-  projectId: string; runs: ReportRun[]; tags: Map<string, string[]>; tagsAvailable: boolean; detailId: string | null; onDetail: (id: string) => void;
+export function RunsTable({ projectId, runs, tags, tagsAvailable, detailId, onDetail, explainFailure }: {
+  projectId: string; runs: ReportRun[]; explainFailure?: ExplainRunFailure; tags: Map<string, string[]>; tagsAvailable: boolean; detailId: string | null; onDetail: (id: string) => void;
 }) {
   return <div className="run-report-table-scroll" tabIndex={0} aria-label="Tabla de ejecuciones desplazable"><table className="run-report-table" aria-label="Ejecuciones registradas">
     <thead><tr><th>ID y escenario</th><th>Etiquetas actuales</th><th>Navegador</th><th>Duración</th><th>Estado</th><th>Evidencias</th></tr></thead>
@@ -50,13 +54,15 @@ export function RunsTable({ projectId, runs, tags, tagsAvailable, detailId, onDe
         <td><span>{run.targetBrowser ?? 'Sin registrar'}</span>{run.targetDevice && <small>{run.targetDevice}</small>}</td>
         <td>{durationText(resultDuration(run))}</td>
         <td><span className={`run-report-state run-report-state--${status.tone}`}>{status.label}</span>{run.errorCode && <small className="error">{run.errorCode}</small>}</td>
-        <td><div className="run-report-traces">{run.results.length ? run.results.map(result => <EvidenceAction key={result.id} projectId={projectId} run={run} result={result} />) : <small>Sin evidencias</small>}</div></td>
+        <td><div className="run-report-traces">{run.results.length ? run.results.map(result => <EvidenceAction key={result.id} projectId={projectId} run={run} result={result} explainFailure={explainFailure} />) : <small>Sin evidencias</small>}</div></td>
       </tr>;
     })}</tbody>
   </table></div>;
 }
 
-export function RunDetail({ run, projectId, onClose }: { run: ReportRun; projectId: string; onClose: () => void }) {
+export function RunDetail({ run, projectId, onClose, explainFailure }: {
+  run: ReportRun; projectId: string; onClose: () => void; explainFailure?: ExplainRunFailure;
+}) {
   const status = outcome(run);
   return <section className="run-report-detail" aria-label="Detalle de ejecución">
     <header><h3>Detalle · {run.id.slice(0, 8)}</h3><button type="button" aria-label="Cerrar detalle de ejecución" onClick={onClose}><X size={15} /></button></header>
@@ -68,7 +74,7 @@ export function RunDetail({ run, projectId, onClose }: { run: ReportRun; project
       {run.errorCode && <p className="error">{run.errorCode}</p>}
       <ul>{run.results.map(result => <li key={result.id}><strong>{resultLabels[result.status]}</strong><span>{durationText(result.durationMs)}</span>
         {result.errorMessage && <details><summary>Ver mensaje de error</summary><pre>{result.errorMessage}</pre></details>}
-        <EvidenceAction projectId={projectId} run={run} result={result} />
+        <EvidenceAction projectId={projectId} run={run} result={result} explainFailure={explainFailure} />
       </li>)}</ul>
       {!run.results.length && <p className="muted">Esta ejecución aún no tiene resultados registrados.</p>}
       {run.scenarioId && <Link className="run-report-detail__link" href={`/projects/${projectId}/scenarios/${run.scenarioId}`}><ExternalLink size={13} />Abrir escenario y ejecuciones</Link>}

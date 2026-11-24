@@ -111,8 +111,22 @@ export class RunsController {
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Param('runId', ParseUUIDPipe) runId: string,
     @CurrentWorkspace() workspace: Workspace,
+    @Query('resultId') resultId?: string,
   ) {
-    return this.service.explain(projectId, runId, workspace);
+    if (resultId !== undefined && !isUUID(resultId)) throw new BadRequestException('Resultado inválido.');
+    return this.service.explain(projectId, runId, workspace, resultId);
+  }
+
+  @Post('projects/:projectId/runs/:runId/results/:resultId/apply-solution')
+  @RequiresRole('EDITOR')
+  @RequiresPlanCapability('AI_FAILURE_EXPLANATION')
+  applyFrameRepair(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Param('resultId', ParseUUIDPipe) resultId: string,
+    @CurrentWorkspace() workspace: Workspace,
+  ) {
+    return this.service.applyFrameRepair(projectId, runId, resultId, workspace);
   }
 
   @Get('projects/:projectId/runs/:runId/diff')

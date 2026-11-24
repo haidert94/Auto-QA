@@ -481,9 +481,10 @@ export class ScenariosService {
       if (automation) {
         prepared.add(scenario.id);
         for (const step of automation.steps) {
-          const users = shared.get(step.action) ?? new Set<string>();
+          const key = step.frames ? JSON.stringify([step.action, step.frames]) : step.action;
+          const users = shared.get(key) ?? new Set<string>();
           users.add(scenario.id);
-          shared.set(step.action, users);
+          shared.set(key, users);
         }
       }
       for (const step of readAutomationSteps(scenario.steps)) {

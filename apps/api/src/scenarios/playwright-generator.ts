@@ -9,12 +9,14 @@
 
 import { createHash } from 'node:crypto';
 import { COMPATIBILITY_SCENARIO_TAGS } from './scenario-tags';
+import { FRAME_DIAGNOSTICS_SOURCE } from './frame-diagnostics-source';
 
 export type GeneratorStep = {
   ordinal: number;
   action: string;
   data?: string | null;
   expected?: string | null;
+  frames?: string[];
 };
 
 export type GeneratorScenario = {
@@ -64,16 +66,30 @@ function commentLines(text: string, indent: string): string[] {
   return text.split(/[\r\n\u2028\u2029]+/).map(line => indent + '// ' + line);
 }
 
+export const FRAME_LOCATOR_OPERATIONS: readonly string[] = [
+  'click', 'click-text', 'fill', 'fill-label', 'check', 'uncheck', 'expect-text', 'expect-visible', 'expect-checked',
+];
+
+export function readFramePath(raw: unknown): string[] | null {
+  if (!Array.isArray(raw) || !raw.length || raw.length > 3) return null;
+  return raw.every(selector => typeof selector === 'string'
+    && /^iframe\[(?:id|name|data-testid)="[A-Za-z0-9_-]{1,80}"\]$/.test(selector)) ? raw : null;
+}
+
 export function readGeneratorSteps(raw: unknown): GeneratorStep[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((step): step is Record<string, unknown> => !!step && typeof step === 'object' && typeof step.action === 'string' && !!step.action.trim())
-    .map((step, index) => ({
-      ordinal: typeof step.ordinal === 'number' && Number.isSafeInteger(step.ordinal) ? step.ordinal : index + 1,
-      action: step.action as string,
-      data: typeof step.data === 'string' ? step.data : undefined,
-      expected: typeof step.expected === 'string' ? step.expected : undefined,
-    }));
+    .map((step, index) => {
+      const frames = readFramePath(step.frames);
+      return {
+        ordinal: typeof step.ordinal === 'number' && Number.isSafeInteger(step.ordinal) ? step.ordinal : index + 1,
+        action: step.action as string,
+        data: typeof step.data === 'string' ? step.data : undefined,
+        expected: typeof step.expected === 'string' ? step.expected : undefined,
+        ...(frames && { frames }),
+      };
+    });
 }
 
 export function readAutomationSteps(raw: unknown): GeneratorStep[] {
@@ -100,8 +116,9 @@ function sharedAction(step: GeneratorStep) {
   const parsed = splitAction(step.action);
   if (!parsed || !SHARED_VERBS.has(parsed.verb)) return null;
   const { verb, rest } = parsed;
-  const key = createHash('sha256').update(JSON.stringify([verb, rest])).digest('hex').slice(0, 16);
-  return { verb, rest, name: 'step_' + verb.replace(/-/g, '_') + '_' + key };
+  const frames = step.frames;
+  const key = createHash('sha256').update(JSON.stringify(frames ? [verb, rest, frames] : [verb, rest])).digest('hex').slice(0, 16);
+  return { verb, rest, frames, name: 'step_' + verb.replace(/-/g, '_') + '_' + key };
 }
 
 function requiresData(verb: string) {
@@ -115,10 +132,10 @@ export function generateSharedSteps(steps: readonly GeneratorStep[]): string {
     if (action) actions.set(action.name, action);
   }
   const lines = ["import { expect, type Page } from '@playwright/test';", ''];
-  for (const { name, verb, rest } of [...actions.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const { name, verb, rest, frames } of [...actions.values()].sort((a, b) => a.name.localeCompare(b.name))) {
     const hasData = requiresData(verb);
     lines.push('export async function ' + name + '(page: Page' + (hasData ? ', data: string' : '') + ') {');
-    lines.push(...renderAction(verb, rest, '  ', 'data'));
+    lines.push(...renderAction(verb, rest, '  ', 'data', frames));
     lines.push('}', '');
   }
   return lines.join('\n');
@@ -149,7 +166,7 @@ export function generateStepLines(step: GeneratorStep, indent: string, shared = 
     const argument = requiresData(verb) ? ', ' + data : '';
     lines.push(indent + 'await steps.' + implementation.name + '(page' + argument + ');');
   } else {
-    const action = renderAction(verb, rest, indent, data);
+    const action = renderAction(verb, rest, indent, data, step.frames);
     if (action.length) lines.push(...action);
     else lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
   }
@@ -157,9 +174,10 @@ export function generateStepLines(step: GeneratorStep, indent: string, shared = 
   return lines;
 }
 
-function renderAction(verb: string, rest: string, indent: string, data: string): string[] {
+function renderAction(verb: string, rest: string, indent: string, data: string, frames?: string[]): string[] {
   const lines: string[] = [];
-  const locator = "page.locator('" + escapeJsString(rest) + "')";
+  const scope = frames?.reduce((parent, selector) => parent + ".frameLocator('" + escapeJsString(selector) + "')", 'page') ?? 'page';
+  const locator = scope + ".locator('" + escapeJsString(rest) + "')";
   switch (verb) {
     case 'navigate':
     case 'goto':
@@ -167,13 +185,13 @@ function renderAction(verb: string, rest: string, indent: string, data: string):
       lines.push(`${indent}await page.goto('${escapeJsString(rest)}');`);
       break;
     case 'click':
-      lines.push(`${indent}await page.locator('${escapeJsString(rest)}').click();`);
+      lines.push(`${indent}await ${locator}.click();`);
       break;
     case 'click-text':
-      lines.push(`${indent}await page.getByText('${escapeJsString(rest)}', { exact: true }).click();`);
+      lines.push(`${indent}await ${scope}.getByText('${escapeJsString(rest)}', { exact: true }).click();`);
       break;
     case 'fill-label':
-      lines.push(`${indent}await page.getByLabel('${escapeJsString(rest)}', { exact: true }).fill(${data});`);
+      lines.push(`${indent}await ${scope}.getByLabel('${escapeJsString(rest)}', { exact: true }).fill(${data});`);
       break;
     case 'check':
     case 'uncheck':
@@ -187,7 +205,7 @@ function renderAction(verb: string, rest: string, indent: string, data: string):
       lines.push(`${indent}await expect(${locator}).toBeChecked();`);
       break;
     case 'fill':
-      lines.push(`${indent}await page.locator('${escapeJsString(rest)}').fill(${data});`);
+      lines.push(`${indent}await ${locator}.fill(${data});`);
       break;
     case 'press':
     case 'key':
@@ -195,7 +213,7 @@ function renderAction(verb: string, rest: string, indent: string, data: string):
       break;
     case 'expect-text':
     case 'expect text':
-      lines.push(`${indent}await expect(page.getByText('${escapeJsString(rest)}')).toBeVisible();`);
+      lines.push(`${indent}await expect(${scope}.getByText('${escapeJsString(rest)}')).toBeVisible();`);
       break;
     case 'expect-http-ok':
       lines.push(`${indent}expect((await page.goto('${escapeJsString(rest)}'))?.ok()).toBe(true);`);
@@ -349,7 +367,10 @@ export function generateHarnessedSpec(
   const lines: string[] = [];
   const members = [device && 'devices', !target.sharedSteps && 'expect', 'test'].filter(Boolean);
   lines.push("import { " + members.join(', ') + " } from '@playwright/test';");
-  if (target.sharedSteps) lines.push(SHARED_STEPS_IMPORT);
+  if (target.sharedSteps) {
+    lines.push(SHARED_STEPS_IMPORT, "import { writeFile } from 'node:fs/promises';",
+      "import type { Frame, Page } from '@playwright/test';");
+  }
   lines.push('');
   if (device) {
     lines.push(`test.use({ ...devices['${escapeJsString(device)}'], baseURL: '${baseURL}' });`);
@@ -410,12 +431,21 @@ export function generateHarnessedSpec(
   lines.push('  });');
   lines.push('});');
   lines.push('');
+  if (target.sharedSteps) lines.push(FRAME_DIAGNOSTICS_SOURCE);
   lines.push(`test('${title}', async ({ page }) => {`);
+  if (target.sharedSteps) lines.push('  locatorStep = undefined;');
   if (scenario.steps.length === 0) {
     lines.push('  // Escenario sin pasos: nada que ejecutar.');
   } else {
     for (const step of scenario.steps) {
+      if (target.sharedSteps) {
+        const action = splitAction(step.action);
+        const locator = action && !step.frames && FRAME_LOCATOR_OPERATIONS.includes(action.verb)
+          ? JSON.stringify({ step: step.ordinal, kind: action.verb, target: action.rest }) : 'undefined';
+        lines.push('  locatorStep = ' + locator + ';');
+      }
       lines.push(...generateStepLines(step, '  ', target.sharedSteps));
+      if (target.sharedSteps) lines.push('  locatorStep = undefined;');
       lines.push('');
     }
   }

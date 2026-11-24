@@ -9,8 +9,9 @@ const { assertRunQuota } = require('../dist/commerce/usage-quotas');
 const { IcspService } = require('../dist/icsp/icsp.service');
 const { ReportsService } = require('../dist/reports/reports.service');
 const { REPORT_SCENARIO_SCOPE } = require('../dist/runs/run-report-policy');
-const { translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
-const { generateHarnessedSpec, generateSpec, readAutomationSteps } = require('../dist/scenarios/playwright-generator');
+const { automationSignature, translateAgentActions, readPreparedAutomation } = require('../dist/scenarios/automation-agent');
+const { findReusableAutomation } = require('../dist/scenarios/scenario-prelude');
+const { generateHarnessedSpec, generateSharedSteps, generateSpec, readAutomationSteps, readGeneratorSteps } = require('../dist/scenarios/playwright-generator');
 
 const workspace = { organizationId: 'test-org' };
 const sample = {
@@ -469,4 +470,47 @@ test('la automatización conserva la comprobación HTTP explícita del escenario
 test('las instrucciones sin traducir se conservan como comentarios de revisión', () => {
   const spec = generateSpec({ id: 'scenario', title: 'Caso', steps: [{ ordinal: 1, action: 'Primera línea\u2028Segunda línea' }] });
   assert.match(spec, /\/\/ TODO: Primera línea\n\s*\/\/ Segunda línea/);
+});
+
+test('aplica al escenario solo la ruta comprobada del iframe y protege versiones posteriores', async () => {
+  const steps = readGeneratorSteps(translateAgentActions(actions, sample.steps));
+  const scenario = { ...sample, steps };
+  const automation = { id: 'executed', signature: automationSignature(scenario), title: scenario.title, steps };
+  scenario.automation = automation;
+  const frames = ['iframe[id="checkout"]', 'iframe[name="summary"]'];
+  const result = {
+    status: 'FAILED', scenario, run: { scenarioId: scenario.id, automation },
+    evidence: { frameRepair: { step: 4, frames } },
+  };
+  let writes = 0;
+  const prisma = {
+    project: { async findFirst() { return { id: 'project' }; } },
+    testResult: { async findFirst({ where }) {
+      assert.equal(where.run.projectId, scenario.projectId);
+      assert.equal(where.scenario.archivedAt, null);
+      return result;
+    } },
+    testScenario: { async updateMany({ where, data }) {
+      assert.deepEqual(where.automation.equals, automation);
+      assert.deepEqual(where.steps.equals, scenario.steps);
+      writes++;
+      scenario.automation = data.automation;
+      return { count: 1 };
+    } },
+  };
+  const service = new RunsService(prisma, {}, {}, {});
+  const apply = () => service.applyFrameRepair('project', 'run', 'result', workspace);
+
+  assert.ok(findReusableAutomation({ ...scenario, id: 'otro-escenario' }, [scenario]));
+  result.evidence.frameRepair.frames = ['iframe:nth-child(1)'];
+  await assert.rejects(apply(), { status: 400 });
+  result.evidence.frameRepair.frames = frames;
+  const saved = await apply();
+  assert.notEqual(saved.automationId, automation.id);
+  const current = readPreparedAutomation(scenario.automation);
+  assert.deepEqual(current.steps, [...steps.slice(0, 3), { ...steps[3], frames }]);
+  assert.equal(findReusableAutomation({ ...scenario, id: 'otro-escenario' }, [scenario]), null);
+  assert.match(generateSharedSteps(current.steps), /frameLocator\('iframe\[id="checkout"\]'\)\.frameLocator\('iframe\[name="summary"\]'\)\.getByText\('Resultados'\)\)\.toBeVisible\(\)/);
+  await assert.rejects(apply(), { status: 409 });
+  assert.equal(writes, 1);
 });

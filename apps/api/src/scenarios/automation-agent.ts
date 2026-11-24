@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { extractJson } from '../automation/agents/agent-types';
 import type { AiRouter } from '../ai/ai-router';
-import { PLAYWRIGHT_OPERATIONS, readAutomationSteps, readGeneratorSteps, type GeneratorStep } from './playwright-generator';
+import { FRAME_LOCATOR_OPERATIONS, PLAYWRIGHT_OPERATIONS, readAutomationSteps, readFramePath, readGeneratorSteps, type GeneratorStep } from './playwright-generator';
 
 const MAX_SOURCE_STEPS = 50;
 const MAX_ACTIONS = 100;
@@ -30,7 +30,9 @@ export function readPreparedAutomation(raw: unknown): PreparedAutomation | null 
   const operations = steps.map(step => step.action.split(': ', 1)[0]);
   if (!steps.every((step, index) => {
     const kind = operations[index];
+    const frameInput = value.steps![index].frames;
     return isValidTarget(kind, step.action.slice(kind.length + 2))
+      && (frameInput === undefined || (!!readFramePath(frameInput) && FRAME_LOCATOR_OPERATIONS.includes(kind)))
       && (!isFill(kind) || typeof step.data === 'string');
   }) || !operations.some(kind => kind.startsWith('expect-'))) return null;
   return { id: value.id, signature: value.signature, title: value.title, steps };
