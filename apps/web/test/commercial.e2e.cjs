@@ -92,11 +92,12 @@ async function run() {
     await page.getByRole('button', { name: 'Iniciar contratación' }).click();
     await page.getByRole('button', { name: 'Simular aprobación' }).click();
     await page.getByRole('link', { name: 'Entrar al dashboard' }).click();
-    await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
-    await page.getByRole('link', { name: 'Registrar aplicación' }).click();
+    await page.waitForURL('**/dashboard');
+    await page.getByRole('link', { name: 'Registrar aplicación', exact: true }).click();
+    await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
     await page.getByLabel('Nombre de la aplicación').fill('Aplicación E2E');
     await page.getByRole('button', { name: 'Guardar borrador' }).click();
-    await page.waitForURL(/\/projects\/[0-9a-f-]{36}$/);
+    await page.waitForURL(/\/projects\/[0-9a-f-]{36}#datos$/);
     await page.getByRole('heading', { name: 'Aplicación E2E' }).waitFor();
     console.log('E2E correcto: portada móvil y escritorio, plan, registro, verificación, pago simulado y primer proyecto.');
   } finally {

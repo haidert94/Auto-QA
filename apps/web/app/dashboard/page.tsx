@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { accountFetch, requireAccount, type Usage } from '../autoqa-server';
 import type { ProjectSummary } from '../projects/onboarding';
 import { AppPageHeading } from '../app-page-heading';
+import { can } from '../permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export default async function Dashboard() {
       badge={{ label: `Plan ${account.subscription.plan?.name ?? 'sin plan'} · ${account.subscription.status}`, tone: account.subscription.status === 'ACTIVE' ? 'ready' : 'draft' }}
       summary="Estado general de tu cuenta, proyectos activos y uso del plan."
       actions={<>
-        <Link href="/onboarding" className="button-like">Registrar aplicación</Link>
+        {can(account.role, 'project.create') && <Link href="/onboarding" className="button-like">Registrar aplicación</Link>}
         <Link href="/projects" className="secondary button-like">Ver proyectos</Link>
       </>}
     />
@@ -123,11 +124,11 @@ function buildNextSteps(account: Awaited<ReturnType<typeof requireAccount>>, pro
       cta: 'Ir a facturación', href: '/billing',
     });
   }
-  if (projects.length === 0) {
+  if (projects.length === 0 && can(account.role, 'project.create')) {
     steps.push({
       title: 'Registra tu primera aplicación',
       description: 'Declara el proyecto, el entorno autorizado y los dominios y rutas incluidas en el alcance.',
-      cta: 'Iniciar onboarding', href: '/onboarding',
+      cta: 'Registrar aplicación', href: '/onboarding',
     });
   } else {
     const anyWithoutAuthEnv = projects.some(p => p.environments.every(e => !e.authorizationConfirmed));

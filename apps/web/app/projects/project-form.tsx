@@ -145,7 +145,7 @@ export function ProjectForm({ initial, onSaved, role }: { initial?: Project; onS
 
   return (
     <section className="panel">
-      <h1>{saved?.name ?? 'Registrar aplicación'}</h1>
+      <h1 id="project-settings-heading">{saved?.name ?? 'Registrar aplicación'}</h1>
       {saved && <p className="muted">Estado guardado · {statusLabels[saved.status]}</p>}
       {saved?.missingRequirements.length ? (
         <div className="status">

@@ -86,7 +86,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
     return () => clearTimeout(timer);
   }, [copied]);
 
-  function edit(section = 'environment-heading') { setFocusSection(section); setEditing(true); }
+  function edit() { setFocusSection('project-settings-heading'); setEditing(true); }
   async function copyUrl() {
     setCopyError('');
     try { await navigator.clipboard.writeText(environment?.baseUrl ?? ''); setCopied(true); }
@@ -174,6 +174,9 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
         </li>)}</ul> : <p className="muted">No hay roles declarados. Puedes agregarlos para probar permisos.</p>}
         {canEdit && <button type="button" className="detail-edit" onClick={() => setRolesDialogOpen(true)}><Pencil size={12} /> Editar roles y permisos</button>}
       </DetailCard>
+      {canEdit && <button type="button" className="secondary detail-edit" onClick={edit}>
+        <Pencil size={12} /> Editar configuración del proyecto
+      </button>}
     </div>
     <aside className="project-overview__aside" aria-label="Preparación y diagnóstico del proyecto">
       <section className="detail-card detail-ipa">

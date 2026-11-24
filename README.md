@@ -122,7 +122,7 @@ npm.cmd run test:commerce:e2e
 
 ## Verificar el registro en la web
 
-1. En **Registrar aplicación**, escribe el nombre y pulsa **Guardar borrador**. Vuelve a **Proyectos**, abre el registro y comprueba que aparecen el estado y los campos pendientes. Pulsa **Completar registro** para comprobar que se bloquea mientras falten requisitos.
+1. Abre **Registrar aplicación** desde **Resumen** o **Proyectos** para entrar al mismo asistente. Pulsa **Siguiente**, escribe el nombre y elige **Guardar borrador**. Vuelve a **Proyectos**, abre el registro y comprueba que aparecen el estado y los campos pendientes. Pulsa **Completar registro** para comprobar que se bloquea mientras falten requisitos.
 2. Declara un propietario, añade un entorno QA e introduce `https://qa.example.com/catalogo`. Selecciona **Privada**. Declara `qa.example.com` como dominio permitido, `qa.example.com/catalogo` como ruta permitida y `qa.example.com/catalogo/pagos` como exclusión. Agrega una acción prohibida y confirma la autorización después de definir el alcance. **Solo lectura** viene activado.
 3. Añade un rol **Lector** con el permiso esperado **Catálogo / Ver / Permitido**. Puedes agregar otro permiso **Catálogo / Borrar / Denegado** y una referencia sintética `vault:qa/lector`. El registro admite modos **Pública**, **Privada** y **SSO**. Los dos últimos requieren roles con su matriz de permisos.
 4. Agrega otro entorno con su URL, dominio, ruta y autorización. Declara módulos prioritarios y, si aplica, datos sintéticos, semillas, limpieza, integraciones, navegador, frecuencia, límites y preferencias de notificación.

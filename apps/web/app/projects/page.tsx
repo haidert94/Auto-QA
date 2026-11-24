@@ -55,7 +55,7 @@ export default async function Projects({ searchParams }: { searchParams?: Promis
       title={status === 'all' ? 'Proyectos' : `Proyectos · ${meta.label}`}
       summary={summary}
       aside={visible.length > 0 ? `${visible.length} de ${notArchived.length}` : undefined}
-      actions={canCreate ? <Link href="/projects/new" className="button-like">Registrar aplicación</Link> : undefined}
+      actions={canCreate ? <Link href="/onboarding" className="button-like">Registrar aplicación</Link> : undefined}
     />
     <nav className="projects-filter-tabs" aria-label="Filtrar proyectos por estado">
       {(['all', 'ready', 'in-progress', 'draft'] as StatusFilter[]).map(key => <Link key={key}
@@ -67,7 +67,7 @@ export default async function Projects({ searchParams }: { searchParams?: Promis
     </nav>
     <section className="app-section projects-panel">
       <header><h2><span>01 //</span> APLICACIONES ({visible.length})</h2>
-        {canCreate && <Link href="/projects/new" className="app-section__link">Registrar aplicación →</Link>}</header>
+        {canCreate && <Link href="/onboarding" className="app-section__link">Registrar aplicación →</Link>}</header>
       {error && <p className="error" role="alert">{error}</p>}
 
       {visible.length === 0 && !error && (
@@ -78,7 +78,7 @@ export default async function Projects({ searchParams }: { searchParams?: Promis
               ? 'Declara el alcance, los dominios permitidos y la autorización para empezar a analizar sus requisitos.'
               : 'Pídele a un ADMIN u OWNER de la organización que te asigne proyectos para empezar a trabajar.'}
           </p>
-          {canCreate && <Link href="/projects/new" className="button-like">Registrar aplicación</Link>}
+          {canCreate && <Link href="/onboarding" className="button-like">Registrar aplicación</Link>}
         </div>
       )}
 

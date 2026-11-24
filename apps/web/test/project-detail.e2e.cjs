@@ -35,6 +35,7 @@ let project = {
     permissions: [{ resource: 'checkout', action: 'read', allowed: true }, { resource: 'payments', action: 'delete', allowed: false }] }],
   executionSettings: { browser: 'CHROMIUM', maxPages: 10 },
 };
+let projectRegistrations = null;
 let documents = ['PROCESSED', 'UPLOADED', 'VALIDATED', 'DECLARED'].map((state, i) => ({
   id: `20000000-0000-4000-8000-00000000000${i}`, filename: ['spec-checkout.yaml', 'requisitos-pagos.pdf', 'flujos-criticos.md', 'contrato-declarado.txt'][i],
   type: i === 0 ? 'API' : 'REQUIREMENTS', state, classificationSource: 'MANUAL', versions: [],
@@ -191,6 +192,18 @@ const api = createServer(async (request, response) => {
   const path = requestUrl.pathname;
   if (path === '/api/commerce/me') return send(account);
   if (path === '/api/commerce/logout' && request.method === 'POST') { logoutCalled = true; return send({}); }
+  if (path === '/api/projects' && request.method === 'GET') return send([project]);
+  if (path === '/api/projects' && request.method === 'POST' && projectRegistrations) {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const payload = JSON.parse(Buffer.concat(chunks).toString());
+    projectRegistrations.push(payload);
+    project = {
+      ...project, ...payload, revision: 1, roles: [],
+      environments: payload.environments.map(item => ({ ...item, id: environment.id })),
+    };
+    return send(project, 201);
+  }
   const base = `/api/projects/${projectId}`;
   if (path === base + '/automation/types/pending') {
     const assigned = new Set(documents.flatMap(doc => doc.testTypes ?? []));
@@ -545,6 +558,72 @@ const api = createServer(async (request, response) => {
   if (path.startsWith(base + '/')) return send([]);
   return send({ message: 'No encontrado' }, 404);
 });
+
+async function verifyUnifiedOnboarding(page, website) {
+  const originalProject = project;
+  const originalRole = account.role;
+  projectRegistrations = [];
+  const next = page.getByRole('button', { name: 'Siguiente', exact: true });
+  try {
+    await page.goto(website + '/projects/new');
+    await expect(page).toHaveURL(website + '/onboarding');
+    await expect(page.getByRole('heading', { name: 'Bienvenido a AutoQA' })).toBeVisible();
+    await page.getByRole('link', { name: 'Cancelar' }).click();
+    await expect(page).toHaveURL(website + '/projects');
+    const registerInProjects = page.getByRole('link', { name: 'Registrar aplicación', exact: true });
+    await expect(registerInProjects).toHaveAttribute('href', '/onboarding');
+    await registerInProjects.click();
+    await next.click();
+    const draft = page.getByRole('button', { name: 'Guardar borrador', exact: true });
+    await expect(draft).toBeDisabled();
+    await page.getByLabel('Nombre de la aplicación').fill('Registro en borrador');
+    await next.click();
+    await expect(next).toBeDisabled();
+    await draft.click();
+    await expect(page).toHaveURL(website + '/projects/' + projectId + '#datos');
+    assert.equal(projectRegistrations[0].status, 'DRAFT');
+    assert.equal(projectRegistrations[0].environments[0].authorizationConfirmed, false);
+    assert.equal(projectRegistrations[0].environments[0].baseUrl, undefined);
+    await expect(page.getByLabel('Módulos prioritarios, uno por línea')).toBeVisible();
+
+    await page.goto(website + '/dashboard');
+    const registerInDashboard = page.getByRole('link', { name: 'Registrar aplicación', exact: true });
+    await expect(registerInDashboard).toHaveAttribute('href', '/onboarding');
+    await registerInDashboard.click();
+    await expect(page).toHaveURL(website + '/onboarding');
+    await next.click();
+    await page.getByLabel('Nombre de la aplicación').fill('Registro completo');
+    await next.click();
+    await page.getByLabel('URL base').fill('https://qa.example.test/');
+    await page.getByLabel('Modo de acceso').selectOption('PUBLIC');
+    await next.click();
+    await expect(next).toBeDisabled();
+    await page.getByRole('checkbox', { name: /^Confirmo que soy dueño/ }).check();
+    await next.click();
+    await expect(page.getByRole('heading', { name: 'Revisa y crea' })).toBeVisible();
+    assert.equal(projectRegistrations.length, 1);
+    await page.getByRole('button', { name: 'Crear proyecto', exact: true }).click();
+    await expect(page).toHaveURL(website + '/projects/' + projectId + '#datos');
+    assert.equal(projectRegistrations.length, 2);
+    assert.equal(projectRegistrations[1].status, 'READY');
+    assert.equal(projectRegistrations[1].environments[0].authorizationConfirmed, true);
+    assert.deepEqual(projectRegistrations[1].environments[0].allowedHosts, ['qa.example.test']);
+    await page.getByRole('button', { name: 'Editar configuración del proyecto' }).click();
+    await expect(page.getByLabel('Módulos prioritarios, uno por línea')).toBeVisible();
+    await expect(page.getByText('Preferencias de ejecución y notificaciones', { exact: true })).toBeVisible();
+
+    account.role = 'VIEWER';
+    await page.goto(website + '/onboarding');
+    await expect(page).toHaveURL(website + '/projects');
+    await expect(page.getByRole('link', { name: /Registrar aplicación/ })).toHaveCount(0);
+    console.log('PASS Registro guiado desde Resumen y Proyectos, borrador, autorización y permisos.');
+  } finally {
+    project = originalProject;
+    account.role = originalRole;
+    projectRegistrations = null;
+    await page.goto(website + '/projects/' + projectId);
+  }
+}
 
 async function verifyPostmanLoadImport(page, website) {
   const original = project;
@@ -2648,6 +2727,7 @@ async function run() {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.message));
     await page.goto(`${website}/projects/${projectId}`);
+    await verifyUnifiedOnboarding(page, website);
     await verifyPostmanLoadImport(page, website);
     await verifyDocumentUploads(page);
     await verifyIpaPoints(page);

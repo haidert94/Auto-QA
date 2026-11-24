@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { supportsScenarioWrites } from '../projects/onboarding';
 
 const ENV_TYPES = [
@@ -51,7 +51,8 @@ export function OnboardingWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Form>(EMPTY);
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState<'DRAFT' | 'READY' | null>(null);
+  const busy = saving !== null;
   const [error, setError] = useState('');
 
   const defaultHost = useMemo(() => hostFromUrl(form.baseUrl), [form.baseUrl]);
@@ -72,9 +73,6 @@ export function OnboardingWizard() {
     if (current === 1) return form.name.trim().length >= 2;
     if (current === 2) {
       if (!form.envType || !form.baseUrl.trim() || !form.accessMode || hostFromUrl(form.baseUrl) === '') return false;
-      // Si el acceso no es público, exigimos credenciales completas en el wizard
-      // express (el wizard largo permite dejarlas para después). Así el paso 4
-      // (autorización) queda enfocado solo en alcance y consentimiento.
       if (form.accessMode !== 'PUBLIC' && (!form.credentialUser.trim() || !form.credentialPassword)) return false;
       return true;
     }
@@ -85,9 +83,11 @@ export function OnboardingWizard() {
   function next() { if (canProceed(step)) setStep(s => Math.min(4, s + 1)); }
   function back() { setStep(s => Math.max(0, s - 1)); }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true); setError('');
+  async function save(status: 'DRAFT' | 'READY') {
+    if (busy || !canProceed(1)) return;
+    if (status === 'READY' && (!canProceed(2) || !canProceed(3))) return;
+    setSaving(status);
+    setError('');
     try {
       const allowedHosts = (form.allowedHosts.trim() || defaultHost)
         .split(/\r?\n|,/).map(h => h.trim()).filter(Boolean);
@@ -103,15 +103,15 @@ export function OnboardingWizard() {
       const response = await fetch('/api/projects', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          status: 'READY',
+          status,
           name: form.name.trim(),
           description: form.description.trim() || undefined,
           ownerLabel,
           priorityModules: [],
           environments: [{
             type: form.envType,
-            baseUrl: form.baseUrl.trim(),
-            accessMode: form.accessMode,
+            baseUrl: form.baseUrl.trim() || undefined,
+            accessMode: form.accessMode || undefined,
             authorizationConfirmed: form.authorizationConfirmed,
             readOnly: form.readOnly,
             allowedHosts,
@@ -124,6 +124,7 @@ export function OnboardingWizard() {
           }],
           executionSettings: {},
         }),
+        signal: AbortSignal.timeout(10000),
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -133,14 +134,19 @@ export function OnboardingWizard() {
         return;
       }
       const project = await response.json();
-      router.push(`/projects/${project.id}`);
+      router.replace(`/projects/${project.id}#datos`);
     } catch { setError('No se pudo crear el proyecto. Revisa la conexión.'); }
-    finally { setBusy(false); }
+    finally { setSaving(null); }
   }
 
   const steps = ['Bienvenida', 'Aplicación', 'Entorno', 'Alcance y autorización', 'Confirmar'];
 
-  return <form onSubmit={submit} className="panel onboarding-wizard" autoComplete="off">
+  return <form onSubmit={event => {
+    event.preventDefault();
+    if (busy) return;
+    if (step === 4) void save('READY');
+    else next();
+  }} className="panel onboarding-wizard" autoComplete="off">
     <ol className="wizard-steps">
       {steps.map((label, i) => <li key={i} className={
         i === step ? 'current' : i < step ? 'done' : 'pending'
@@ -274,11 +280,15 @@ export function OnboardingWizard() {
 
     <div className="wizard-actions">
       {step === 0
-        ? <Link href="/dashboard" className="button-like secondary">Cancelar</Link>
+        ? <Link href="/projects" className="button-like secondary">Cancelar</Link>
         : <button type="button" className="secondary" onClick={back} disabled={busy}>Volver</button>}
-      {step < 4
-        ? <button type="button" onClick={next} disabled={!canProceed(step)}>Siguiente</button>
-        : <button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear proyecto'}</button>}
+      <div className="wizard-actions__primary">
+        {step > 0 && <button type="button" className="secondary" onClick={() => void save('DRAFT')}
+          disabled={busy || !canProceed(1)}>{saving === 'DRAFT' ? 'Guardando…' : 'Guardar borrador'}</button>}
+        {step < 4
+          ? <button key="next" type="button" onClick={next} disabled={busy || !canProceed(step)}>Siguiente</button>
+          : <button key="create" type="submit" disabled={busy}>{saving === 'READY' ? 'Creando…' : 'Crear proyecto'}</button>}
+      </div>
     </div>
   </form>;
 }
