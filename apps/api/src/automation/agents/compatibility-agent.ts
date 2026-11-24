@@ -30,7 +30,7 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
         { tags: { hasSome: [MANUAL_SCENARIO_TAG, ...COMPATIBILITY_SCENARIO_TAGS] } },
       ] },
     },
-    take: 25,
+    take: ctx.completingCoverage ? undefined : 25,
     orderBy: { title: 'asc' },
     select: { title: true, requirementId: true, steps: true, expectedResult: true, tags: true } as const,
   });
@@ -41,8 +41,11 @@ export async function runCompatibilityAgent(ctx: AgentContext, deps: AgentDeps):
     if (!Array.isArray(tags) || tags.includes(MANUAL_SCENARIO_TAG) || COMPATIBILITY_SCENARIO_TAGS.some(tag => tags.includes(tag))) return [];
     return [{ title, requirementId, expectedResult, steps, tags }];
   });
-  const base = [...existing, ...staged].filter(scenario => linkedRequirementId(ctx, scenario.requirementId)
-    && hasPlaywrightAssertion(readGeneratorSteps(scenario.steps))).slice(0, 5);
+  const candidates = [...existing, ...staged].filter(scenario => linkedRequirementId(ctx, scenario.requirementId)
+    && hasPlaywrightAssertion(readGeneratorSteps(scenario.steps)));
+  const base = ctx.completingCoverage
+    ? [...new Map(candidates.map(scenario => [scenario.requirementId, scenario])).values()]
+    : candidates.slice(0, 5);
   const errors = base.length ? [] : ['compatibility-no-linked-base'];
   let created = 0;
 

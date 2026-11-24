@@ -9,14 +9,24 @@ export type GenerationIssue =
   | 'missing-traceability'
   | 'missing-assertion'
   | 'no-cases'
-  | 'agent-error';
+  | 'agent-error'
+  | 'coverage-changed';
 
 export type GenerationSummary = {
   totalCreated: number;
+  coverage?: { total: number; missing: MissingGenerationRequirement[] };
   outcomes: Array<Omit<AgentOutcome, 'errors'> & { errorCount: number; issue?: GenerationIssue }>;
 };
 
-function outcomeIssue(errors: string[]): GenerationIssue {
+export type MissingGenerationRequirement = {
+  id: string;
+  title: string;
+  externalKey?: string | null;
+  issue: GenerationIssue;
+  type?: string;
+};
+
+export function outcomeIssue(errors: string[]): GenerationIssue {
   if (errors.includes('ai-budget-exhausted')) return 'ai-budget-exhausted';
   if (errors.includes('ai-unavailable')) return 'ai-unavailable';
   if (errors.includes('invalid-agent-response')) return 'invalid-agent-response';
@@ -33,7 +43,7 @@ export function summarizeGeneration(outcomes: AgentOutcome[]): GenerationSummary
     outcomes: outcomes.map(({ errors, ...outcome }) => ({
       ...outcome,
       errorCount: errors.length,
-      ...(outcome.created === 0 ? { issue: outcomeIssue(errors) } : {}),
+      ...(outcome.created === 0 && outcome.model !== 'not-called' ? { issue: outcomeIssue(errors) } : {}),
     })),
   };
 }

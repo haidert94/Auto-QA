@@ -16,7 +16,7 @@ export type IcspScenario = {
   requirementId: string | null;
 };
 
-export type IcspResult = { id: string; status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED' };
+export type IcspResult = { id: string; status: 'PASSED' | 'FAILED' | 'BLOCKED' | 'SKIPPED' | 'MEASURED' };
 
 export type IcspRun = {
   id: string;
@@ -96,7 +96,7 @@ export function computeIcsp(input: IcspInput): IcspReport {
     code: 'requirementsCoverage', label: 'Cobertura de requisitos', weight: 30,
     numerator: reqsWithScenario.length, denominator: input.requirements.length,
     value: ratio(reqsWithScenario.length, input.requirements.length),
-    description: 'Requisitos con al menos un escenario asociado.',
+    description: 'Requisitos con al menos una prueba asociada, incluidas las pruebas de calidad.',
   };
 
   // Dimensión 2: escenarios con al menos un run en la ventana reciente.
@@ -130,19 +130,19 @@ export function computeIcsp(input: IcspInput): IcspReport {
     description: 'Proporción de resultados en verde entre ejecuciones concluyentes de la ventana.',
   };
 
-  // Dimensión 4: cadena completa req → scenario → result (PASSED o FAILED).
+  // Dimensión 4: cadena completa requisito → prueba → resultado o medición.
   const reqsWithChain = input.requirements.filter(r => {
     const scenarios = scenariosByRequirement.get(r.id) ?? [];
     return scenarios.some(s => {
       const runs = runsByScenario.get(s.id) ?? [];
-      return runs.some(run => run.results.some(res => res.status === 'PASSED' || res.status === 'FAILED'));
+      return runs.some(run => run.results.some(res => res.status === 'PASSED' || res.status === 'FAILED' || res.status === 'MEASURED'));
     });
   });
   const traceability: IcspDimension = {
     code: 'traceability', label: 'Trazabilidad', weight: 20,
     numerator: reqsWithChain.length, denominator: input.requirements.length,
     value: ratio(reqsWithChain.length, input.requirements.length),
-    description: 'Requisitos con cadena completa requisito → escenario → resultado.',
+    description: 'Requisitos con una prueba asociada que tiene un resultado o una medición registrada.',
   };
 
   const dimensions: IcspDimension[] = [requirementsCoverage, executionCoverage, stability, traceability];

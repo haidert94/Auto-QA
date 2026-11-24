@@ -2,7 +2,7 @@
 
 import { createPortal } from 'react-dom';
 import { ArrowRight, Plus } from 'lucide-react';
-import type { GenerationIssue, GenerationSummary } from '../../../../api/src/automation/generation-result';
+import type { GenerationIssue, GenerationSummary, MissingGenerationRequirement } from '../../../../api/src/automation/generation-result';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { RequirementOption, ScenarioListItem } from './scenario-card';
@@ -36,7 +36,8 @@ const generationIssues: Record<GenerationIssue, string> = {
   'missing-traceability': 'Las propuestas no tenían un vínculo válido a una historia o requisito.',
   'missing-assertion': 'Las propuestas no tenían una comprobación observable.',
   'no-cases': 'El agente no devolvió casos para estos requisitos.',
-  'agent-error': 'El agente no pudo guardar casos válidos.',
+  'agent-error': 'El agente no pudo producir casos válidos.',
+  'coverage-changed': 'La prueba asociada cambió mientras se generaba el lote.'
 };
 
 function generationOutcomeDetails(generation: GenerationSummary | undefined, onlyFailingTypes: boolean) {
@@ -95,6 +96,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   const [showGenerationConfirmation, setShowGenerationConfirmation] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generateNotice, setGenerateNotice] = useState('');
+  const [missingCoverage, setMissingCoverage] = useState<MissingGenerationRequirement[]>([]);
   const deletionDisabled = busy || generating || !!listError || !!runner?.suiteRunning || !!runner?.stopping;
 
   const total = items === null ? null : items.length + qualityItems.length;
@@ -166,7 +168,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
   // que waitForReview, hace polling cada 3s con timeout duro. El timeout es
   // más amplio porque los 6 agentes corren en paralelo y cada uno puede
   // tardar segundos contra Haiku.
-  async function waitForGeneration(jobId: string, timeoutMs = 240_000): Promise<AutomationSummary | null> {
+  async function waitForGeneration(jobId: string, timeoutMs = 15 * 60_000): Promise<AutomationSummary | null> {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       try {
@@ -187,7 +189,7 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
 
   async function generate(documentTestTypes: TestTypeCode[]) {
     if (generating || !documentTestTypes.length) return;
-    setGenerateNotice(''); setError('');
+    setGenerateNotice(''); setError(''); setMissingCoverage([]);
     setGenerating(true);
     try {
       // Siempre arrancamos un job fresco al clickear "Generar casos de
@@ -213,21 +215,26 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
 
       await selectTypesOnJob(newJob.id, documentTestTypes);
 
-      setGenerateNotice('Procesando: los agentes están generando los casos…');
+      setGenerateNotice('Generando casos por historia y verificando su cobertura…');
       const done = await waitForGeneration(newJob.id);
       await Promise.all([load(), loadQuality()]);
       if (!done) {
-        setGenerateNotice('La generación está tardando más de lo esperado. Los escenarios se publicarán juntos cuando todos los tipos estén listos.');
+        setGenerateNotice('La generación sigue en curso. Los casos se publicarán juntos después de verificar la cobertura.');
         return;
       }
 
       const reference = 'Referencia de generación ' + done.id.slice(0, 8) + '.';
       const generation = done.result?.generation;
-      const incomplete = done.errorCode === 'generation-incomplete';
+      const missing = generation?.coverage?.missing ?? [];
+      const incomplete = done.errorCode === 'generation-incomplete' || done.errorCode === 'generation-coverage-changed';
       const details = generationOutcomeDetails(generation, incomplete);
-      if (incomplete || done.errorCode === 'generation-empty' || (done.status === 'COMPLETED' && generation?.totalCreated === 0)) {
+      if (missing.length || incomplete || done.errorCode === 'generation-empty'
+        || (done.status === 'COMPLETED' && generation?.totalCreated === 0 && !generation.coverage)) {
         setGenerateNotice('');
-        const message = incomplete ? 'No se guardó el lote porque faltaron casos válidos para uno o más tipos.' : 'No se guardó ningún escenario.';
+        setMissingCoverage(missing);
+        const message = missing.length
+          ? 'No se guardó el lote. Quedaron historias o requisitos sin una prueba válida.'
+          : incomplete ? 'No se guardó el lote porque faltaron casos válidos para uno o más tipos.' : 'No se guardó ningún escenario.';
         setError([message, details, reference].filter(Boolean).join(' '));
       } else if (done.status === 'FAILED' || done.status === 'CANCELED') {
         setGenerateNotice('');
@@ -237,7 +244,10 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       } else if (generation && generation.totalCreated > 0) {
         const count = generation.totalCreated;
         const saved = count === 1 ? 'Se guardó 1 escenario.' : 'Se guardaron ' + count + ' escenarios.';
-        setGenerateNotice(details ? [saved, details, reference].join(' ') : saved);
+        const covered = generation.coverage?.total;
+        setGenerateNotice([saved, covered ? 'Cobertura verificada para ' + covered + ' historias o requisitos del alcance.' : '', details, details ? reference : ''].filter(Boolean).join(' '));
+      } else if (generation?.coverage?.total) {
+        setGenerateNotice('Las historias y requisitos del alcance ya tienen una prueba asociada.');
       } else {
         setGenerateNotice('El proceso terminó sin informar cuántos escenarios se guardaron. ' + reference);
       }
@@ -372,7 +382,16 @@ export function ScenariosPanel({ project, role }: { project: Project; role?: Org
       <div className="actions"><button type="submit" disabled={busy}>{busy ? 'Creando…' : 'Crear escenario'}</button>
         <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancelar</button></div>
     </form>}
-    {error && <p className="error scenario-message" role="alert">{error}</p>}
+    {error && <div className="error scenario-message" role="alert">
+      {error}
+      {missingCoverage.length > 0 && <details>
+        <summary>Ver historias y requisitos sin prueba ({missingCoverage.length})</summary>
+        <ul>{missingCoverage.map(item => <li key={item.id}>
+          {item.externalKey && <strong>{item.externalKey} · </strong>}{item.title}
+          {' · '}{generationIssues[item.issue]}
+        </li>)}</ul>
+      </details>}
+    </div>}
     {listError ? <div className="scenario-message" role="alert"><p className="error">{listError}</p>
       <button type="button" className="secondary" onClick={() => void load()}>Reintentar escenarios</button></div>
       : items === null ? <p className="scenario-message muted" role="status">Cargando escenarios…</p>

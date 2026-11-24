@@ -17,7 +17,10 @@ import { currentReadiness } from '../documents/readiness';
 import { IPA_AUTOMATION_THRESHOLD } from '../documents/readiness-policy';
 import { readGenerationSources, type DocumentGenerationSources } from './document-generation';
 import { parseDocumentRequirementTypes, type DocumentRequirementTypes } from './document-requirement-types';
-import { runSelectedAgents } from './agents';
+import { runDocumentAgents, runSelectedAgents } from './agents';
+import type { AgentContext } from './agents/agent-types';
+import { documentCoverageKey, readCoveredDocumentSources } from './document-coverage';
+import { isTestType } from './test-types';
 import { AiRouter, type AiRouterRequest } from '../ai/ai-router';
 
 export type AutomationClaim = {
@@ -177,9 +180,16 @@ async function runGenerationPhase(
     documentVersionIds: requirement.sources.map(source => source.versionId),
     clarified: requirement.sources.some(source => !!source.clarification),
   })).sort((a, b) => Number(b.clarified) - Number(a.clarified));
+  const scopedVersionIds = [...new Set(inputs.documentGenerationSources
+    ? selection.filter(isTestType).flatMap(type => inputs.documentGenerationSources?.[type]?.map(source => source.versionId) ?? [])
+    : requirements.flatMap(requirement => requirement.documentVersionIds))];
+  const coveredSources = inputs.documentTestTypesConfirmed
+    ? await readCoveredDocumentSources(prisma, claim.projectId, scopedVersionIds)
+    : new Set<string>();
+
   const environmentId = project.environments[0]?.id ?? null;
   const batch: GeneratedCase[] = [];
-  const outcomes = await runSelectedAgents(selection, {
+  const context: AgentContext = {
     projectId: claim.projectId,
     organizationId: project.organizationId,
     jobId: claim.id,
@@ -188,11 +198,17 @@ async function runGenerationPhase(
     url: inputs.url,
     description: inputs.description,
     review,
-    requirements,
+    requirements: requirements.map(requirement => ({
+      ...requirement,
+      covered: requirement.sources.some(source => coveredSources.has(documentCoverageKey(source))),
+    })),
     documentTestTypesConfirmed: inputs.documentTestTypesConfirmed,
     documentGenerationSources: inputs.documentGenerationSources,
     documentRequirementTypes: inputs.documentRequirementTypes,
-  }, { prisma, router, batch });
+  };
+  const deps = { prisma, router, batch };
+  const documentBatch = inputs.documentTestTypesConfirmed ? await runDocumentAgents(selection, context, deps) : null;
+  const outcomes = documentBatch?.outcomes ?? await runSelectedAgents(selection, context, deps);
 
   await mergeStep(prisma, claim.id, 'generating', {
     outcomes: outcomes.map(o => ({ type: o.type, prepared: o.created, usedFallback: o.usedFallback, model: o.model, errors: o.errors.slice(0, 5) })),
@@ -201,17 +217,17 @@ async function runGenerationPhase(
   const generation = summarizeGeneration(outcomes);
   const result = {
     ...(previous?.result as Record<string, unknown> ?? {}),
-    generation: { selection, ...generation },
+    generation: { selection, ...generation, ...(documentBatch && { coverage: documentBatch.coverage }) },
   };
-  const incomplete = selection.some(type => !outcomes.some(outcome => outcome.type === type && outcome.created > 0));
-  if (incomplete) {
+  const incompleteTypes = (documentBatch?.requiredTypes ?? selection).some(type => !outcomes.some(outcome => outcome.type === type && outcome.created > 0));
+  if (incompleteTypes || documentBatch?.coverage.missing.length) {
     const errorCode = batch.length ? 'generation-incomplete' : 'generation-empty';
     await prisma.automationJob.update({
       where: { id: claim.id, stage: 'generating' },
       data: {
         status: 'FAILED', errorCode, completedAt: new Date(),
         result: { ...result, generation: {
-          selection, totalCreated: 0, outcomes: generation.outcomes.map(outcome => ({ ...outcome, created: 0 })),
+          ...result.generation, totalCreated: 0, outcomes: generation.outcomes.map(outcome => ({ ...outcome, created: 0 })),
         } } as never,
       },
     });
@@ -229,6 +245,27 @@ async function runGenerationPhase(
           data: { status: 'FAILED', errorCode: 'document-analysis-changed', completedAt: new Date() },
         });
         return false;
+      }
+      if (documentBatch) {
+        const stagedIds = new Set(batch.map(candidate => candidate.data.requirementId));
+        const latestCoverage = await readCoveredDocumentSources(tx, claim.projectId, scopedVersionIds);
+        const scopedIds = new Set(documentBatch.scopedRequirements.map(requirement => requirement.id));
+        const lost = requirements.filter(requirement => scopedIds.has(requirement.id) && !stagedIds.has(requirement.id)
+          && !requirement.sources.some(source => latestCoverage.has(documentCoverageKey(source))));
+        if (lost.length) {
+          await tx.automationJob.update({
+            where: { id: claim.id, stage: 'generating' },
+            data: {
+              status: 'FAILED', errorCode: 'generation-coverage-changed', completedAt: new Date(),
+              result: { ...result, generation: { ...result.generation, totalCreated: 0,
+                outcomes: generation.outcomes.map(outcome => ({ ...outcome, created: 0 })),
+                coverage: { total: documentBatch.coverage.total, missing: lost.map(({ id, title, externalKey }) =>
+                  ({ id, title, externalKey, issue: 'coverage-changed' })) },
+              } } as never,
+            },
+          });
+          return false;
+        }
       }
       await saveGeneratedBatch(tx, claim.projectId, batch, requirements);
       await tx.automationJob.update({

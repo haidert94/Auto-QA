@@ -112,31 +112,34 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           <thead>
             <tr>
               <th>Requisito</th>
-              <th>Escenarios</th>
+              <th>Pruebas asociadas</th>
               <th>Último resultado</th>
             </tr>
           </thead>
           <tbody>
-            {report.traceability.map(row => <tr key={row.requirement.id}>
-              <td>
-                {row.requirement.externalKey && <code>[{row.requirement.externalKey}]</code>}{' '}
-                {row.requirement.title}
-              </td>
-              <td>
-                {row.scenarios.length === 0
-                  ? <span className="muted">— sin escenario —</span>
-                  : <ul className="trace-scenarios">
-                    {row.scenarios.map(s => <li key={s.id}>{s.title}</li>)}
-                  </ul>}
-              </td>
-              <td>
-                {row.scenarios.flatMap(s => s.lastRun ? [s.lastRun] : [])[0]
-                  ? <span className={`badge badge-result-${(row.scenarios.find(s => s.lastRun)?.lastRun?.result?.status ?? 'blocked').toLowerCase()}`}>
-                    {row.scenarios.find(s => s.lastRun)?.lastRun?.result?.status ?? row.scenarios.find(s => s.lastRun)?.lastRun?.status}
-                  </span>
-                  : <span className="muted">—</span>}
-              </td>
-            </tr>)}
+            {report.traceability.map(row => {
+              const lastRun = row.scenarios.map(s => s.lastRun).filter(run => run !== null)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+              const status = lastRun?.result?.status ?? lastRun?.status;
+              return <tr key={row.requirement.id}>
+                <td>
+                  {row.requirement.externalKey && <code>[{row.requirement.externalKey}]</code>}{' '}
+                  {row.requirement.title}
+                </td>
+                <td>
+                  {row.scenarios.length === 0
+                    ? <span className="muted">Por cubrir</span>
+                    : <ul className="trace-scenarios">
+                      {row.scenarios.map(s => <li key={s.id}>{s.title}</li>)}
+                    </ul>}
+                </td>
+                <td>
+                  {status === 'MEASURED' ? <span className="muted">Medición registrada</span>
+                    : status ? <span className={`badge badge-result-${(lastRun?.result?.status ?? 'blocked').toLowerCase()}`}>{status}</span>
+                    : <span className="muted">—</span>}
+                </td>
+              </tr>;
+            })}
           </tbody>
         </table>}
     </section>

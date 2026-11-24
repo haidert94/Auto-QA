@@ -194,7 +194,7 @@ export function QualityPanel({ project }: { project: Project }) {
             <div className="quality-progress"><span style={{ width: `${dimension.denominator > 0 ? Math.max(0, Math.min(100, dimension.value * 100)) : 0}%` }} /></div>
           </li>)}</ol>
           <dl className="quality-document-counts quality-gap-counts">{([
-            ['requirementsWithoutScenario', 'Requisitos sin escenario'],
+            ['requirementsWithoutScenario', 'Requisitos por cubrir'],
             ['scenariosNotExecuted', 'Escenarios sin ejecución'],
             ['unstableScenarios', 'Escenarios inestables'],
           ] as const).map(([key, title]) => <button key={key} type="button"
@@ -202,6 +202,7 @@ export function QualityPanel({ project }: { project: Project }) {
             aria-label={`Abrir detalle de ${title}`}>
             <dt>{title}</dt><dd>{health.gaps[key].length}</dd>
           </button>)}</dl>
+          {health.gaps.requirementsWithoutScenario.length > 0 && <p className="muted">Los requisitos por cubrir todavía necesitan una prueba asociada. Consulta las ambigüedades en Análisis documental.</p>}
           <Link className="quality-detail-link" href={`/projects/${project.id}/icsp`}>Ver dimensiones e histórico de ICSP →</Link></div>}
       </EvaluationCard>
     </div>
@@ -251,7 +252,7 @@ export function QualityPanel({ project }: { project: Project }) {
     <nav className="quality-tools" aria-label="Resultados de calidad"><QualityResultsLink projectId={project.id} /></nav>
     {gapOpen && health && <IcspGapModal projectId={project.id}
       kind={gapOpen}
-      title={({ requirementsWithoutScenario: 'Requisitos sin escenario', scenariosNotExecuted: 'Escenarios sin ejecución', unstableScenarios: 'Escenarios inestables' } as Record<string, string>)[gapOpen]}
+      title={({ requirementsWithoutScenario: 'Requisitos por cubrir', scenariosNotExecuted: 'Escenarios sin ejecución', unstableScenarios: 'Escenarios inestables' } as Record<string, string>)[gapOpen]}
       items={health.gaps[gapOpen]} onClose={() => setGapOpen(null)} />}
   </section>;
 }

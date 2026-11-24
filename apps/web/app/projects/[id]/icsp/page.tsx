@@ -90,7 +90,7 @@ export default async function IcspPage({ params }: { params: Promise<{ id: strin
 
     <section className="app-section">
       <header><h2><span>02 //</span> BRECHAS ACCIONABLES</h2></header>
-      <GapList title="Requisitos sin escenario" gaps={icsp.gaps.requirementsWithoutScenario} empty="Todos los requisitos tienen al menos un escenario." />
+      <GapList title="Requisitos por cubrir" gaps={icsp.gaps.requirementsWithoutScenario} empty="Todos los requisitos tienen al menos una prueba asociada." />
       <GapList title={`Escenarios sin ejecución en ${icsp.window.days}d`} gaps={icsp.gaps.scenariosNotExecuted} empty="Todos los escenarios se han ejecutado recientemente." />
       <GapList title="Escenarios inestables" gaps={icsp.gaps.unstableScenarios} empty="Ningún escenario muestra inestabilidad en la ventana." />
     </section>

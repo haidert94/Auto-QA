@@ -2,9 +2,10 @@ import type { Prisma } from '@prisma/client';
 import { REQUIREMENT_KINDS } from '../documents/document-analysis';
 import { documentAnalysisSignature, readDocumentSnapshot } from '../documents/document-records';
 import { COMPATIBILITY_SCENARIO_TAGS, MANUAL_SCENARIO_TAG } from '../scenarios/scenario-tags';
+import { documentCoverageKey, readCoveredDocumentSources } from './document-coverage';
 import { ALL_TEST_TYPES, isTestType, type AutomationTestType } from './test-types';
 
-type Source = { versionId: string; clarifiedAt: string | null };
+type Source = { versionId: string; clarifiedAt: string | null; coverageOnly?: true };
 export type DocumentGenerationSources = Partial<Record<AutomationTestType, Source[]>>;
 
 function object(value: unknown): Record<string, unknown> {
@@ -19,7 +20,8 @@ export function readGenerationSources(value: unknown): DocumentGenerationSources
     if (!Array.isArray(entries)) continue;
     result[type] = entries.map(object).flatMap(entry =>
       typeof entry.versionId === 'string'
-        ? [{ versionId: entry.versionId, clarifiedAt: typeof entry.clarifiedAt === 'string' ? entry.clarifiedAt : null }]
+        ? [{ versionId: entry.versionId, clarifiedAt: typeof entry.clarifiedAt === 'string' ? entry.clarifiedAt : null,
+          ...(entry.coverageOnly === true ? { coverageOnly: true } as const : {}) }]
         : [],
     );
   }
@@ -46,14 +48,14 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
   if (!documents.length) return empty;
 
   const versionIds = documents.map(document => document.versionId);
-  const [analysis, jobs, scenarios] = await Promise.all([
+  const [analysis, jobs, scenarios, coveredSources] = await Promise.all([
     tx.documentAnalysis.findUnique({
       where: { projectId_signature: { projectId, signature: documentAnalysisSignature(snapshot) } },
       select: {
         id: true,
         findings: {
           where: { versionId: { in: versionIds }, kind: { in: REQUIREMENT_KINDS } },
-          select: { versionId: true, pendingConfirmation: true, clarification: true,
+          select: { versionId: true, locator: true, text: true, pendingConfirmation: true, clarification: true,
             requirement: { select: { _count: { select: { criteria: true } } } } },
         },
       },
@@ -69,6 +71,7 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
         select: { versionId: true },
       } } } },
     }),
+    readCoveredDocumentSources(tx, projectId, versionIds),
   ]);
   if (!analysis) return empty;
 
@@ -124,11 +127,15 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
     }
   }
 
+  const uncoveredVersions = new Set<string>();
   const findingsByVersion = new Map<string, { verified: number; pending: number; clarifiedAt: string | null }>();
   for (const finding of analysis.findings) {
     const totals = findingsByVersion.get(finding.versionId) ?? { verified: 0, pending: 0, clarifiedAt: null };
     if (finding.pendingConfirmation || !finding.requirement?._count.criteria) totals.pending++;
-    else totals.verified++;
+    else {
+      totals.verified++;
+      if (!coveredSources.has(documentCoverageKey(finding))) uncoveredVersions.add(finding.versionId);
+    }
     const approvedAt = object(finding.clarification).approvedAt;
     if (typeof approvedAt === 'string' && (!totals.clarifiedAt || approvedAt > totals.clarifiedAt)) {
       totals.clarifiedAt = approvedAt;
@@ -144,7 +151,8 @@ export async function documentGenerationScope(tx: Prisma.TransactionClient, proj
       if (!testTypes.includes(type)) return [];
       const clarifiedAt = findingsByVersion.get(versionId)?.clarifiedAt ?? null;
       const covered = worked.get(type)?.get(versionId);
-      return covered === undefined || covered < (clarifiedAt ?? '') ? [{ versionId, clarifiedAt }] : [];
+      if (covered === undefined || covered < (clarifiedAt ?? '')) return [{ versionId, clarifiedAt }];
+      return uncoveredVersions.has(versionId) ? [{ versionId, clarifiedAt, coverageOnly: true as const }] : [];
     });
     const ready = pending.filter(source => (findingsByVersion.get(source.versionId)?.verified ?? 0) > 0);
     for (const source of ready) pendingVersions.add(source.versionId);

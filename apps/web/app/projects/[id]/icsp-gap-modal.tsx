@@ -24,7 +24,7 @@ export function IcspGapModal({ projectId, title, kind, items, onClose }: {
   }, [onClose]);
 
   const linkFor = (item: IcspGap): string | null => {
-    if (kind === 'requirementsWithoutScenario') return `/projects/${projectId}#escenarios`;
+    if (kind === 'requirementsWithoutScenario' || item.id.includes(':')) return `/projects/${projectId}#escenarios`;
     if (kind === 'scenariosNotExecuted' || kind === 'unstableScenarios') return `/projects/${projectId}/scenarios/${item.id}`;
     return null;
   };
@@ -35,6 +35,7 @@ export function IcspGapModal({ projectId, title, kind, items, onClose }: {
       <header><h3>{title} ({items.length})</h3>
         <button type="button" aria-label="Cerrar" onClick={onClose}><X size={14} /></button></header>
       <div className="quality-detail-body">
+        {kind === 'requirementsWithoutScenario' && items.length > 0 && <p className="muted">Estos requisitos todavía necesitan una prueba asociada.</p>}
         {items.length === 0 ? <p className="muted">Sin brechas reportadas en esta categoría.</p>
           : <ol className="icsp-gap-list">{items.slice(0, 100).map(item => {
             const href = linkFor(item);

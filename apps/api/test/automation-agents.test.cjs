@@ -31,7 +31,7 @@ const readyProject = {
 const processedVersion = { uploadedAt: new Date(), processedAt: new Date(), validatedAt: new Date(), hasText: true };
 function traceableFinding(versionId, overrides = {}) {
   return { id: versionId, kind: 'USER_STORY', requirementId: 'requirement-id', pendingConfirmation: false,
-    requirement: { _count: { criteria: 1 } }, versionId,
+    requirement: { _count: { criteria: 1 } }, versionId, locator: 'line:1', text: 'Requisito confirmado', clarification: null,
     version: { id: versionId, number: 1, document: { id: 'document', filename: 'historias.md' } }, ...overrides };
 }
 
@@ -263,7 +263,12 @@ test('la API solo confirma tipos con documentos pendientes y comprueba que el al
   const writes = [];
   let job;
   let approvedAt;
+  let performanceCovered = false;
   const service = new AutomationService({
+    documentVersion: { async findMany() { return []; } },
+    requirementTraceability: { async findMany() {
+      return [traceableFinding('web-version'), ...(performanceCovered ? [traceableFinding('perf-version')] : [])];
+    } },
     async $transaction(fn) { return fn(this); },
     async $queryRaw() {},
     project: { async findFirst() { return { id: 'project' }; }, async findUniqueOrThrow() { return readyProject; } },
@@ -305,6 +310,7 @@ test('la API solo confirma tipos con documentos pendientes y comprueba que el al
 
   jobs.push({ inputs: writes[1].inputs, createdAt: new Date('2026-11-21T00:00:00Z'),
     result: { generation: { outcomes: [{ type: 'performance', created: 1, errorCount: 0 }] } } });
+  performanceCovered = true;
   assert.deepEqual((await service.pendingDocumentTypes('project', workspace)).types, []);
   await assert.rejects(service.select('project', 'job', { types: ['performance'] }, workspace), /alcance pendiente cambió/);
   approvedAt = '2026-11-22T00:00:00.000Z';

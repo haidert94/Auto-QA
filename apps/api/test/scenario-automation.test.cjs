@@ -188,6 +188,10 @@ test('el reporte consolidado espera la primera ejecución finalizada e ignora la
       return { id: 'project' };
     } },
     requirement: { async findMany() { return [{ id: 'requirement', title: 'Requisito' }]; } },
+    monitor: { async findMany() { return []; } },
+    performanceAudit: { async findMany() { return []; } },
+    loadTest: { async findMany() { return []; } },
+    uxAudit: { async findMany() { return []; } },
     testScenario: { async findMany() { return [{ id: 'scenario', title: 'Escenario', requirementId: 'requirement' }]; } },
     testRun: {
       async findFirst({ where }) {

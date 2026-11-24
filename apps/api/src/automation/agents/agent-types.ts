@@ -19,11 +19,12 @@ export type AgentContext = {
   description: string | null;
   review: Pick<ReviewResult, 'stories'>;
   documentTestTypesConfirmed?: boolean;
+  completingCoverage?: boolean;
   documentGenerationSources?: import('../document-generation').DocumentGenerationSources;
   documentRequirementTypes?: import('../document-requirement-types').DocumentRequirementTypes;
   requirements?: Array<{
     id: string; externalKey?: string | null; module?: string | null; title: string; criteria: Array<{ text: string }>;
-    scenarios?: Array<{ tags: string[] }>; documentVersionIds?: string[];
+    scenarios?: Array<{ tags: string[] }>; documentVersionIds?: string[]; covered?: boolean;
   }>;
 };
 
@@ -89,6 +90,9 @@ export function scenarioAnalysisContext(ctx: AgentContext): string {
     + requirement.criteria.map(criterion => '\n  - ' + criterion.text.slice(0, 250)).join(''),
   );
   const context = ctx.documentTestTypesConfirmed ? requirements : [...stories, ...requirements];
+  if (ctx.completingCoverage) {
+    context.unshift('Genera un caso por cada requisito de esta lista que corresponda al tipo solicitado. Prioriza cubrir cada ID antes de proponer variantes. Omite los casos que no puedas sustentar.');
+  }
   return context.join('\n') || '(sin historias ni requisitos analizados)';
 }
 

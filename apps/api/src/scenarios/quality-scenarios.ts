@@ -7,7 +7,7 @@ import { UX_NAVIGATION_TIMEOUT_MS, UX_VIEWPORT } from '../ux/ux-evidence';
 import { qualityAutomationSource, qualityAutomationStatus, type QualityAutomation, type QualityKind as Kind } from './quality-automation';
 type StatusTone = 'pending' | 'passed' | 'failed' | 'unknown';
 type Status = { label: string; tone: StatusTone };
-type Run = { status: RunStatus; startedAt: Date | null; completedAt: Date | null };
+type Run = { status: RunStatus; startedAt: Date | null; completedAt: Date | null; createdAt: Date };
 
 export type QualityScenarioOrigin = {
   kind: Kind;
@@ -26,6 +26,7 @@ export type QualityScenarioOrigin = {
   durationMs: number | null;
   result: string | null;
   hasResult: boolean;
+  availabilityVerdict?: 'PASSED' | 'FAILED';
   href?: string;
 };
 
@@ -45,7 +46,7 @@ const runStatuses: Record<RunStatus, Status> = {
 };
 
 const requirementFields = { caseCode: true, requirementId: true, requirement: { select: { title: true, externalKey: true } } } as const;
-const runFields = { ...qualityAutomationSource, ...requirementFields, id: true, status: true, startedAt: true, completedAt: true } as const;
+const runFields = { ...qualityAutomationSource, ...requirementFields, id: true, status: true, startedAt: true, completedAt: true, createdAt: true } as const;
 
 function publicTarget(raw: string) {
   try {
@@ -76,10 +77,11 @@ const lighthouseCategoryLabels = {
 };
 
 function runInfo(run: Run) {
+  const hasResult = run.status === 'COMPLETED' || run.status === 'FAILED';
   return {
     status: runStatuses[run.status],
-    hasResult: run.status === 'COMPLETED' || run.status === 'FAILED',
-    runAt: (run.completedAt ?? run.startedAt)?.toISOString() ?? null,
+    hasResult,
+    runAt: (run.completedAt ?? run.startedAt ?? (hasResult ? run.createdAt : null))?.toISOString() ?? null,
     durationMs: run.startedAt && run.completedAt ? Math.max(0, run.completedAt.getTime() - run.startedAt.getTime()) : null,
   };
 }
@@ -147,6 +149,7 @@ export async function readQualityScenarios(db: Prisma.TransactionClient, project
             { label: 'Estado del monitor', value: row.active ? 'Activo' : 'En pausa' },
           ]), monitor: { method, minStatus, maxStatus, intervalMinutes, timeoutMs, active } },
           status, hasResult: !!row.lastCheckedAt, runAt: row.lastCheckedAt?.toISOString() ?? null,
+          availabilityVerdict: row.lastStatus === 'UP' ? 'PASSED' : row.lastStatus === 'DOWN' ? 'FAILED' : undefined,
           durationMs: row.lastLatencyMs,
           result: row.lastHttpStatus === null ? null : 'Última respuesta HTTP ' + row.lastHttpStatus + '.',
           href: root + '/monitors/' + row.id,

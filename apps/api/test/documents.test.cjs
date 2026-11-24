@@ -474,7 +474,7 @@ test('al agregar un documento de Performance se excluyen los tipos ya generados'
   assert.equal((await prisma.testScenario.findUniqueOrThrow({ where: { id: scenario.id } })).requirementId, original.requirementId);
 });
 
-test('reintenta Móvil y Manual sin repetir Funcional y usa la categoría de cada historia', async () => {
+test('completa la cobertura en lotes y recupera historias omitidas por una generación anterior', async () => {
   const path = await project('Generación por categoría');
   const projectId = path.split('/')[1];
   const base = '/' + projectId + '/automation';
@@ -511,44 +511,79 @@ test('reintenta Móvil y Manual sin repetir Funcional y usa la categoría de cad
     result: { generation: { outcomes: types.map(type => ({ type, created: Number(type === 'functional_web'), errorCount: 0 })) } },
   } });
   const pending = await read(base + '/types/pending');
-  const remaining = ['mobile_emulated', 'manual'];
+  const remaining = types;
   assert.deepEqual(pending.data.types, remaining.map(code => ({ code, available: true })));
-  const job = await request(base, {
-    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: 'https://example.test', documentTestTypes: remaining }),
-  });
-  assert.equal(job.status, 201, JSON.stringify(job.data));
-  const selected = await request(base + '/' + job.data.id + '/select', {
-    method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ types: remaining }),
-  });
-  assert.equal(selected.status, 201, JSON.stringify(selected.data));
-  const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
-  assert.deepEqual(saved.inputs.documentRequirementTypes, { [versionId]: { mobile_emulated: ['HU-M01'], manual: ['HU-X01'] } });
   const { runAutomation } = require('../dist/automation/pipeline-runner');
-  await runAutomation(prisma, {
-    id: saved.id, projectId, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
-  }, {
+  const attempts = new Map();
+  let omitted = 'HU-31';
+  const router = {
     async dispatch({ prompt }) {
-      assert.doesNotMatch(prompt, /Consultar la sección/);
-      if (prompt.includes('HU-M01')) {
-        assert.doesNotMatch(prompt, /HU-X01/);
+      if (prompt.includes('Traslada las historias seleccionadas a un navegador móvil')) {
+        assert.match(prompt, /HU-M01/);
+        assert.doesNotMatch(prompt, /HU-X01|Consultar la sección/);
         return { model: 'test', text: JSON.stringify({ scenarios: [{
           title: 'Consultar cesta en móvil', mode: 'playwright', requirementId: 'HU-M01',
           steps: [{ action: 'navigate: /cesta' }, { action: 'expect-text: Total' }],
         }] }) };
       }
-      assert.match(prompt, /HU-X01/);
-      return { model: 'test', text: JSON.stringify({ scenarios: [{
-        title: 'Revisar recibo manualmente', mode: 'manual', requirementId: 'HU-X01',
-        expectedResult: 'El recibo incluye el total.', steps: [{ action: 'Abre el recibo.', expected: 'Se muestra el total.' }],
-      }] }) };
+      if (prompt.includes('Genera hasta 5 casos manuales')) {
+        assert.match(prompt, /HU-X01/);
+        assert.doesNotMatch(prompt, /Consultar la sección/);
+        return { model: 'test', text: JSON.stringify({ scenarios: [{
+          title: 'Revisar recibo manualmente', mode: 'manual', requirementId: 'HU-X01',
+          expectedResult: 'El recibo incluye el total.', steps: [{ action: 'Abre el recibo.', expected: 'Se muestra el total.' }],
+        }] }) };
+      }
+      const keys = [...new Set([...prompt.matchAll(/\[(HU-\d+)\]/g)].map(match => match[1]))];
+      assert.ok(keys.length > 0 && keys.length <= 3, 'El generador reintenta con lotes internos acotados.');
+      assert.ok(!keys.includes('HU-10'), 'El escenario que ya existe satisface su historia.');
+      for (const key of keys) attempts.set(key, (attempts.get(key) ?? 0) + 1);
+      return { model: 'test', text: JSON.stringify({ scenarios: keys.filter(key => key !== omitted).map(key => ({
+        title: 'Mostrar sección ' + key, mode: 'playwright', requirementId: key,
+        steps: [{ action: 'navigate: /catalogo' }, { action: 'expect-text: Sección ' + key.slice(3) }],
+      })) }) };
     },
-  });
+  };
+  async function generate() {
+    const job = await request(base, {
+      method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://example.test', documentTestTypes: remaining }),
+    });
+    assert.equal(job.status, 201, JSON.stringify(job.data));
+    const selected = await request(base + '/' + job.data.id + '/select', {
+      method: 'POST', headers: { ...authorized, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ types: remaining }),
+    });
+    assert.equal(selected.status, 201, JSON.stringify(selected.data));
+    const saved = await prisma.automationJob.findUniqueOrThrow({ where: { id: job.data.id } });
+    assert.deepEqual(saved.inputs.documentRequirementTypes, { [versionId]: {
+      functional_web: Array.from({ length: 22 }, (_, i) => 'HU-' + (i + 10)),
+      mobile_emulated: ['HU-M01'], manual: ['HU-X01'],
+    } });
+    assert.equal(saved.inputs.documentGenerationSources.functional_web[0].coverageOnly, true);
+    await runAutomation(prisma, {
+      id: saved.id, projectId, inputs: saved.inputs, runKey: saved.runKey, priorStage: saved.stage,
+    }, router);
+    return read(base + '/' + saved.id);
+  }
+
+  const failed = await generate();
+  assert.equal(failed.data.errorCode, 'generation-incomplete');
+  assert.equal(failed.data.result.generation.totalCreated, 0);
+  assert.deepEqual(failed.data.result.generation.coverage.missing.map(item => item.externalKey), ['HU-31']);
+  assert.equal(attempts.get('HU-31'), 2);
+  assert.ok([...attempts.entries()].every(([key, count]) => key === 'HU-31' || count === 1));
+  assert.equal(await prisma.testScenario.count({ where: { projectId } }), 1);
+
+  omitted = null;
+  const completed = await generate();
+  assert.equal(completed.data.status, 'COMPLETED', JSON.stringify(completed.data.result));
+  assert.deepEqual(completed.data.result.generation.coverage, { total: 24, missing: [] });
   const generated = await prisma.testScenario.findMany({
     where: { projectId }, select: { tags: true, requirement: { select: { externalKey: true } } },
   });
-  assert.equal(generated.length, 3);
+  assert.equal(generated.length, 24);
+  assert.equal(new Set(generated.map(item => item.requirement.externalKey)).size, 24);
   assert.equal(generated.find(item => item.tags.includes('@mobile')).requirement.externalKey, 'HU-M01');
   assert.equal(generated.find(item => item.tags.includes('@manual')).requirement.externalKey, 'HU-X01');
   assert.deepEqual((await read(base + '/types/pending')).data.types, []);

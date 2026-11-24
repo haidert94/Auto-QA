@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { projectScope, type Workspace } from '../commerce/workspace.guard';
 import { PrismaService } from '../prisma.service';
 import { REPORTABLE_RUN_STATUSES, REPORT_SCENARIO_SCOPE } from '../runs/run-report-policy';
-import { computeIcsp, type IcspInput, type IcspReport } from './icsp-calculator';
+import { readQualityScenarios } from '../scenarios/quality-scenarios';
+import { computeIcsp, type IcspInput, type IcspReport, type IcspRun } from './icsp-calculator';
 
 const RECENT_WINDOW_DAYS = 30;
 
@@ -56,7 +57,7 @@ export class IcspService {
   // Expuesto para que reports/ReportsService consuma ICSP sin duplicar la
   // lectura de BD.
   async collect(projectId: string, reportableOnly = false): Promise<IcspInput> {
-    const [requirements, scenarios, runs] = await Promise.all([
+    const [requirements, scenarios, runs, qualityScenarios] = await Promise.all([
       this.prisma.requirement.findMany({
         where: { projectId },
         select: { id: true, title: true, externalKey: true },
@@ -79,8 +80,27 @@ export class IcspService {
         orderBy: { createdAt: 'desc' },
         take: 500,
       }),
+      readQualityScenarios(this.prisma, projectId),
     ]);
-    return { now: new Date(), recentWindowDays: RECENT_WINDOW_DAYS, requirements, scenarios, runs };
+
+    const qualityRuns = qualityScenarios.flatMap(({ id, quality }): IcspRun[] => {
+      if (!quality.hasResult || !quality.runAt) return [];
+      const failed = quality.status.tone === 'failed' || quality.availabilityVerdict === 'FAILED';
+      const outcome = quality.availabilityVerdict ?? (quality.result !== null ? 'MEASURED' : null);
+      return [{
+        id,
+        scenarioId: id,
+        status: failed ? 'FAILED' : 'COMPLETED',
+        createdAt: new Date(quality.runAt),
+        results: outcome ? [{ id, status: outcome }] : [],
+      }];
+    });
+
+    return {
+      now: new Date(), recentWindowDays: RECENT_WINDOW_DAYS, requirements,
+      scenarios: [...scenarios, ...qualityScenarios.map(({ id, title, requirementId }) => ({ id, title, requirementId }))],
+      runs: [...runs, ...qualityRuns].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+    };
   }
 
   private async ensureProject(projectId: string, workspace: Workspace) {

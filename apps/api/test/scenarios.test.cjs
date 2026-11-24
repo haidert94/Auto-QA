@@ -414,6 +414,58 @@ test('GET /scenarios solo lista escenarios del propio proyecto', async () => {
   assert.deepEqual(detail.tags, listA[0].tags);
 });
 
+test('ICSP y el informe consolidado cuentan pruebas de calidad vinculadas a requisitos del proyecto', async () => {
+  const projectId = await makeProject();
+  const otherProject = await makeProject();
+  const [availability, lighthouse, load, ux, uncovered, foreign] = await Promise.all([
+    ...Array.from({ length: 5 }, () => makeRequirement(projectId)),
+    makeRequirement(otherProject),
+  ]);
+  const source = { projectId, url: 'https://example.test' };
+  const recordedAt = new Date(Date.now() - 60_000);
+  const completed = { ...source, status: 'COMPLETED', completedAt: recordedAt };
+  const [monitor, unexecuted] = await Promise.all([
+    prisma.monitor.create({ data: {
+      ...source, requirementId: availability, name: 'Monitor en pausa', active: false,
+      lastCheckedAt: recordedAt, lastStatus: 'DOWN',
+    } }),
+    prisma.performanceAudit.create({ data: { ...source, requirementId: lighthouse, status: 'QUEUED' } }),
+    prisma.performanceAudit.create({ data: { ...completed, requirementId: lighthouse, performanceScore: 30 } }),
+    prisma.loadTest.create({ data: {
+      ...completed, requirementId: load, name: 'Carga', stages: [], p95Ms: 250,
+    } }),
+    prisma.uxAudit.create({ data: { ...completed, requirementId: ux, totalFindings: 0 } }),
+    prisma.uxAudit.create({ data: { ...completed, requirementId: foreign, totalFindings: 0 } }),
+    prisma.uxAudit.create({ data: { ...completed, totalFindings: 3 } }),
+  ]);
+  const root = baseUrl + '/projects/' + projectId;
+  const response = await request(root + '/icsp');
+  assert.equal(response.status, 200);
+  const icsp = await response.json();
+  assert.deepEqual(icsp.dimensions.map(({ code, numerator, denominator }) => [code, numerator, denominator]), [
+    ['requirementsCoverage', 4, 5],
+    ['executionCoverage', 4, 5],
+    ['stability', 0, 1],
+    ['traceability', 4, 5],
+  ]);
+  assert.deepEqual(icsp.gaps.requirementsWithoutScenario.map(gap => gap.id), [uncovered]);
+  assert.deepEqual(icsp.gaps.scenariosNotExecuted.map(gap => gap.id), ['lighthouse:' + unexecuted.id]);
+  assert.deepEqual(icsp.counts, { requirements: 5, scenarios: 5, runs: 4, results: 4, passed: 0, failed: 1 });
+
+  // El informe también funciona cuando todas las ejecuciones pertenecen a pruebas de calidad.
+  await prisma.performanceAudit.update({ where: { id: unexecuted.id }, data: { status: 'CANCELED' } });
+  const exported = await request(root + '/report/export');
+  assert.equal(exported.status, 200);
+  const report = await exported.json();
+  assert.equal(report.icsp.dimensions[0].numerator, 4);
+  const scenariosFor = id => report.traceability.find(row => row.requirement.id === id).scenarios;
+  assert.deepEqual(scenariosFor(uncovered), []);
+  assert.equal(scenariosFor(availability)[0].id, 'availability:' + monitor.id);
+  assert.equal(scenariosFor(availability)[0].lastRun.result.status, 'FAILED');
+  assert.equal(scenariosFor(load)[0].lastRun.result.status, 'MEASURED');
+  assert.equal(scenariosFor(ux)[0].lastRun.result.status, 'MEASURED');
+});
+
 test('Escenarios consulta monitores, Lighthouse, carga y UX con pasos en español y resultados del proyecto', async () => {
   const projectId = await makeProject();
   const otherProject = await makeProject();

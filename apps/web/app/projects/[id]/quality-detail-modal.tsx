@@ -251,7 +251,7 @@ export function IcspDetailModal({ projectId, icsp, history, generatedAt, onClose
     </section>
     <section>
       <h4>Brechas</h4>
-      {([['requirementsWithoutScenario', 'Requisitos sin escenario'], ['scenariosNotExecuted', 'Escenarios sin ejecución'], ['unstableScenarios', 'Escenarios inestables']] as const).map(([key, title]) => <details key={key} className="quality-detail-gap">
+      {([['requirementsWithoutScenario', 'Requisitos por cubrir'], ['scenariosNotExecuted', 'Escenarios sin ejecución'], ['unstableScenarios', 'Escenarios inestables']] as const).map(([key, title]) => <details key={key} className="quality-detail-gap">
         <summary>{title} ({icsp.gaps[key].length})</summary>
         {icsp.gaps[key].length > 0 ? <ul>{icsp.gaps[key].slice(0, 30).map(item => <li key={item.id}>
           {item.label}{item.detail && <small> — {item.detail}</small>}
