@@ -4,21 +4,10 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, GitBranch, ShieldAlert } from 'lucide-react';
 import { AlertsChart, RunsChart } from '../code-health';
 
-type AlertCounts = { critical: number; high: number; medium: number; low: number; note: number; other: number; total: number };
-type WorkflowRun = { id: number; status: string; conclusion: string | null; createdAt: string; url: string; headSha: string };
-type AlertDetail = { id: number; severity: string; title: string; location: string | null; url: string; package?: string };
-type CodeHealth = {
-  configured: boolean;
-  repository: string | null;
-  fetchedAt: string;
-  workflow: { name: string; recent: WorkflowRun[]; successRate: number | null } | null;
-  codeql: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
-  dependabot: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
-  message?: string;
-};
+import type { CodeHealthResult } from '../../../../../api/src/quality/code-health.service';
 
 export function CodeHealthDetail() {
-  const [data, setData] = useState<CodeHealth | null>(null);
+  const [data, setData] = useState<CodeHealthResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -49,17 +38,17 @@ export function CodeHealthDetail() {
       <div className="code-health-widget">
         <header>{data.workflow?.recent.some(r => r.conclusion === 'failure') ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
           <h3>CI · {data.workflow?.name ?? '—'}</h3></header>
-        {data.workflow ? <RunsChart runs={data.workflow.recent} successRate={data.workflow.successRate} /> : <p className="muted">Sin workflow configurado.</p>}
+        {data.workflow ? <RunsChart workflow={data.workflow} /> : <p className="muted">Sin workflow configurado.</p>}
       </div>
       <div className="code-health-widget">
         <header><ShieldAlert size={14} /><h3>CodeQL</h3></header>
         {data.codeql?.enabled ? <AlertsChart title="Alertas CodeQL" counts={data.codeql.counts} url={data.codeql.url} top={data.codeql.top ?? []} />
-          : <p className="muted">CodeQL no habilitado todavía. Activa el workflow <code>codeql.yml</code> en GitHub.</p>}
+          : <p className="muted">CodeQL sin datos disponibles. Revisa el workflow <code>codeql.yml</code> y el acceso de AutoQA en GitHub.</p>}
       </div>
       <div className="code-health-widget">
         <header><ShieldAlert size={14} /><h3>Dependabot</h3></header>
         {data.dependabot?.enabled ? <AlertsChart title="Alertas Dependabot" counts={data.dependabot.counts} url={data.dependabot.url} top={data.dependabot.top ?? []} />
-          : <p className="muted">Dependabot no habilitado o sin permisos. Actívalo en Security → Dependabot alerts.</p>}
+          : <p className="muted">Dependabot sin datos disponibles. Revisa las alertas y el acceso de AutoQA en GitHub.</p>}
       </div>
     </div>
   </>;

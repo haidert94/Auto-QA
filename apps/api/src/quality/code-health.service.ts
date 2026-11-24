@@ -15,23 +15,24 @@ import { Injectable, Logger } from '@nestjs/common';
 // El servicio cachea la respuesta 2 min en memoria para no agotar la
 // cuota de la API (5000 req/hora por token) si el panel se recarga.
 
-type AlertCounts = { critical: number; high: number; medium: number; low: number; note: number; other: number; total: number };
+type AlertSeverity = 'critical' | 'high' | 'medium' | 'low' | 'error' | 'warning' | 'note' | 'other';
+export type AlertCounts = Record<AlertSeverity | 'total', number>;
 
-type WorkflowRunSummary = { id: number; status: string; conclusion: string | null; createdAt: string; url: string; headSha: string };
+export type WorkflowRunSummary = { id: number; status: string; conclusion: string | null; createdAt: string; url: string; headSha: string };
 
 // Detalle por alerta: suficiente para que el usuario decida si abrirla en
 // GitHub o ir directo al archivo. No incluimos la descripción completa para
 // evitar inflar el payload; está en el enlace.
 export type AlertDetail = {
   id: number;
-  severity: string;
+  severity: AlertSeverity;
   title: string;
   location: string | null;
   url: string;
   package?: string;
 };
 
-type CodeHealthResult = {
+export type CodeHealthResult = {
   configured: boolean;
   repository: string | null;
   fetchedAt: string;
@@ -39,15 +40,31 @@ type CodeHealthResult = {
     name: string;
     recent: WorkflowRunSummary[];
     successRate: number | null;
+    evaluated: number;
+    succeeded: number;
+    url: string;
   } | null;
   codeql: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
   dependabot: { enabled: boolean; counts: AlertCounts; url: string | null; top: AlertDetail[] } | null;
   message?: string;
 };
 
-const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, note: 4, other: 5 };
+const SECURITY_SEVERITIES = ['critical', 'high', 'medium', 'low'] as const;
+const SEVERITY_ORDER: Record<AlertSeverity, number> = { critical: 0, high: 1, error: 2, medium: 3, warning: 4, low: 5, note: 6, other: 7 };
+const CI_CONCLUSIONS = new Set(['success', 'failure', 'timed_out', 'startup_failure']);
 
-const EMPTY_COUNTS: AlertCounts = { critical: 0, high: 0, medium: 0, low: 0, note: 0, other: 0, total: 0 };
+const EMPTY_COUNTS: AlertCounts = { critical: 0, high: 0, medium: 0, low: 0, error: 0, warning: 0, note: 0, other: 0, total: 0 };
+
+function securitySeverity(value: unknown) {
+  return SECURITY_SEVERITIES.find(level => level === value);
+}
+
+function codeqlSeverity(rule: { security_severity_level?: string; severity?: string } | null): AlertSeverity {
+  const level = rule?.severity;
+  return securitySeverity(rule?.security_severity_level) ?? securitySeverity(level)
+    ?? (level === 'error' || level === 'warning' || level === 'note' ? level : 'other');
+}
+
 const CACHE_TTL_MS = 2 * 60 * 1000;
 
 @Injectable()
@@ -108,7 +125,10 @@ export class CodeHealthService {
 
   private async fetchWorkflowRuns(repo: string, workflow: string, token: string): Promise<CodeHealthResult['workflow']> {
     const { status, body } = await this.githubFetch(`/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=20`, token);
-    if (status !== 200 || !body || typeof body !== 'object') return { name: workflow, recent: [], successRate: null };
+    const url = `https://github.com/${repo}/actions/workflows/${encodeURIComponent(workflow)}`;
+    if (status !== 200 || !body || typeof body !== 'object') {
+      return { name: workflow, recent: [], successRate: null, evaluated: 0, succeeded: 0, url };
+    }
     const runs = Array.isArray((body as { workflow_runs?: unknown[] }).workflow_runs)
       ? (body as { workflow_runs: Array<Record<string, unknown>> }).workflow_runs : [];
     const recent: WorkflowRunSummary[] = runs.slice(0, 20).map(run => ({
@@ -119,9 +139,10 @@ export class CodeHealthService {
       url: typeof run.html_url === 'string' ? run.html_url : '',
       headSha: typeof run.head_sha === 'string' ? run.head_sha.slice(0, 7) : '',
     }));
-    const finished = recent.filter(r => r.conclusion);
-    const succeeded = finished.filter(r => r.conclusion === 'success').length;
-    return { name: workflow, recent, successRate: finished.length ? succeeded / finished.length : null };
+    const evaluated = recent.filter(run => run.status === 'completed' && CI_CONCLUSIONS.has(run.conclusion ?? ''));
+    const succeeded = evaluated.filter(run => run.conclusion === 'success').length;
+    return { name: workflow, recent, successRate: evaluated.length ? succeeded / evaluated.length : null,
+      evaluated: evaluated.length, succeeded, url };
   }
 
   private async fetchCodeqlAlerts(repo: string, token: string): Promise<CodeHealthResult['codeql']> {
@@ -131,22 +152,20 @@ export class CodeHealthService {
     const counts = { ...EMPTY_COUNTS };
     const details: AlertDetail[] = [];
     for (const alert of body as Array<Record<string, unknown>>) {
-      const rule = alert.rule as { severity?: string; description?: string; id?: string } | null;
-      const sev = rule?.severity ?? 'other';
-      const key: keyof AlertCounts = (['critical', 'high', 'medium', 'low', 'note'] as const).includes(sev as never)
-        ? (sev as keyof AlertCounts) : 'other';
-      counts[key]++; counts.total++;
+      const rule = alert.rule as { severity?: string; security_severity_level?: string; description?: string; id?: string } | null;
+      const severity = codeqlSeverity(rule);
+      counts[severity]++; counts.total++;
       const instance = alert.most_recent_instance as { location?: { path?: string; start_line?: number } } | undefined;
       const loc = instance?.location;
       details.push({
         id: typeof alert.number === 'number' ? alert.number : 0,
-        severity: sev,
+        severity,
         title: typeof rule?.description === 'string' ? rule.description : (typeof rule?.id === 'string' ? rule.id : 'Alerta CodeQL'),
         location: loc?.path ? `${loc.path}${loc.start_line ? `:${loc.start_line}` : ''}` : null,
         url: typeof alert.html_url === 'string' ? alert.html_url : `https://github.com/${repo}/security/code-scanning`,
       });
     }
-    details.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
+    details.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
     return { enabled: true, counts, url: `https://github.com/${repo}/security/code-scanning`, top: details };
   }
 
@@ -159,20 +178,18 @@ export class CodeHealthService {
     for (const alert of body as Array<Record<string, unknown>>) {
       const advisory = alert.security_advisory as { severity?: string; summary?: string } | null;
       const dep = (alert.dependency as { package?: { name?: string; ecosystem?: string }; manifest_path?: string } | null) ?? null;
-      const sev = advisory?.severity ?? 'other';
-      const key: keyof AlertCounts = (['critical', 'high', 'medium', 'low'] as const).includes(sev as never)
-        ? (sev as keyof AlertCounts) : 'other';
-      counts[key]++; counts.total++;
+      const severity = securitySeverity(advisory?.severity) ?? 'other';
+      counts[severity]++; counts.total++;
       details.push({
         id: typeof alert.number === 'number' ? alert.number : 0,
-        severity: sev,
+        severity,
         title: typeof advisory?.summary === 'string' ? advisory.summary : 'Vulnerabilidad en dependencia',
         location: dep?.manifest_path ?? null,
         url: typeof alert.html_url === 'string' ? alert.html_url : `https://github.com/${repo}/security/dependabot`,
         package: dep?.package?.name,
       });
     }
-    details.sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
+    details.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
     return { enabled: true, counts, url: `https://github.com/${repo}/security/dependabot`, top: details };
   }
 }

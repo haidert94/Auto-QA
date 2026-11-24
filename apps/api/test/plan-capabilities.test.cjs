@@ -8,10 +8,10 @@ const { UsageService } = require('../dist/commerce/usage.service');
 
 const database = process.env.AUTOQA_TEST_DATABASE_URL;
 if (!database) throw new Error('Configura AUTOQA_TEST_DATABASE_URL con una base migrada.');
-const proposals = [
-  { code: 'starter', price: 99000, apps: 1, roles: 2, parallel: 1, minutes: 300, monitors: 2, interval: 15, vus: null, duration: null, browsers: ['CHROMIUM'] },
-  { code: 'pro', price: 299000, apps: 3, roles: 5, parallel: 2, minutes: 1500, monitors: 5, interval: 5, vus: 10, duration: 5, browsers: ['CHROMIUM', 'FIREFOX', 'WEBKIT'] },
-  { code: 'business', price: 899000, apps: 10, roles: 10, parallel: 4, minutes: 5000, monitors: 10, interval: 1, vus: 100, duration: 15, browsers: ['CHROMIUM', 'FIREFOX', 'WEBKIT'] },
+const catalog = [
+  { code: 'essentials', price: 210000, apps: 1, roles: 2, parallel: 1, minutes: 100, monitors: 2, interval: 15, loadRuns: 0, vus: null, duration: null, crossBrowser: false },
+  { code: 'professional', price: 630000, apps: 3, roles: 5, parallel: 2, minutes: 500, monitors: 10, interval: 5, loadRuns: 0, vus: null, duration: null, crossBrowser: true },
+  { code: 'business', price: 1900000, apps: 10, roles: 15, parallel: 4, minutes: 5000, monitors: 50, interval: 1, loadRuns: 20, vus: 100, duration: 10, crossBrowser: true },
 ];
 const teams = [], accounts = [];
 let app, db, base;
@@ -52,7 +52,7 @@ async function member(planCode) {
   const user = await db.user.create({
     data: {
       name: 'Equipo de prueba', email: randomUUID() + '@example.com', verifiedAt: new Date(),
-      membership: { create: { organization: { create: {
+      membership: { create: { role: 'OWNER', organization: { create: {
         name: 'Organización de prueba', subscription: { create: { planCode, status: 'ACTIVE', periodEndsAt: end } },
       } } } },
       sessions: { create: { digest: createHash('sha256').update(token).digest('hex'), expiresAt: end } },
@@ -66,48 +66,33 @@ async function member(planCode) {
 function roleList(count) { return Array.from({ length: count }, (_, index) => ({ name: 'Rol ' + (index + 1) })); }
 const emptyCounters = { running: 0, browserSeconds: 0, performanceRuns: 0 };
 
-for (const spec of proposals) {
+for (const spec of catalog) {
   test('checks catalog and quota boundaries for ' + spec.code, async () => {
     const plans = await request('/commerce/plans');
     assert.equal(plans.status, 200);
     const plan = plans.body.find(item => item.code === spec.code);
+    assert.ok(plan, 'El catálogo debe incluir ' + spec.code);
     assert.deepEqual([plan.priceCop, plan.maxProjects, plan.maxRoles, plan.parallelRuns], [spec.price, spec.apps, spec.roles, spec.parallel]);
     const capability = code => plan.capabilities.find(item => item.code === code);
     const browser = capability('BROWSER_TESTS');
-    const monitors = capability('HTTP_MONITORS');
-    const performance = capability('PERFORMANCE_TESTS');
-    assert.deepEqual([browser.monthlyLimit, browser.browsers], [spec.minutes, spec.browsers]);
-    assert.deepEqual([monitors.monitorLimit, monitors.minIntervalMinutes, monitors.availability], [spec.monitors, spec.interval, 'UPCOMING']);
-    assert.deepEqual([performance.monthlyLimit, performance.maxVirtualUsers, performance.maxDurationMinutes], [0, spec.vus, spec.duration]);
-    assert.equal(performance.availability, spec.vus ? 'UPCOMING' : 'NOT_INCLUDED');
+    const monitors = capability('UPTIME_MONITORS');
+    const load = capability('LOAD_TESTS');
+    assert.deepEqual([browser.monthlyLimit, browser.browsers], [spec.minutes, ['CHROMIUM']]);
+    assert.deepEqual([monitors.monitorLimit, monitors.minIntervalMinutes, monitors.availability], [spec.monitors, spec.interval, 'OPERATIONAL']);
+    assert.deepEqual([load.monthlyLimit, load.maxVirtualUsers, load.maxDurationMinutes], [spec.loadRuns, spec.vus, spec.duration]);
+    assert.equal(load.availability, spec.loadRuns ? 'OPERATIONAL' : 'NOT_INCLUDED');
     assert.equal(capability('DOCUMENT_ANALYSIS').availability, 'OPERATIONAL');
-    assert.equal(capability('DOCUMENT_AI').availability, 'UPCOMING');
+    assert.equal(capability('AI_DOCUMENT_ANALYSIS').availability, 'OPERATIONAL');
     assert.equal(capability('IPA').availability, 'OPERATIONAL');
-    assert.equal(capability('ICSP').availability, 'UPCOMING');
+    assert.equal(capability('ICSP').availability, 'OPERATIONAL');
 
     const fullBrowser = { kind: 'BROWSER', browser: 'CHROMIUM', browserSeconds: spec.minutes * 60 };
     assert.doesNotThrow(() => assertRunQuota(plan, fullBrowser, { ...emptyCounters, running: spec.parallel - 1 }));
     assert.throws(() => assertRunQuota(plan, fullBrowser, { ...emptyCounters, browserSeconds: 1 }), /minutos/);
     assert.throws(() => assertRunQuota(plan, fullBrowser, { ...emptyCounters, running: spec.parallel }), /simultáneas/);
     const firefox = { kind: 'BROWSER', browser: 'FIREFOX', browserSeconds: 1 };
-    if (spec.browsers.includes('FIREFOX')) assert.doesNotThrow(() => assertRunQuota(plan, firefox, emptyCounters));
+    if (spec.crossBrowser) assert.doesNotThrow(() => assertRunQuota(plan, firefox, emptyCounters));
     else assert.throws(() => assertRunQuota(plan, firefox, emptyCounters), /Navegador/);
-    assert.doesNotThrow(() => assertMonitorQuota(plan, spec.monitors - 1, spec.interval));
-    assert.throws(() => assertMonitorQuota(plan, spec.monitors, spec.interval), /límite de monitores/);
-    assert.throws(() => assertMonitorQuota(plan, 0, spec.interval - 1), /intervalo/i);
-
-    const candidate = { kind: 'PERFORMANCE', virtualUsers: spec.vus ?? 1, durationMinutes: spec.duration ?? 1 };
-    assert.throws(() => assertRunQuota(plan, candidate, emptyCounters), /cuota mensual/);
-    if (spec.vus) {
-      performance.monthlyLimit = 3; // Synthetic value to verify future enforcement.
-      performance.availability = 'BETA';
-      assert.equal(publicPlan(plan).capabilities.find(row => row.code === 'PERFORMANCE_TESTS').availability, 'UPCOMING');
-      assert.throws(() => requireCapability(plan, 'PERFORMANCE_TESTS'), /próximamente/);
-      assert.doesNotThrow(() => assertRunQuota(plan, candidate, { ...emptyCounters, performanceRuns: 2 }));
-      assert.throws(() => assertRunQuota(plan, candidate, { ...emptyCounters, performanceRuns: 3 }), /cuota mensual/);
-      assert.throws(() => assertRunQuota(plan, { ...candidate, virtualUsers: candidate.virtualUsers + 1 }, emptyCounters), /tamaño/);
-      assert.throws(() => assertRunQuota(plan, { ...candidate, durationMinutes: candidate.durationMinutes + 1 }, emptyCounters), /duración/);
-    }
 
     const { token } = await member(spec.code);
     assert.equal((await request('/projects', token, 'POST', { name: 'Demasiados roles', roles: roleList(spec.roles + 1) })).status, 409);
@@ -123,16 +108,36 @@ for (const spec of proposals) {
   });
 }
 
+test('applies legacy quota boundaries to existing subscriptions', async () => {
+  const plan = await db.plan.findUniqueOrThrow({ where: { code: 'pro' }, include: { capabilities: true } });
+  assert.equal(plan.enabled, false);
+  assert.doesNotThrow(() => assertMonitorQuota(plan, 4, 5));
+  assert.throws(() => assertMonitorQuota(plan, 5, 5), /límite de monitores/);
+  assert.throws(() => assertMonitorQuota(plan, 0, 4), /intervalo/i);
+
+  const candidate = { kind: 'PERFORMANCE', virtualUsers: 10, durationMinutes: 5 };
+  assert.throws(() => assertRunQuota(plan, candidate, emptyCounters), /cuota mensual/);
+  const performance = plan.capabilities.find(row => row.code === 'PERFORMANCE_TESTS');
+  performance.monthlyLimit = 3; // Synthetic value to verify future enforcement.
+  performance.availability = 'BETA';
+  assert.equal(publicPlan(plan).capabilities.find(row => row.code === 'PERFORMANCE_TESTS').availability, 'UPCOMING');
+  assert.throws(() => requireCapability(plan, 'PERFORMANCE_TESTS'), /próximamente/);
+  assert.doesNotThrow(() => assertRunQuota(plan, candidate, { ...emptyCounters, performanceRuns: 2 }));
+  assert.throws(() => assertRunQuota(plan, candidate, { ...emptyCounters, performanceRuns: 3 }), /cuota mensual/);
+  assert.throws(() => assertRunQuota(plan, { ...candidate, virtualUsers: candidate.virtualUsers + 1 }, emptyCounters), /tamaño/);
+  assert.throws(() => assertRunQuota(plan, { ...candidate, durationMinutes: candidate.durationMinutes + 1 }, emptyCounters), /duración/);
+});
+
 test('keeps existing projects and role counts editable without growing beyond the new plan', async () => {
   const { organizationId, token } = await member('business');
-  const roles = roleList(15);
+  const roles = roleList(16);
   const existing = await db.project.create({
     data: { organizationId, name: 'Aplicación anterior', roles: { create: roles } },
   });
   const path = '/projects/' + existing.id;
   const preserved = await request(path, token, 'PUT', { name: 'Actualizada', revision: existing.revision, roles });
   assert.equal(preserved.status, 200);
-  const increase = await request(path, token, 'PUT', { name: 'Otra revisión', revision: preserved.body.revision, roles: roleList(16) });
+  const increase = await request(path, token, 'PUT', { name: 'Otra revisión', revision: preserved.body.revision, roles: roleList(17) });
   assert.equal(increase.status, 409);
 });
 

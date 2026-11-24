@@ -54,6 +54,9 @@
     "prisma": "^6.9.0"
   },
   "overrides": {
-    "multer": "2.5.0"
+    "multer": "2.5.0",
+    "@prisma/config@6.19.3": {
+      "effect": "3.22.1"
+    }
   }
 }

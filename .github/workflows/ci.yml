@@ -37,7 +37,9 @@ jobs:
         run: npx tsc --noEmit --project tsconfig.json
       - name: Typecheck apps/web
         working-directory: apps/web
-        run: npx tsc --noEmit --project tsconfig.json
+        run: |
+          npx next typegen
+          npx tsc --noEmit --project tsconfig.json
       - name: Typecheck apps/explorer
         working-directory: apps/explorer
         run: npx tsc --noEmit --project tsconfig.json
@@ -49,12 +51,28 @@ jobs:
         run: npm run build
 
   unit-tests:
-    name: Pruebas unitarias
+    name: Pruebas unitarias e integración
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: typecheck-and-build
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: autoqa_ci
+          POSTGRES_INITDB_ARGS: --encoding=UTF8
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d autoqa_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/autoqa_ci?schema=public
+      AUTOQA_TEST_DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/autoqa_ci?schema=public
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -65,12 +83,13 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Prisma generate
         run: npx prisma generate
-      - name: Pruebas unitarias (api + explorer)
-        # Las suites de pruebas que solo requieren builds locales sin red.
-        # Se omiten las e2e (test:project-detail, test:commerce:e2e) para
-        # mantener el CI bajo de los 20 min y sin dependencias de navegador.
+      - name: Migrar la base de pruebas
+        run: npx prisma migrate deploy
+      - name: Pruebas de API y Explorer
+        # Las suites e2e de navegador se ejecutan fuera de este workflow.
         run: |
           npm run test:ai
+          node --test apps/api/test/code-health.test.cjs
           npm run test:scenarios
           npm run test:playwright-generator
           npm run test:screenshot-storage
