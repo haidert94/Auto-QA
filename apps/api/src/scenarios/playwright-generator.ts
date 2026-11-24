@@ -17,6 +17,11 @@ export type GeneratorStep = {
   data?: string | null;
   expected?: string | null;
   frames?: string[];
+  // Acciones DSL alternativas (mismo verbo, pista distinta) que el runtime
+  // debe probar si el selector principal no encuentra el elemento. Permite
+  // sobrevivir a cambios cosméticos (id generado) sin reescribir el caso.
+  // Se emite como locator.or() de Playwright; limitado a 2 alternativas.
+  fallbacks?: string[];
 };
 
 export type GeneratorScenario = {
@@ -76,18 +81,46 @@ export function readFramePath(raw: unknown): string[] | null {
     && /^iframe\[(?:id|name|data-testid)="[A-Za-z0-9_-]{1,80}"\]$/.test(selector)) ? raw : null;
 }
 
+// Verbos cuyo fallback hace sentido: los que resuelven a un Locator. Para
+// navigate/press/expect-url no hay dónde aplicar .or(), así que cualquier
+// fallback que venga con esos verbos se descarta silenciosamente.
+const FALLBACKABLE_VERBS = new Set([
+  'click', 'click-text', 'fill', 'fill-label', 'check', 'uncheck',
+  'expect-text', 'expect-visible', 'expect-hidden', 'expect-checked',
+]);
+
+// Un fallback válido es una acción DSL con el MISMO verbo que la principal
+// (no mezclar click con fill, por ejemplo) y que apunte a un locator. Se
+// limita a 2 alternativas para no inflar el spec.
+function readFallbacks(raw: unknown, primaryVerb: string): string[] | undefined {
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  if (!FALLBACKABLE_VERBS.has(primaryVerb)) return undefined;
+  const valid: string[] = [];
+  for (const candidate of raw) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    const parsed = splitAction(candidate);
+    if (!parsed || !fallbackCompatible(primaryVerb, parsed.verb)) continue;
+    valid.push(candidate.trim());
+    if (valid.length >= 2) break;
+  }
+  return valid.length ? valid : undefined;
+}
+
 export function readGeneratorSteps(raw: unknown): GeneratorStep[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((step): step is Record<string, unknown> => !!step && typeof step === 'object' && typeof step.action === 'string' && !!step.action.trim())
     .map((step, index) => {
       const frames = readFramePath(step.frames);
+      const primary = splitAction(step.action as string);
+      const fallbacks = primary ? readFallbacks(step.fallbacks, primary.verb) : undefined;
       return {
         ordinal: typeof step.ordinal === 'number' && Number.isSafeInteger(step.ordinal) ? step.ordinal : index + 1,
         action: step.action as string,
         data: typeof step.data === 'string' ? step.data : undefined,
         expected: typeof step.expected === 'string' ? step.expected : undefined,
         ...(frames && { frames }),
+        ...(fallbacks && { fallbacks }),
       };
     });
 }
@@ -117,8 +150,11 @@ function sharedAction(step: GeneratorStep) {
   if (!parsed || !SHARED_VERBS.has(parsed.verb)) return null;
   const { verb, rest } = parsed;
   const frames = step.frames;
-  const key = createHash('sha256').update(JSON.stringify(frames ? [verb, rest, frames] : [verb, rest])).digest('hex').slice(0, 16);
-  return { verb, rest, frames, name: 'step_' + verb.replace(/-/g, '_') + '_' + key };
+  // fallbacks forman parte de la identidad del shared step: dos pasos con el
+  // mismo verbo+rest pero distintos fallbacks deben generar funciones distintas.
+  const fallbacks = step.fallbacks;
+  const key = createHash('sha256').update(JSON.stringify([verb, rest, frames ?? null, fallbacks ?? null])).digest('hex').slice(0, 16);
+  return { verb, rest, frames, fallbacks, name: 'step_' + verb.replace(/-/g, '_') + '_' + key };
 }
 
 function requiresData(verb: string) {
@@ -132,10 +168,10 @@ export function generateSharedSteps(steps: readonly GeneratorStep[]): string {
     if (action) actions.set(action.name, action);
   }
   const lines = ["import { expect, type Page } from '@playwright/test';", ''];
-  for (const { name, verb, rest, frames } of [...actions.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const { name, verb, rest, frames, fallbacks } of [...actions.values()].sort((a, b) => a.name.localeCompare(b.name))) {
     const hasData = requiresData(verb);
     lines.push('export async function ' + name + '(page: Page' + (hasData ? ', data: string' : '') + ') {');
-    lines.push(...renderAction(verb, rest, '  ', 'data', frames));
+    lines.push(...renderAction(verb, rest, '  ', 'data', frames, fallbacks));
     lines.push('}', '');
   }
   return lines.join('\n');
@@ -166,7 +202,7 @@ export function generateStepLines(step: GeneratorStep, indent: string, shared = 
     const argument = requiresData(verb) ? ', ' + data : '';
     lines.push(indent + 'await steps.' + implementation.name + '(page' + argument + ');');
   } else {
-    const action = renderAction(verb, rest, indent, data, step.frames);
+    const action = renderAction(verb, rest, indent, data, step.frames, step.fallbacks);
     if (action.length) lines.push(...action);
     else lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
   }
@@ -174,10 +210,70 @@ export function generateStepLines(step: GeneratorStep, indent: string, shared = 
   return lines;
 }
 
-function renderAction(verb: string, rest: string, indent: string, data: string, frames?: string[]): string[] {
+// Devuelve la expresión Playwright que resuelve al elemento para un verbo+rest.
+// click, fill, check, expect-visible, etc. acuden a .locator(); click-text
+// usa getByText exacto (para clickear el botón concreto); expect-text usa
+// getByText inclusivo (el texto puede ser una sub-cadena de un párrafo);
+// fill-label usa getByLabel. Separar esta pieza permite componer varias con
+// .or() para el fallback de selectores.
+function buildLocatorExpression(verb: string, rest: string, scope: string): string | null {
+  switch (verb) {
+    case 'click':
+    case 'fill':
+    case 'check':
+    case 'uncheck':
+    case 'expect-visible':
+    case 'expect-hidden':
+    case 'expect-checked':
+      return scope + ".locator('" + escapeJsString(rest) + "')";
+    case 'click-text':
+      return scope + ".getByText('" + escapeJsString(rest) + "', { exact: true })";
+    case 'expect-text':
+    case 'expect text':
+      return scope + ".getByText('" + escapeJsString(rest) + "')";
+    case 'fill-label':
+      return scope + ".getByLabel('" + escapeJsString(rest) + "', { exact: true })";
+    default:
+      return null;
+  }
+}
+
+// Grupos de verbos "intercambiables" para fallback: click↔click-text ambos
+// resuelven a un botón, fill↔fill-label ambos escriben en un campo. El resto
+// requiere identidad exacta para evitar mezclar semánticas distintas (un
+// expect-visible no puede caer en un check, por ejemplo).
+const FALLBACK_VERB_GROUPS: Record<string, ReadonlySet<string>> = {
+  'click': new Set(['click', 'click-text']),
+  'click-text': new Set(['click', 'click-text']),
+  'fill': new Set(['fill', 'fill-label']),
+  'fill-label': new Set(['fill', 'fill-label']),
+};
+
+function fallbackCompatible(primaryVerb: string, candidateVerb: string): boolean {
+  const group = FALLBACK_VERB_GROUPS[primaryVerb];
+  return group ? group.has(candidateVerb) : primaryVerb === candidateVerb;
+}
+
+// Combina el locator principal con sus fallbacks usando Locator.or() de
+// Playwright. Cada fallback se parsea como su propia acción DSL; si no
+// produce un locator (verbo distinto o no reconocido), se descarta.
+function combinedLocator(verb: string, rest: string, scope: string, fallbacks: string[] | undefined): string | null {
+  const primary = buildLocatorExpression(verb, rest, scope);
+  if (!primary || !fallbacks?.length) return primary;
+  const extras: string[] = [];
+  for (const raw of fallbacks) {
+    const parsed = splitAction(raw);
+    if (!parsed || !fallbackCompatible(verb, parsed.verb)) continue;
+    const candidate = buildLocatorExpression(parsed.verb, parsed.rest, scope);
+    if (candidate) extras.push(candidate);
+  }
+  return extras.reduce((expr, next) => expr + '.or(' + next + ')', primary);
+}
+
+function renderAction(verb: string, rest: string, indent: string, data: string, frames?: string[], fallbacks?: string[]): string[] {
   const lines: string[] = [];
   const scope = frames?.reduce((parent, selector) => parent + ".frameLocator('" + escapeJsString(selector) + "')", 'page') ?? 'page';
-  const locator = scope + ".locator('" + escapeJsString(rest) + "')";
+  const target = combinedLocator(verb, rest, scope, fallbacks);
   switch (verb) {
     case 'navigate':
     case 'goto':
@@ -185,27 +281,23 @@ function renderAction(verb: string, rest: string, indent: string, data: string, 
       lines.push(`${indent}await page.goto('${escapeJsString(rest)}');`);
       break;
     case 'click':
-      lines.push(`${indent}await ${locator}.click();`);
-      break;
     case 'click-text':
-      lines.push(`${indent}await ${scope}.getByText('${escapeJsString(rest)}', { exact: true }).click();`);
+      lines.push(`${indent}await ${target}.click();`);
       break;
+    case 'fill':
     case 'fill-label':
-      lines.push(`${indent}await ${scope}.getByLabel('${escapeJsString(rest)}', { exact: true }).fill(${data});`);
+      lines.push(`${indent}await ${target}.fill(${data});`);
       break;
     case 'check':
     case 'uncheck':
-      lines.push(`${indent}await ${locator}.${verb}();`);
+      lines.push(`${indent}await ${target}.${verb}();`);
       break;
     case 'expect-visible':
     case 'expect-hidden':
-      lines.push(`${indent}await expect(${locator}).${verb === 'expect-visible' ? 'toBeVisible' : 'toBeHidden'}();`);
+      lines.push(`${indent}await expect(${target}).${verb === 'expect-visible' ? 'toBeVisible' : 'toBeHidden'}();`);
       break;
     case 'expect-checked':
-      lines.push(`${indent}await expect(${locator}).toBeChecked();`);
-      break;
-    case 'fill':
-      lines.push(`${indent}await ${locator}.fill(${data});`);
+      lines.push(`${indent}await expect(${target}).toBeChecked();`);
       break;
     case 'press':
     case 'key':
@@ -213,7 +305,7 @@ function renderAction(verb: string, rest: string, indent: string, data: string, 
       break;
     case 'expect-text':
     case 'expect text':
-      lines.push(`${indent}await expect(${scope}.getByText('${escapeJsString(rest)}')).toBeVisible();`);
+      lines.push(`${indent}await expect(${target}).toBeVisible();`);
       break;
     case 'expect-http-ok':
       lines.push(`${indent}expect((await page.goto('${escapeJsString(rest)}'))?.ok()).toBe(true);`);

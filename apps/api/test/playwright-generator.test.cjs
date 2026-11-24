@@ -5,7 +5,7 @@ const { test } = require('node:test');
 const { runInNewContext } = require('node:vm');
 const ts = require('typescript');
 
-const { escapeJsString, generateHarnessedSpec, generatePlaywrightConfig, generateSpec, generateStepLines, suggestedFilename } = require('../dist/scenarios/playwright-generator');
+const { escapeJsString, generateHarnessedSpec, generatePlaywrightConfig, generateSharedSteps, generateSpec, generateStepLines, readGeneratorSteps, suggestedFilename } = require('../dist/scenarios/playwright-generator');
 
 test('escapeJsString escapa comillas, backslashes y newlines', () => {
   assert.equal(escapeJsString("O'Reilly"), "O\\'Reilly");
@@ -272,6 +272,68 @@ test('isSupportedBrowser/isSupportedDevice validan nombres', () => {
   assert.equal(isSupportedDevice('iPhone 13'), true);
   assert.equal(isSupportedDevice('malicious'), false);
   assert.equal(isSupportedDevice(null), true);
+});
+
+test('fallback: generateStepLines compone locator principal con .or()', () => {
+  const step = {
+    ordinal: 1,
+    action: 'click: [data-testid="save"]',
+    fallbacks: ['click-text: Guardar'],
+  };
+  const lines = generateStepLines(step, '  ').join('\n');
+  assert.match(lines, /page\.locator\('\[data-testid="save"\]'\)\.or\(page\.getByText\('Guardar', \{ exact: true \}\)\)\.click\(\);/);
+});
+
+test('fallback: encadena dos alternativas con .or().or()', () => {
+  const step = {
+    ordinal: 1,
+    action: 'fill: #email',
+    data: 'qa@test.com',
+    fallbacks: ['fill-label: Correo', 'fill: [name="email"]'],
+  };
+  const lines = generateStepLines(step, '  ').join('\n');
+  assert.match(lines, /page\.locator\('#email'\)\.or\(page\.getByLabel\('Correo', \{ exact: true \}\)\)\.or\(page\.locator\('\[name="email"\]'\)\)\.fill\('qa@test\.com'\);/);
+});
+
+test('fallback: expect-text acepta alternativa con el mismo verbo', () => {
+  const step = {
+    ordinal: 1,
+    action: 'expect-text: Bienvenido',
+    fallbacks: ['expect-text: Hola'],
+  };
+  const lines = generateStepLines(step, '  ').join('\n');
+  assert.match(lines, /expect\(page\.getByText\('Bienvenido'\)\.or\(page\.getByText\('Hola'\)\)\)\.toBeVisible\(\);/);
+});
+
+test('fallback: readGeneratorSteps descarta fallbacks con verbo distinto al principal', () => {
+  const [step] = readGeneratorSteps([
+    { action: 'click: #save', fallbacks: ['fill: #other', 'click-text: Guardar', 'click-text: Aceptar', 'click-text: Confirmar'] },
+  ]);
+  // El fill se descarta por verbo; se conservan solo las 2 primeras click-text.
+  assert.deepEqual(step.fallbacks, ['click-text: Guardar', 'click-text: Aceptar']);
+});
+
+test('fallback: readGeneratorSteps omite fallbacks para verbos sin locator (navigate)', () => {
+  const [step] = readGeneratorSteps([
+    { action: 'navigate: /inicio', fallbacks: ['navigate: /home'] },
+  ]);
+  assert.equal(step.fallbacks, undefined);
+});
+
+test('fallback: shared steps distinguen por fallbacks (hash distinto)', () => {
+  const steps = [
+    { ordinal: 1, action: 'click: #save' },
+    { ordinal: 2, action: 'click: #save', fallbacks: ['click-text: Guardar'] },
+  ];
+  const shared = generateSharedSteps(steps);
+  // Dos funciones distintas (hashes distintos), no una sola función reutilizada.
+  const functionNames = [...shared.matchAll(/export async function (step_click_[a-f0-9]+)/g)].map(m => m[1]);
+  assert.equal(functionNames.length, 2);
+  assert.notEqual(functionNames[0], functionNames[1]);
+  // La función con fallback debe contener .or(); la otra no.
+  const withFallback = shared.split('export async function').find(chunk => chunk.includes('.or('));
+  assert.ok(withFallback, 'una de las funciones debe tener .or()');
+  assert.equal(shared.split('.or(').length - 1, 1, 'solo una función debe tener .or()');
 });
 
 test('suggestedFilename produce slug seguro', () => {

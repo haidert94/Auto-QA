@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { recordGeneratedCase } from '../generated-cases';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, sanitizeStepFallbacks, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
   const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
@@ -28,6 +28,9 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
       '- press: <tecla>',
       '- expect-text: <texto visible>',
       '- expect-url: <ruta exacta>',
+      '',
+      'Cuando el inventario tenga dos pistas para el MISMO elemento (p. ej. un data-testid y el texto visible, o un name y una etiqueta), añade al paso un array "fallbacks" con la pista alterna como acción DSL del mismo verbo. Se traduce a Playwright Locator.or(): si el selector principal cambia, el test sobrevive con la alternativa. Máximo 2 fallbacks por paso.',
+      'Ejemplo: {"action":"click: [data-testid=\\"save\\"]","fallbacks":["click-text: Guardar"]}.',
     ] : []),
     !onlyManual ? elementInventoryBlock(ctx) : '',
     '',
@@ -68,12 +71,16 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
     const normalized = steps
       .filter(step => typeof step?.action === 'string' && step.action.trim())
       .slice(0, 50)
-      .map((step, i) => ({
-        ordinal: i + 1,
-        action: step.action!.trim().slice(0, 1000),
-        data: typeof step.data === 'string' ? step.data.slice(0, 1000) : undefined,
-        expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
-      }));
+      .map((step, i) => {
+        const action = step.action!.trim().slice(0, 1000);
+        return {
+          ordinal: i + 1,
+          action,
+          data: typeof step.data === 'string' ? step.data.slice(0, 1000) : undefined,
+          expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
+          fallbacks: sanitizeStepFallbacks(action, step.fallbacks),
+        };
+      });
     if (!normalized.length) { errors.push('scenario-' + index + '-sin-pasos'); continue; }
     const manual = s.mode === 'manual';
     if (!allowMixed && manual !== onlyManual) continue;

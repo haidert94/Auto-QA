@@ -41,7 +41,7 @@ export type ScenarioPayload = {
     mode?: 'manual' | 'playwright';
     requirementId?: string;
     tags?: string[];
-    steps?: Array<{ action?: string; data?: string; expected?: string }>;
+    steps?: Array<{ action?: string; data?: string; expected?: string; fallbacks?: string[] }>;
   }>;
 };
 
@@ -132,6 +132,40 @@ export async function requestGeneration<T>(
 export function generationResponseErrors(response: AiResponse, hasExpectedList: boolean): string[] {
   if (response.usedFallback) return [response.fallbackReason ?? 'ai-unavailable'];
   return hasExpectedList ? [] : ['invalid-agent-response'];
+}
+
+// Normaliza fallbacks de un paso DSL antes de guardar el escenario. Acepta
+// solo strings con el MISMO verbo que la acción principal (no permitir que
+// un click caiga en un fill), los recorta y limita a 2 alternativas para que
+// el locator.or() no se vuelva una expresión impronunciable. Si nada queda
+// válido, devuelve undefined para no persistir un array vacío ruidoso.
+const FALLBACK_COMPATIBLE: Record<string, ReadonlySet<string>> = {
+  'click': new Set(['click', 'click-text']),
+  'click-text': new Set(['click', 'click-text']),
+  'fill': new Set(['fill', 'fill-label']),
+  'fill-label': new Set(['fill', 'fill-label']),
+};
+
+export function sanitizeStepFallbacks(primaryAction: string, raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  const colon = primaryAction.indexOf(':');
+  if (colon < 0) return undefined;
+  const primaryVerb = primaryAction.slice(0, colon).trim().toLowerCase();
+  const compatibleGroup = FALLBACK_COMPATIBLE[primaryVerb];
+  const kept: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    const sep = trimmed.indexOf(':');
+    if (sep < 0) continue;
+    const verb = trimmed.slice(0, sep).trim().toLowerCase();
+    const rest = trimmed.slice(sep + 1).trim();
+    const compatible = compatibleGroup ? compatibleGroup.has(verb) : verb === primaryVerb;
+    if (!compatible || !rest) continue;
+    kept.push(trimmed.slice(0, 1000));
+    if (kept.length >= 2) break;
+  }
+  return kept.length ? kept : undefined;
 }
 
 export const LINKED_REQUIREMENT_INSTRUCTION = 'Cada caso debe incluir requirementId. Copia el ID o la clave documental de una historia o requisito de la lista que sustente el caso. Devuelve una lista vacía si no corresponde ninguno.';

@@ -5,7 +5,7 @@
 import type { Prisma } from '@prisma/client';
 import { recordGeneratedCase } from '../generated-cases';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, sanitizeStepFallbacks, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promise<AgentOutcome> {
   const prompt = [
@@ -21,6 +21,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     'Usa el vocabulario navigate:/click:/click-text:/fill:/fill-label:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
     'En cada fill o fill-label, usa el selector/etiqueta en action y el valor de prueba en el campo data del mismo paso. Ejemplo: {"action":"fill-label: Código postal","data":"110111"}.',
     'Prefiere click-text y fill-label sobre click y fill cuando el elemento tenga texto o etiqueta visible: sobreviven a cambios de clases/ids que un selector CSS no resiste.',
+    'Cuando el inventario tenga dos pistas para el mismo elemento (p. ej. un data-testid y el texto visible), añade al paso un array "fallbacks" con la pista alterna como acción DSL del mismo verbo. El spec Playwright usa Locator.or() para probar el fallback si el principal cambia. Máximo 2 fallbacks por paso.',
     elementInventoryBlock(ctx),
     '',
     'Para cada escenario marca el flujo:',
@@ -51,12 +52,16 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     const steps = (Array.isArray(s.steps) ? s.steps : [])
       .filter(step => typeof step?.action === 'string' && step.action.trim())
       .slice(0, 40)
-      .map((step, i) => ({
-        ordinal: i + 1,
-        action: step.action!.trim().slice(0, 1000),
-        data: typeof step.data === 'string' ? step.data.slice(0, 1000) : undefined,
-        expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
-      }));
+      .map((step, i) => {
+        const action = step.action!.trim().slice(0, 1000);
+        return {
+          ordinal: i + 1,
+          action,
+          data: typeof step.data === 'string' ? step.data.slice(0, 1000) : undefined,
+          expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
+          fallbacks: sanitizeStepFallbacks(action, step.fallbacks),
+        };
+      });
     if (!steps.length) { errors.push('mobile-' + index + '-sin-pasos'); continue; }
     const manual = s.mode === 'manual';
     if (manual && ctx.documentTestTypesConfirmed) continue;
