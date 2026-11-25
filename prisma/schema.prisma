@@ -92,10 +92,6 @@ model Project {
   authorizedAt           DateTime?
   ownerLabel             String?
   priorityModules        String[]            @default([])
-  // Posiciones normalizadas [0..1] por módulo para el canvas visual de
-  // la pestaña Datos. Forma: { "<nombreDelModulo>": { "x": 0..1, "y": 0..1 } }.
-  // Solo afecta la vista; no participa en pruebas ni análisis.
-  modulesLayout          Json?
   executionSettings      Json?
   revision               Int                 @default(0)
   ownerId                String?

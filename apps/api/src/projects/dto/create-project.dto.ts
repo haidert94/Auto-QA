@@ -207,13 +207,6 @@ class ProjectOnboardingDto {
   @text(160, true)
   priorityModules?: string[];
 
-  // Mapa { "<moduleName>": { x: 0..1, y: 0..1 } } con posiciones normalizadas
-  // en el canvas visual. Validación profunda en sanitizeModulesLayout; aquí
-  // solo filtramos la forma mínima para que NestJS no rechace antes.
-  @optional()
-  @IsObject()
-  modulesLayout?: Record<string, { x: number; y: number }>;
-
   @optional()
   @IsArray()
   @ArrayMaxSize(20)
