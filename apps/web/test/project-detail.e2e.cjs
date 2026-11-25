@@ -29,6 +29,7 @@ const environment = {
   allowedHosts: ['staging.example.test'], allowedPaths: [{ host: 'staging.example.test', path: '/checkout' }],
   excludedPaths: [{ host: 'staging.example.test', path: '/checkout/delete' }], prohibitedActions: ['Compras reales'],
   readOnly: true, credentialUser: 'synthetic-private-identity', hasCredentials: true,
+  storageState: null,
 };
 let project = {
   id: projectId, name: 'Pasarela Checkout Pagos', status: 'READY', revision: 1, ownerLabel: 'Equipo de pagos',

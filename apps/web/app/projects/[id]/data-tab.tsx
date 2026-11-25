@@ -12,10 +12,28 @@ import { IpaHero, type IpaSummary } from './ipa-hero';
 import { EnvironmentsDialog } from './environments-dialog';
 import { DocumentsDialog } from './documents-dialog';
 import { RolesDialog } from './roles-dialog';
+import { StorageStateDialog } from './storage-state-dialog';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
 const documentStates = { DECLARED: 'Declarado', UPLOADED: 'Cargado', PROCESSED: 'Procesado', VALIDATED: 'Validado' };
+
+// Lee los metadatos del storageState importado por el QA. El blob mismo
+// nunca llega al cliente; solo etiqueta y fechas (ver redactEnvironment en
+// apps/api/src/projects/projects.service.ts). Resumen en una línea para la
+// vista Datos — el modal muestra los detalles.
+function storageStateStatus(environment: Pick<Project['environments'][number], 'storageState'>): string {
+  const state = environment.storageState;
+  if (!state) return 'Sin sesión reusable configurada';
+  const label = state.label ? ` · ${state.label}` : '';
+  if (state.expiresAt && new Date(state.expiresAt).getTime() <= Date.now()) {
+    return `Sesión expirada (los runs la ignoran)${label}`;
+  }
+  if (state.expiresAt) {
+    return `Vigente hasta ${new Date(state.expiresAt).toLocaleString()}${label}`;
+  }
+  return `Vigente, sin TTL${label}`;
+}
 
 function DetailCard({ number, title, action, children }: {
   number: string; title: string; action?: ReactNode; children: ReactNode;
@@ -42,6 +60,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   const [envDialogOpen, setEnvDialogOpen] = useState(false);
   const [docDialogOpen, setDocDialogOpen] = useState(false);
   const [rolesDialogOpen, setRolesDialogOpen] = useState(false);
+  const [storageStateDialogOpen, setStorageStateDialogOpen] = useState(false);
   const environment = project.environments.find(env => env.id === environmentId) ?? project.environments[0];
 
   useEffect(() => {
@@ -129,6 +148,13 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
           <div className="detail-fields__wide"><dt>Autenticación y credenciales</dt><dd className="detail-credential">
             <KeyRound size={14} /><span>{environment.accessMode ? accessModes[environment.accessMode] : 'Sin modalidad de acceso'} · {environment.hasCredentials ? 'Credenciales guardadas' : 'Sin credenciales guardadas'}</span>
           </dd></div>
+          <div className="detail-fields__wide"><dt>Sesión reusable (storageState)</dt><dd className="detail-credential">
+            <KeyRound size={14} />
+            <span>{storageStateStatus(environment)}</span>
+            {canEdit && <button type="button" className="detail-edit" onClick={() => setStorageStateDialogOpen(true)}>
+              <Pencil size={12} /> Gestionar
+            </button>}
+          </dd></div>
           <div><dt>Autorización de pruebas</dt><dd className={environment.authorizationConfirmed ? 'success' : 'error'}>
             {environment.authorizationConfirmed ? 'Confirmada' : 'Pendiente de confirmación'}</dd></div>
           <div><dt>Modo de operación</dt><dd>{environment.readOnly ? 'Solo lectura' : 'Cambios con datos de prueba'}</dd></div>
@@ -212,5 +238,18 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
       }} />}
     {rolesDialogOpen && <RolesDialog project={project} onClose={() => setRolesDialogOpen(false)}
       onSaved={saved => { setProject(saved); setRolesDialogOpen(false); }} />}
+    {storageStateDialogOpen && environment && <StorageStateDialog
+      projectId={project.id} environment={environment}
+      onClose={() => setStorageStateDialogOpen(false)}
+      onUpdated={next => {
+        // Actualización optimista: el backend solo responde con metadatos,
+        // así que mergeamos acá sin volver a traer todo el project.
+        setProject(prev => ({
+          ...prev,
+          environments: prev.environments.map(env =>
+            env.id === environment.id ? { ...env, storageState: next } : env),
+        }));
+        router.refresh();
+      }} />}
   </div>;
 }

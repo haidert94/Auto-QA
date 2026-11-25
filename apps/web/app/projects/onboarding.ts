@@ -51,6 +51,9 @@ export type Environment = {
   readOnly: boolean;
   credentialUser: string | null;
   hasCredentials: boolean;
+  // Metadatos del storageState de Playwright. Si el QA subió un auth.json, el
+  // backend expone solo label y fechas — nunca el blob en sí. null = sin sesión.
+  storageState: { label: string | null; uploadedAt: string | null; expiresAt: string | null } | null;
 };
 
 export type ProjectSummary = {
