@@ -17,6 +17,29 @@ type EnvironmentState = {
   excludedPaths: unknown;
 };
 
+// Limpia el mapa modulesLayout del cliente antes de persistir: solo conserva
+// entradas cuyo nombre aparece en priorityModules (así borrar un módulo borra
+// su posición) y coordenadas finitas en [0..1]. Devuelve undefined si no
+// quedó nada para no persistir un JSON vacío ruidoso.
+export function sanitizeModulesLayout(
+  raw: unknown,
+  priorityModules: string[],
+): Record<string, { x: number; y: number }> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const whitelist = new Set(priorityModules);
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!whitelist.has(name)) continue;
+    if (!value || typeof value !== 'object') continue;
+    const { x, y } = value as { x?: unknown; y?: unknown };
+    if (typeof x !== 'number' || typeof y !== 'number') continue;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (x < 0 || x > 1 || y < 0 || y > 1) continue;
+    out[name] = { x, y };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function strings(values: string[] = []) {
   return [...new Set(values.map(value => value.trim()))];
 }
@@ -160,11 +183,13 @@ export function prepareOnboarding(
 
   const authorizedDates = environments.map(({ data }) => data.authorizedAt);
   const authorizationConfirmed = authorizedDates.length > 0 && authorizedDates.every(Boolean);
+  const priorityModules = strings(dto.priorityModules);
   const project = {
     name: dto.name.trim(),
     description: dto.description?.trim() ?? null,
     ownerLabel: dto.ownerLabel?.trim() ?? null,
-    priorityModules: strings(dto.priorityModules),
+    priorityModules,
+    modulesLayout: sanitizeModulesLayout(dto.modulesLayout, priorityModules),
     status: dto.status ?? 'DRAFT',
     authorizationConfirmed,
     authorizedAt: authorizationConfirmed

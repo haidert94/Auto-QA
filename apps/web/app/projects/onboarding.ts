@@ -72,6 +72,7 @@ export type Project = ProjectSummary & {
   createdAt: string;
   updatedAt: string;
   priorityModules: string[];
+  modulesLayout: Record<string, { x: number; y: number }> | null;
   missingRequirements: string[];
   roles: {
     name: string;

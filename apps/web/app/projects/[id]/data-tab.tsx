@@ -13,6 +13,7 @@ import { EnvironmentsDialog } from './environments-dialog';
 import { DocumentsDialog } from './documents-dialog';
 import { RolesDialog } from './roles-dialog';
 import { StorageStateDialog } from './storage-state-dialog';
+import { ModulesMapCompact, ModulesMapDialog } from './modules-map';
 import type { OrgRole } from '../../autoqa-server';
 import { can } from '../../permissions';
 
@@ -61,6 +62,7 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
   const [docDialogOpen, setDocDialogOpen] = useState(false);
   const [rolesDialogOpen, setRolesDialogOpen] = useState(false);
   const [storageStateDialogOpen, setStorageStateDialogOpen] = useState(false);
+  const [modulesMapOpen, setModulesMapOpen] = useState(false);
   const environment = project.environments.find(env => env.id === environmentId) ?? project.environments[0];
 
   useEffect(() => {
@@ -167,6 +169,8 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
             </dd></div>}
           {project.priorityModules.length > 0 && <div className="detail-fields__wide"><dt>Módulos prioritarios</dt><dd className="detail-tags">
             {project.priorityModules.map(module => <span key={module}>{module}</span>)}
+            {canEdit && <ModulesMapCompact modules={project.priorityModules}
+              layout={project.modulesLayout} onExpand={() => setModulesMapOpen(true)} />}
           </dd></div>}
         </dl> : <p className="muted">No hay entornos registrados.</p>}
       </DetailCard>
@@ -238,6 +242,9 @@ export function DataTab({ project: initial, ipa, role }: { project: Project; ipa
       }} />}
     {rolesDialogOpen && <RolesDialog project={project} onClose={() => setRolesDialogOpen(false)}
       onSaved={saved => { setProject(saved); setRolesDialogOpen(false); }} />}
+    {modulesMapOpen && <ModulesMapDialog project={project}
+      onClose={() => setModulesMapOpen(false)}
+      onSaved={saved => { setProject(saved); setModulesMapOpen(false); router.refresh(); }} />}
     {storageStateDialogOpen && environment && <StorageStateDialog
       projectId={project.id} environment={environment}
       onClose={() => setStorageStateDialogOpen(false)}

@@ -35,7 +35,7 @@ let project = {
   id: projectId, name: 'Pasarela Checkout Pagos', status: 'READY', revision: 1, ownerLabel: 'Equipo de pagos',
   createdAt: '2026-11-17T12:00:00Z', updatedAt: '2026-11-18T12:30:00Z',
   description: 'Validación de transacciones, contratos API y flujos de checkout en un entorno autorizado.',
-  priorityModules: ['Checkout', 'Contratos API'], missingRequirements: [],
+  priorityModules: ['Checkout', 'Contratos API'], modulesLayout: null, missingRequirements: [],
   environments: [environment, { ...environment, id: '10000000-0000-4000-8000-000000000003', type: 'QA', baseUrl: 'https://qa.example.test/', authorizationConfirmed: false, hasCredentials: false }],
   roles: [{ name: 'Tester QA', description: 'Validación del checkout sandbox.', secretReference: 'vault:synthetic-private-reference',
     permissions: [{ resource: 'checkout', action: 'read', allowed: true }, { resource: 'payments', action: 'delete', allowed: false }] }],
