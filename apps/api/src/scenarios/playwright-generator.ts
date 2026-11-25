@@ -10,6 +10,10 @@
 import { createHash } from 'node:crypto';
 import { COMPATIBILITY_SCENARIO_TAGS } from './scenario-tags';
 import { FRAME_DIAGNOSTICS_SOURCE } from './frame-diagnostics-source';
+import {
+  generateUploadFixtureHelper, isUploadFixtureKind, parseUploadFixtureData,
+  type UploadFixtureKind, UPLOAD_FIXTURE_KINDS,
+} from './upload-fixtures';
 
 export type GeneratorStep = {
   ordinal: number;
@@ -74,6 +78,7 @@ function commentLines(text: string, indent: string): string[] {
 export const FRAME_LOCATOR_OPERATIONS: readonly string[] = [
   'click', 'click-text', 'fill', 'fill-label', 'check', 'uncheck', 'expect-text', 'expect-visible', 'expect-checked',
   'hover', 'hover-text', 'scroll-into-view', 'select', 'select-label', 'drag-to',
+  'upload',
 ];
 
 export function readFramePath(raw: unknown): string[] | null {
@@ -147,6 +152,7 @@ export const PLAYWRIGHT_OPERATIONS = [
   'navigate', 'click', 'click-text', 'fill', 'fill-label', 'press', 'check', 'uncheck',
   'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
   'hover', 'hover-text', 'scroll-into-view', 'select', 'select-label', 'drag-to',
+  'upload',
 ] as const;
 
 const SHARED_VERBS: ReadonlySet<string> = new Set(PLAYWRIGHT_OPERATIONS);
@@ -154,6 +160,11 @@ const SHARED_VERBS: ReadonlySet<string> = new Set(PLAYWRIGHT_OPERATIONS);
 function sharedAction(step: GeneratorStep) {
   const parsed = splitAction(step.action);
   if (!parsed || !SHARED_VERBS.has(parsed.verb)) return null;
+  // upload se emite siempre inline: la validación compile-time del fixture
+  // vive en renderAction y sin el valor literal del data no podemos hacerla
+  // al generar la función shared. Un upload es un paso puntual, no se
+  // repite bulk, así que no perdemos reuso real.
+  if (parsed.verb === 'upload') return null;
   const { verb, rest } = parsed;
   const frames = step.frames;
   // fallbacks forman parte de la identidad del shared step: dos pasos con el
@@ -168,9 +179,10 @@ function requiresData(verb: string) {
   //   fill/fill-label      → valor a escribir
   //   select/select-label  → valor de la opción (<option value="...">)
   //   drag-to              → selector CSS del destino
+  //   upload               → "fixture:<kind>" de la whitelist (ver upload-fixtures.ts)
   return verb === 'fill' || verb === 'fill-label'
     || verb === 'select' || verb === 'select-label'
-    || verb === 'drag-to';
+    || verb === 'drag-to' || verb === 'upload';
 }
 
 export function generateSharedSteps(steps: readonly GeneratorStep[]): string {
@@ -241,6 +253,7 @@ function buildLocatorExpression(verb: string, rest: string, scope: string): stri
     case 'scroll-into-view':
     case 'select':
     case 'drag-to':
+    case 'upload':
       return scope + ".locator('" + escapeJsString(rest) + "')";
     case 'click-text':
     case 'hover-text':
@@ -353,8 +366,46 @@ function renderAction(verb: string, rest: string, indent: string, data: string, 
       // como string JS escapado y se pasa a page.locator() dentro de dragTo().
       lines.push(`${indent}await ${target}.dragTo(${scope}.locator(${data}));`);
       break;
+    case 'upload': {
+      // Seguridad clave: NO interpolamos step.data crudo, lo parseamos como
+      // "fixture:<kind>" contra la whitelist. Si no matchea, dejamos un
+      // comentario TODO y no emitimos nada ejecutable — nunca un path.
+      // El fixture mismo se materializa como Buffer inline en runtime
+      // (ver upload-fixtures.ts), así que el agente no ve ni toca el FS.
+      const kind = parseUploadFixtureData(stripDataQuotes(data));
+      if (kind) {
+        lines.push(`${indent}await ${target}.setInputFiles(autoqaFixture('${kind}'));`);
+      } else {
+        lines.push(...commentLines(
+          'TODO: upload requiere data "fixture:<kind>" con kind en ' + UPLOAD_FIXTURE_KINDS.join('|'),
+          indent,
+        ));
+      }
+      break;
+    }
   }
   return lines;
+}
+
+// `data` entra como "'<string escapado>'" (con comillas). Para validar su
+// forma lógica necesitamos el string crudo sin comillas ni backslashes JS.
+function stripDataQuotes(data: string): string {
+  if (data.length < 2 || data[0] !== "'" || data[data.length - 1] !== "'") return data;
+  return data.slice(1, -1).replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+}
+
+// Recorre los pasos y devuelve el conjunto de fixture kinds usadas en verbs
+// upload cuyo data parsea. Sirve para emitir el helper autoqaFixture una
+// sola vez por spec, con solo los cases necesarios.
+function collectUploadKinds(steps: readonly GeneratorStep[]): Set<UploadFixtureKind> {
+  const kinds = new Set<UploadFixtureKind>();
+  for (const step of steps) {
+    const parsed = splitAction(step.action);
+    if (!parsed || parsed.verb !== 'upload') continue;
+    const kind = parseUploadFixtureData(step.data);
+    if (kind) kinds.add(kind);
+  }
+  return kinds;
 }
 
 export function generateSpec(scenario: GeneratorScenario, shared = false): string {
@@ -368,6 +419,8 @@ export function generateSpec(scenario: GeneratorScenario, shared = false): strin
     lines.push(...commentLines('Resultado esperado: ' + scenario.expectedResult.trim(), ''));
   }
   lines.push('');
+  const uploadHelper = generateUploadFixtureHelper(collectUploadKinds(scenario.steps));
+  if (uploadHelper) lines.push(uploadHelper);
   lines.push(`test('${title}', async ({ page }) => {`);
   if (scenario.steps.length === 0) {
     lines.push('  // TODO: define los pasos del escenario en AutoQA.');
@@ -574,6 +627,8 @@ export function generateHarnessedSpec(
   lines.push('});');
   lines.push('');
   if (target.sharedSteps) lines.push(FRAME_DIAGNOSTICS_SOURCE);
+  const uploadHelper = generateUploadFixtureHelper(collectUploadKinds(scenario.steps));
+  if (uploadHelper) lines.push(uploadHelper);
   lines.push(`test('${title}', async ({ page }) => {`);
   if (target.sharedSteps) lines.push('  locatorStep = undefined;');
   if (scenario.steps.length === 0) {
