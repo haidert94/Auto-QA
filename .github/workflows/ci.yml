@@ -87,6 +87,10 @@ jobs:
         run: npx prisma migrate deploy
       - name: Pruebas de API y Explorer
         # Las suites e2e de navegador se ejecutan fuera de este workflow.
+        # Follow-up pendiente: añadir npm run test:project-detail aquí
+        # (requiere `npx playwright install chromium` y arreglar primero el
+        # test preexistente "Ejecutar suite (2)" en status=DRAFT; sin esos
+        # dos pasos el workflow queda rojo cada corrida).
         run: |
           npm run test:ai
           node --test apps/api/test/code-health.test.cjs apps/api/test/automation-validation.test.cjs
@@ -99,3 +103,5 @@ jobs:
           npm run test:k6
           npm run test:request-filter
           npm run test:lighthouse
+          npm run test:session
+          npm run test:dsl-vocabulary
