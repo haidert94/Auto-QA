@@ -19,6 +19,7 @@ export async function runMobileAgent(ctx: AgentContext, deps: AgentDeps): Promis
     '',
     'Traslada las historias seleccionadas a un navegador móvil emulado. Prioriza los tamaños, orientación, controles y flujos declarados en los requisitos. No inventes gestos, controles ni endpoints.',
     'Usa el vocabulario navigate:/click:/click-text:/fill:/fill-label:/press:/expect-text:/expect-url: para los casos automatizables y el prefijo [MOBILE] en todos los títulos.',
+    'También disponibles para gestos y controles comunes en móvil: hover:/hover-text: (long-press simulado), scroll-into-view: (antes de tocar elementos fuera del viewport), select:/select-label: (<select data="valor">), drag-to: (con data="selector destino").',
     'En cada fill o fill-label, usa el selector/etiqueta en action y el valor de prueba en el campo data del mismo paso. Ejemplo: {"action":"fill-label: Código postal","data":"110111"}.',
     'Prefiere click-text y fill-label sobre click y fill cuando el elemento tenga texto o etiqueta visible: sobreviven a cambios de clases/ids que un selector CSS no resiste.',
     'Cuando el inventario tenga dos pistas para el mismo elemento (p. ej. un data-testid y el texto visible), añade al paso un array "fallbacks" con la pista alterna como acción DSL del mismo verbo. El spec Playwright usa Locator.or() para probar el fallback si el principal cambia. Máximo 2 fallbacks por paso.',

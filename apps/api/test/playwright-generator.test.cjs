@@ -53,8 +53,8 @@ test('generateStepLines sin prefijo reconocido emite TODO', () => {
 });
 
 test('generateStepLines con verbo desconocido lo señala', () => {
-  const lines = generateStepLines({ ordinal: 2, action: 'hover: a.menu' }, '  ');
-  assert.ok(lines.some(l => l.includes('verbo "hover" no reconocido')));
+  const lines = generateStepLines({ ordinal: 2, action: 'teleport: a.menu' }, '  ');
+  assert.ok(lines.some(l => l.includes('verbo "teleport" no reconocido')));
 });
 
 test('generateStepLines incluye el comentario Esperado cuando existe', () => {
@@ -334,6 +334,75 @@ test('fallback: shared steps distinguen por fallbacks (hash distinto)', () => {
   const withFallback = shared.split('export async function').find(chunk => chunk.includes('.or('));
   assert.ok(withFallback, 'una de las funciones debe tener .or()');
   assert.equal(shared.split('.or(').length - 1, 1, 'solo una función debe tener .or()');
+});
+
+test('vocabulario: hover emite locator.hover()', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'hover: #menu' }, '  ').join('\n');
+  assert.match(lines, /await page\.locator\('#menu'\)\.hover\(\);/);
+});
+
+test('vocabulario: hover-text usa getByText exacto', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'hover-text: Cuenta' }, '  ').join('\n');
+  assert.match(lines, /await page\.getByText\('Cuenta', \{ exact: true \}\)\.hover\(\);/);
+});
+
+test('vocabulario: scroll-into-view emite scrollIntoViewIfNeeded', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'scroll-into-view: #row-42' }, '  ').join('\n');
+  assert.match(lines, /await page\.locator\('#row-42'\)\.scrollIntoViewIfNeeded\(\);/);
+});
+
+test('vocabulario: select pasa el valor desde step.data a selectOption', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'select: #country', data: 'CO' }, '  ').join('\n');
+  assert.match(lines, /await page\.locator\('#country'\)\.selectOption\('CO'\);/);
+});
+
+test('vocabulario: select-label usa getByLabel y pasa data a selectOption', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'select-label: País', data: 'CO' }, '  ').join('\n');
+  assert.match(lines, /await page\.getByLabel\('País', \{ exact: true \}\)\.selectOption\('CO'\);/);
+});
+
+test('vocabulario: drag-to encadena source.dragTo(target)', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'drag-to: #card-1', data: '#column-done' }, '  ').join('\n');
+  assert.match(lines, /await page\.locator\('#card-1'\)\.dragTo\(page\.locator\('#column-done'\)\);/);
+});
+
+test('vocabulario: drag-to escapa el selector destino para evitar inyección', () => {
+  const lines = generateStepLines({ ordinal: 1, action: 'drag-to: #a', data: "#x'); evil(" }, '  ').join('\n');
+  // El destino termina en una comilla sin escapar dejaría JS roto; buscamos el escape.
+  assert.match(lines, /dragTo\(page\.locator\('#x\\'\); evil\('\)\);/);
+});
+
+test('vocabulario: fallback hover ↔ hover-text es compatible', () => {
+  const step = { ordinal: 1, action: 'hover: [data-testid="menu"]', fallbacks: ['hover-text: Cuenta'] };
+  const lines = generateStepLines(step, '  ').join('\n');
+  assert.match(lines, /locator\('\[data-testid="menu"\]'\)\.or\(page\.getByText\('Cuenta', \{ exact: true \}\)\)\.hover\(\);/);
+});
+
+test('vocabulario: fallback select ↔ select-label es compatible', () => {
+  const step = { ordinal: 1, action: 'select: #country', data: 'CO', fallbacks: ['select-label: País'] };
+  const lines = generateStepLines(step, '  ').join('\n');
+  assert.match(lines, /locator\('#country'\)\.or\(page\.getByLabel\('País', \{ exact: true \}\)\)\.selectOption\('CO'\);/);
+});
+
+test('vocabulario: drag-to NO acepta fallbacks (semántica de dos selectores)', () => {
+  const [step] = readGeneratorSteps([
+    { action: 'drag-to: #a', data: '#b', fallbacks: ['drag-to: #c'] },
+  ]);
+  assert.equal(step.fallbacks, undefined);
+});
+
+test('vocabulario: generateSharedSteps produce funciones con data para select y drag-to', () => {
+  const steps = [
+    { ordinal: 1, action: 'select: #country', data: 'CO' },
+    { ordinal: 2, action: 'drag-to: #card', data: '#done' },
+    { ordinal: 3, action: 'hover: #menu' },
+  ];
+  const shared = generateSharedSteps(steps);
+  // select y drag-to deben declararse con el parámetro data.
+  assert.match(shared, /export async function step_select_[a-f0-9]+\(page: Page, data: string\)/);
+  assert.match(shared, /export async function step_drag_to_[a-f0-9]+\(page: Page, data: string\)/);
+  // hover no lleva data.
+  assert.match(shared, /export async function step_hover_[a-f0-9]+\(page: Page\)/);
 });
 
 test('storageState: generateHarnessedSpec inyecta storageState cuando hay path', () => {

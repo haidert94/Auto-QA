@@ -73,6 +73,7 @@ function commentLines(text: string, indent: string): string[] {
 
 export const FRAME_LOCATOR_OPERATIONS: readonly string[] = [
   'click', 'click-text', 'fill', 'fill-label', 'check', 'uncheck', 'expect-text', 'expect-visible', 'expect-checked',
+  'hover', 'hover-text', 'scroll-into-view', 'select', 'select-label', 'drag-to',
 ];
 
 export function readFramePath(raw: unknown): string[] | null {
@@ -87,6 +88,10 @@ export function readFramePath(raw: unknown): string[] | null {
 const FALLBACKABLE_VERBS = new Set([
   'click', 'click-text', 'fill', 'fill-label', 'check', 'uncheck',
   'expect-text', 'expect-visible', 'expect-hidden', 'expect-checked',
+  'hover', 'hover-text', 'scroll-into-view', 'select', 'select-label',
+  // drag-to NO entra: su "fallback" cambiaría dos selectores (origen y
+  // destino) y la semántica del or() no aplica. Si el principal falla, lo
+  // honesto es que el test falle.
 ]);
 
 // Un fallback válido es una acción DSL con el MISMO verbo que la principal
@@ -141,6 +146,7 @@ const SHARED_STEPS_IMPORT = `import * as steps from './${SHARED_STEPS_MODULE}';`
 export const PLAYWRIGHT_OPERATIONS = [
   'navigate', 'click', 'click-text', 'fill', 'fill-label', 'press', 'check', 'uncheck',
   'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
+  'hover', 'hover-text', 'scroll-into-view', 'select', 'select-label', 'drag-to',
 ] as const;
 
 const SHARED_VERBS: ReadonlySet<string> = new Set(PLAYWRIGHT_OPERATIONS);
@@ -158,7 +164,13 @@ function sharedAction(step: GeneratorStep) {
 }
 
 function requiresData(verb: string) {
-  return verb === 'fill' || verb === 'fill-label';
+  // Estos verbos llevan un segundo argumento en step.data:
+  //   fill/fill-label      → valor a escribir
+  //   select/select-label  → valor de la opción (<option value="...">)
+  //   drag-to              → selector CSS del destino
+  return verb === 'fill' || verb === 'fill-label'
+    || verb === 'select' || verb === 'select-label'
+    || verb === 'drag-to';
 }
 
 export function generateSharedSteps(steps: readonly GeneratorStep[]): string {
@@ -225,13 +237,19 @@ function buildLocatorExpression(verb: string, rest: string, scope: string): stri
     case 'expect-visible':
     case 'expect-hidden':
     case 'expect-checked':
+    case 'hover':
+    case 'scroll-into-view':
+    case 'select':
+    case 'drag-to':
       return scope + ".locator('" + escapeJsString(rest) + "')";
     case 'click-text':
+    case 'hover-text':
       return scope + ".getByText('" + escapeJsString(rest) + "', { exact: true })";
     case 'expect-text':
     case 'expect text':
       return scope + ".getByText('" + escapeJsString(rest) + "')";
     case 'fill-label':
+    case 'select-label':
       return scope + ".getByLabel('" + escapeJsString(rest) + "', { exact: true })";
     default:
       return null;
@@ -247,6 +265,10 @@ const FALLBACK_VERB_GROUPS: Record<string, ReadonlySet<string>> = {
   'click-text': new Set(['click', 'click-text']),
   'fill': new Set(['fill', 'fill-label']),
   'fill-label': new Set(['fill', 'fill-label']),
+  'hover': new Set(['hover', 'hover-text']),
+  'hover-text': new Set(['hover', 'hover-text']),
+  'select': new Set(['select', 'select-label']),
+  'select-label': new Set(['select', 'select-label']),
 };
 
 function fallbackCompatible(primaryVerb: string, candidateVerb: string): boolean {
@@ -313,6 +335,23 @@ function renderAction(verb: string, rest: string, indent: string, data: string, 
     case 'expect-url':
     case 'expect url':
       lines.push(`${indent}await expect(page).toHaveURL('${escapeJsString(rest)}');`);
+      break;
+    case 'hover':
+    case 'hover-text':
+      lines.push(`${indent}await ${target}.hover();`);
+      break;
+    case 'scroll-into-view':
+      lines.push(`${indent}await ${target}.scrollIntoViewIfNeeded();`);
+      break;
+    case 'select':
+    case 'select-label':
+      // selectOption acepta string (el value del <option>) directamente.
+      lines.push(`${indent}await ${target}.selectOption(${data});`);
+      break;
+    case 'drag-to':
+      // Para drag-to el "data" es el selector CSS del destino. Se evalúa
+      // como string JS escapado y se pasa a page.locator() dentro de dragTo().
+      lines.push(`${indent}await ${target}.dragTo(${scope}.locator(${data}));`);
       break;
   }
   return lines;
