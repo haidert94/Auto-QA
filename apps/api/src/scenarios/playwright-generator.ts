@@ -26,7 +26,17 @@ export type GeneratorStep = {
   // sobrevivir a cambios cosméticos (id generado) sin reescribir el caso.
   // Se emite como locator.or() de Playwright; limitado a 2 alternativas.
   fallbacks?: string[];
+  // Nombre lógico de una pestaña secundaria abierta con open-tab. Si está,
+  // este step opera en tabs.get('<nombre>') en vez de en page. Validado
+  // contra TAB_NAME_PATTERN antes de persistir.
+  tabScope?: string;
 };
+
+// Nombres de pestañas secundarias. Se interpolan literales en el spec
+// generado, así que la whitelist es estricta: letras minúsculas, dígitos,
+// guiones y _, empezando por letra, hasta 31 chars. Cualquier otra cosa se
+// descarta para que el agente no pueda romper el string literal del spec.
+export const TAB_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,30}$/;
 
 export type GeneratorScenario = {
   id: string;
@@ -124,6 +134,8 @@ export function readGeneratorSteps(raw: unknown): GeneratorStep[] {
       const frames = readFramePath(step.frames);
       const primary = splitAction(step.action as string);
       const fallbacks = primary ? readFallbacks(step.fallbacks, primary.verb) : undefined;
+      const tabScope = typeof step.tabScope === 'string' && TAB_NAME_PATTERN.test(step.tabScope)
+        ? step.tabScope : undefined;
       return {
         ordinal: typeof step.ordinal === 'number' && Number.isSafeInteger(step.ordinal) ? step.ordinal : index + 1,
         action: step.action as string,
@@ -131,6 +143,7 @@ export function readGeneratorSteps(raw: unknown): GeneratorStep[] {
         expected: typeof step.expected === 'string' ? step.expected : undefined,
         ...(frames && { frames }),
         ...(fallbacks && { fallbacks }),
+        ...(tabScope && { tabScope }),
       };
     });
 }
@@ -152,7 +165,7 @@ export const PLAYWRIGHT_OPERATIONS = [
   'navigate', 'click', 'click-text', 'fill', 'fill-label', 'press', 'check', 'uncheck',
   'expect-text', 'expect-url', 'expect-visible', 'expect-hidden', 'expect-checked', 'expect-http-ok',
   'hover', 'hover-text', 'scroll-into-view', 'select', 'select-label', 'drag-to',
-  'upload',
+  'upload', 'open-tab', 'close-tab',
 ] as const;
 
 const SHARED_VERBS: ReadonlySet<string> = new Set(PLAYWRIGHT_OPERATIONS);
@@ -165,6 +178,15 @@ function sharedAction(step: GeneratorStep) {
   // al generar la función shared. Un upload es un paso puntual, no se
   // repite bulk, así que no perdemos reuso real.
   if (parsed.verb === 'upload') return null;
+  // open-tab/close-tab son metapasos del registro de tabs: comparten estado
+  // entre sí mediante el Map local del spec. Factorizarlos como shared
+  // steps acoplaría ese estado al archivo común, y romperían la relación
+  // 1-spec = 1-Map que mantiene cada test aislado.
+  if (parsed.verb === 'open-tab' || parsed.verb === 'close-tab') return null;
+  // Un step con tabScope corre contra tabs.get('x'); no podemos resolver x
+  // en la función shared sin pasarlo como argumento, lo que rompería la
+  // firma estable. Más simple: inline cuando hay tabScope.
+  if (step.tabScope) return null;
   const { verb, rest } = parsed;
   const frames = step.frames;
   // fallbacks forman parte de la identidad del shared step: dos pasos con el
@@ -180,9 +202,11 @@ function requiresData(verb: string) {
   //   select/select-label  → valor de la opción (<option value="...">)
   //   drag-to              → selector CSS del destino
   //   upload               → "fixture:<kind>" de la whitelist (ver upload-fixtures.ts)
+  //   open-tab             → nombre lógico de la pestaña secundaria (TAB_NAME_PATTERN)
   return verb === 'fill' || verb === 'fill-label'
     || verb === 'select' || verb === 'select-label'
-    || verb === 'drag-to' || verb === 'upload';
+    || verb === 'drag-to' || verb === 'upload'
+    || verb === 'open-tab';
 }
 
 export function generateSharedSteps(steps: readonly GeneratorStep[]): string {
@@ -215,18 +239,23 @@ export function generateStepLines(step: GeneratorStep, indent: string, shared = 
   }
 
   const { verb, rest } = parsed;
+  // Si el step est\u00e1 asociado a una pesta\u00f1a secundaria (tabScope validado
+  // contra TAB_NAME_PATTERN en readGeneratorSteps), apuntamos al Page
+  // guardado en el Map local del spec en vez de a 'page'. Para la tab
+  // principal queda 'page' tal cual.
+  const pageExpr = step.tabScope ? `tabs.get('${step.tabScope}')` : 'page';
   // Snapshot por paso: se escribe al final para que el worker arme el carrusel.
   // El nombre lleva el ordinal (orden) y un slug del verbo (para la etiqueta).
   // .catch(() => {}) evita que un screenshot fallido (p.ej. p\u00e1gina en about:blank)
   // tire el test; la assert del paso ya decide pass/fail.
-  const screenshotAfter = `${indent}await page.screenshot({ path: 'screenshots/step-${step.ordinal}-${verb.replace(/[^a-z0-9]+/gi, '_')}.png', fullPage: false }).catch(() => {});`;
+  const screenshotAfter = `${indent}await ${pageExpr}.screenshot({ path: 'screenshots/step-${step.ordinal}-${verb.replace(/[^a-z0-9]+/gi, '_')}.png', fullPage: false }).catch(() => {});`;
   const implementation = shared ? sharedAction(step) : null;
   const data = "'" + escapeJsString(step.data ?? '') + "'";
   if (implementation) {
     const argument = requiresData(verb) ? ', ' + data : '';
     lines.push(indent + 'await steps.' + implementation.name + '(page' + argument + ');');
   } else {
-    const action = renderAction(verb, rest, indent, data, step.frames, step.fallbacks);
+    const action = renderAction(verb, rest, indent, data, step.frames, step.fallbacks, pageExpr);
     if (action.length) lines.push(...action);
     else lines.push(...commentLines('TODO (verbo "' + verb + '" no reconocido): ' + step.action, indent));
   }
@@ -254,6 +283,7 @@ function buildLocatorExpression(verb: string, rest: string, scope: string): stri
     case 'select':
     case 'drag-to':
     case 'upload':
+    case 'open-tab':
       return scope + ".locator('" + escapeJsString(rest) + "')";
     case 'click-text':
     case 'hover-text':
@@ -305,15 +335,15 @@ function combinedLocator(verb: string, rest: string, scope: string, fallbacks: s
   return extras.reduce((expr, next) => expr + '.or(' + next + ')', primary);
 }
 
-function renderAction(verb: string, rest: string, indent: string, data: string, frames?: string[], fallbacks?: string[]): string[] {
+function renderAction(verb: string, rest: string, indent: string, data: string, frames?: string[], fallbacks?: string[], pageExpr = 'page'): string[] {
   const lines: string[] = [];
-  const scope = frames?.reduce((parent, selector) => parent + ".frameLocator('" + escapeJsString(selector) + "')", 'page') ?? 'page';
+  const scope = frames?.reduce((parent, selector) => parent + ".frameLocator('" + escapeJsString(selector) + "')", pageExpr) ?? pageExpr;
   const target = combinedLocator(verb, rest, scope, fallbacks);
   switch (verb) {
     case 'navigate':
     case 'goto':
     case 'open':
-      lines.push(`${indent}await page.goto('${escapeJsString(rest)}');`);
+      lines.push(`${indent}await ${pageExpr}.goto('${escapeJsString(rest)}');`);
       break;
     case 'click':
     case 'click-text':
@@ -336,18 +366,18 @@ function renderAction(verb: string, rest: string, indent: string, data: string, 
       break;
     case 'press':
     case 'key':
-      lines.push(`${indent}await page.keyboard.press('${escapeJsString(rest)}');`);
+      lines.push(`${indent}await ${pageExpr}.keyboard.press('${escapeJsString(rest)}');`);
       break;
     case 'expect-text':
     case 'expect text':
       lines.push(`${indent}await expect(${target}).toBeVisible();`);
       break;
     case 'expect-http-ok':
-      lines.push(`${indent}expect((await page.goto('${escapeJsString(rest)}'))?.ok()).toBe(true);`);
+      lines.push(`${indent}expect((await ${pageExpr}.goto('${escapeJsString(rest)}'))?.ok()).toBe(true);`);
       break;
     case 'expect-url':
     case 'expect url':
-      lines.push(`${indent}await expect(page).toHaveURL('${escapeJsString(rest)}');`);
+      lines.push(`${indent}await expect(${pageExpr}).toHaveURL('${escapeJsString(rest)}');`);
       break;
     case 'hover':
     case 'hover-text':
@@ -383,6 +413,46 @@ function renderAction(verb: string, rest: string, indent: string, data: string, 
       }
       break;
     }
+    case 'open-tab': {
+      // El nombre va en data; se interpola literal, así que validamos contra
+      // TAB_NAME_PATTERN. Si no cumple, emitimos TODO en vez de spec roto.
+      const tabName = stripDataQuotes(data);
+      if (!TAB_NAME_PATTERN.test(tabName)) {
+        lines.push(...commentLines('TODO: open-tab requiere data con un nombre lógico [a-z][a-z0-9_-]{0,30}', indent));
+        break;
+      }
+      // Patrón canónico de Playwright: esperar el evento 'page' en context
+      // en paralelo con el click que lo dispara. Registramos la Page nueva
+      // en el Map global del test. La waitForLoadState() evita que el paso
+      // siguiente actúe antes de que la pestaña termine su navegación.
+      lines.push(
+        `${indent}{`,
+        `${indent}  const [newTab] = await Promise.all([`,
+        `${indent}    ${pageExpr}.context().waitForEvent('page'),`,
+        `${indent}    ${target}.click(),`,
+        `${indent}  ]);`,
+        `${indent}  await newTab.waitForLoadState();`,
+        `${indent}  tabs.set('${tabName}', newTab);`,
+        `${indent}}`,
+      );
+      break;
+    }
+    case 'close-tab': {
+      // El nombre va en rest (close-tab: <nombre>). Mismo patrón de validación.
+      if (!TAB_NAME_PATTERN.test(rest)) {
+        lines.push(...commentLines('TODO: close-tab requiere un nombre lógico [a-z][a-z0-9_-]{0,30}', indent));
+        break;
+      }
+      // Guardia: si la tab no está en el Map (nunca se abrió, o ya se
+      // cerró) no fallamos — solo logueamos. El QA puede estar iterando.
+      lines.push(
+        `${indent}{`,
+        `${indent}  const tab = tabs.get('${rest}');`,
+        `${indent}  if (tab) { await tab.close(); tabs.delete('${rest}'); }`,
+        `${indent}}`,
+      );
+      break;
+    }
   }
   return lines;
 }
@@ -408,6 +478,23 @@ function collectUploadKinds(steps: readonly GeneratorStep[]): Set<UploadFixtureK
   return kinds;
 }
 
+// true si el spec necesita el Map de tabs en runtime: hay al menos un
+// open-tab, close-tab, o algún step con tabScope. Si ninguna de las tres
+// cosas aparece, no inflamos el spec con la declaración.
+function usesTabRegistry(steps: readonly GeneratorStep[]): boolean {
+  for (const step of steps) {
+    if (step.tabScope) return true;
+    const parsed = splitAction(step.action);
+    if (parsed && (parsed.verb === 'open-tab' || parsed.verb === 'close-tab')) return true;
+  }
+  return false;
+}
+
+// Declaración TypeScript del Map de pestañas secundarias. Se emite UNA vez
+// por spec, antes del bloque test(). Tipado contra Page de Playwright para
+// que el transpile del worker no se queje del uso de métodos.
+const TAB_REGISTRY_DECLARATION = 'const tabs = new Map();';
+
 export function generateSpec(scenario: GeneratorScenario, shared = false): string {
   const title = escapeJsString(scenario.title);
   const lines: string[] = [];
@@ -425,6 +512,7 @@ export function generateSpec(scenario: GeneratorScenario, shared = false): strin
   if (scenario.steps.length === 0) {
     lines.push('  // TODO: define los pasos del escenario en AutoQA.');
   } else {
+    if (usesTabRegistry(scenario.steps)) lines.push('  ' + TAB_REGISTRY_DECLARATION);
     for (const step of scenario.steps) {
       lines.push(...generateStepLines(step, '  ', shared));
       lines.push('');
@@ -631,6 +719,7 @@ export function generateHarnessedSpec(
   if (uploadHelper) lines.push(uploadHelper);
   lines.push(`test('${title}', async ({ page }) => {`);
   if (target.sharedSteps) lines.push('  locatorStep = undefined;');
+  if (usesTabRegistry(scenario.steps)) lines.push('  ' + TAB_REGISTRY_DECLARATION);
   if (scenario.steps.length === 0) {
     lines.push('  // Escenario sin pasos: nada que ejecutar.');
   } else {

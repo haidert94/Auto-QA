@@ -41,7 +41,7 @@ export type ScenarioPayload = {
     mode?: 'manual' | 'playwright';
     requirementId?: string;
     tags?: string[];
-    steps?: Array<{ action?: string; data?: string; expected?: string; fallbacks?: string[] }>;
+    steps?: Array<{ action?: string; data?: string; expected?: string; fallbacks?: string[]; tabScope?: string }>;
   }>;
 };
 
@@ -145,6 +145,17 @@ const FALLBACK_COMPATIBLE: Record<string, ReadonlySet<string>> = {
   'fill': new Set(['fill', 'fill-label']),
   'fill-label': new Set(['fill', 'fill-label']),
 };
+
+// Nombre lógico de pestaña secundaria (coincide con TAB_NAME_PATTERN del
+// generator). Si el agente emite algo fuera del formato lo descartamos para
+// que el valor nunca entre al spec interpolado.
+const TAB_NAME_RE = /^[a-z][a-z0-9_-]{0,30}$/;
+
+export function sanitizeTabScope(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return TAB_NAME_RE.test(trimmed) ? trimmed : undefined;
+}
 
 export function sanitizeStepFallbacks(primaryAction: string, raw: unknown): string[] | undefined {
   if (!Array.isArray(raw) || !raw.length) return undefined;

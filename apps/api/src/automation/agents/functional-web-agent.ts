@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { recordGeneratedCase } from '../generated-cases';
 import { MANUAL_SCENARIO_TAG } from '../../scenarios/scenario-tags';
 import { hasPlaywrightAssertion } from '../../scenarios/playwright-generator';
-import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, sanitizeStepFallbacks, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
+import { ASSERTION_INSTRUCTION, buildTags, elementInventoryBlock, type AgentContext, type AgentDeps, type AgentOutcome, generationResponseErrors, linkedRequirementId, LINKED_REQUIREMENT_INSTRUCTION, MANUAL_ONLY_INSTRUCTION, MANUAL_SCENARIO_INSTRUCTION, REGRESSION_INSTRUCTION, requestGeneration, sanitizeStepFallbacks, sanitizeTabScope, scenarioAnalysisContext, type ScenarioPayload } from './agent-types';
 
 export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, onlyManual = false): Promise<AgentOutcome> {
   const allowMixed = !onlyManual && !ctx.documentTestTypesConfirmed;
@@ -35,6 +35,10 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
       '- select-label: <etiqueta del select>   (+ "data": valor del <option>; variante accesible)',
       '- drag-to: <selector origen>   (+ "data": selector CSS del destino; arrastra y suelta)',
       '- upload: <selector css del input type=file>   (+ "data": "fixture:<tipo>"; tipos disponibles: png, jpg, pdf, txt, csv, json). AutoQA genera el archivo sintético en runtime — no inventes paths de disco ni URLs.',
+      '- open-tab: <selector que abre un popup/target="_blank">   (+ "data": nombre lógico corto [a-z][a-z0-9_-]{0,30}). Captura la nueva pestaña y la registra con ese nombre.',
+      '- close-tab: <nombre>   cierra la pestaña secundaria.',
+      'Para actuar en una pestaña secundaria, añade al paso el campo "tabScope": "<nombre>" (el mismo nombre del open-tab). Sin tabScope el paso corre en la pestaña principal. Un paso con tabScope inválido se descarta silenciosamente, así que respeta el patrón.',
+      'Ejemplo: {"action":"open-tab: a.contrato-pdf","data":"pdf"}, luego {"action":"expect-text: AutoQA","tabScope":"pdf"}, luego {"action":"close-tab: pdf"}.',
       '',
       'Cuando el inventario tenga dos pistas para el MISMO elemento (p. ej. un data-testid y el texto visible, o un name y una etiqueta), añade al paso un array "fallbacks" con la pista alterna como acción DSL del mismo verbo. Se traduce a Playwright Locator.or(): si el selector principal cambia, el test sobrevive con la alternativa. Máximo 2 fallbacks por paso.',
       'Ejemplo: {"action":"click: [data-testid=\\"save\\"]","fallbacks":["click-text: Guardar"]}.',
@@ -86,6 +90,7 @@ export async function runFunctionalWebAgent(ctx: AgentContext, deps: AgentDeps, 
           data: typeof step.data === 'string' ? step.data.slice(0, 1000) : undefined,
           expected: typeof step.expected === 'string' ? step.expected.slice(0, 1000) : undefined,
           fallbacks: sanitizeStepFallbacks(action, step.fallbacks),
+          tabScope: sanitizeTabScope(step.tabScope),
         };
       });
     if (!normalized.length) { errors.push('scenario-' + index + '-sin-pasos'); continue; }
